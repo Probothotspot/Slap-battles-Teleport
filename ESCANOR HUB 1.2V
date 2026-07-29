@@ -1,0 +1,3156 @@
+--[[
+    Escanor HUB 🔥 v1.2 – Bugfix & Polished Edition
+    By: Brobothotspot
+    Что нового в v1.2:
+    - Полноценный авто-перезапуск после ТП в другой плейс (сохранение настроек)
+    - Мгновенное обновление списка локаций при сохранении позиции
+    - Анимации: появление GUI, сворачивание, кнопки, вкладки, уведомления
+    - Переливающийся интерфейс зависящий от темы
+    - Панель действий и мгновенное добавление локации
+--]]
+
+if not game:IsLoaded() then game.Loaded:Wait() end
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+local UserInput = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local TeleportService = game:GetService("TeleportService")
+local Stats = game:GetService("Stats")
+local Lighting = game:GetService("Lighting")
+
+-- ===== ГЛОБАЛЬНЫЕ НАСТРОЙКИ =====
+if _G.TeleportHubSettings == nil then _G.TeleportHubSettings = {} end
+if _G.FavoriteLocations == nil then _G.FavoriteLocations = {} end
+if _G.TeleportHistory == nil then _G.TeleportHistory = {} end
+if _G.AntiAFKEnabled == nil then _G.AntiAFKEnabled = false end
+if _G.ShowFPS == nil then _G.ShowFPS = false end
+if _G.FPSPosition == nil then _G.FPSPosition = UDim2.new(0, 5, 0, 5) end
+if _G.FullbrightEnabled == nil then _G.FullbrightEnabled = false end
+if _G.CoordsDisplayEnabled == nil then _G.CoordsDisplayEnabled = false end
+if _G.TimerEnabled == nil then _G.TimerEnabled = false end
+
+-- ===== АВТО-ПЕРЕЗАПУСК ПОСЛЕ ТЕЛЕПОРТАЦИИ =====
+-- Флаг: GUI не был закрыт пользователем вручную (P)
+if _G.EscanorHubClosed == nil then _G.EscanorHubClosed = false end
+
+-- Список поддерживаемых Place ID для авто-перезапуска
+local SUPPORTED_PLACE_IDS = {
+    [6403373529] = "Slap Battles",
+    [7234087065] = "Barzil",
+    [115782629143468] = "Untitled Tag",
+    [127174121130060] = "Glove Game",
+    [18550498098] = "Guide",
+    [125845699717230] = "DoorKeeper",
+    [106620300132058] = "Plate",
+    [103505724406848] = "Poltergeist",
+    [77283826005207] = "G-X",
+}
+
+local function setupAutoRestart()
+    -- Loadstring URL для перезапуска скрипта
+    local SCRIPT_URL = "https://pastebin.com/raw/wyYpVD58"
+    local scriptSource = 'repeat task.wait() until game:IsLoaded() task.wait(2) loadstring(game:HttpGet("' .. SCRIPT_URL .. '"))()'
+
+    -- Попытка вставить скрипт в очередь перезапуска (совместимость с Xeno и другими)
+    local function tryQueueScript()
+        -- Xeno
+        local ok1 = pcall(function()
+            if queue_on_teleport then queue_on_teleport(scriptSource) return end
+        end)
+        if ok1 then return true end
+        -- Synapse
+        local ok2 = pcall(function()
+            if syn and syn.queue_on_teleport then syn.queue_on_teleport(scriptSource) return end
+        end)
+        if ok2 then return true end
+        -- Fluxus
+        local ok3 = pcall(function()
+            if fluxus and fluxus.queue_on_teleport then fluxus.queue_on_teleport(scriptSource) return end
+        end)
+        if ok3 then return true end
+        -- Другие инжекторы через getgenv
+        local ok4 = pcall(function()
+            if getgenv then
+                local env = getgenv()
+                if env and env.queue_on_teleport then env.queue_on_teleport(scriptSource) return end
+            end
+        end)
+        if ok4 then return true end
+        return false
+    end
+
+    -- Слушаем телепортацию
+    LP.OnTeleport:Connect(function(State)
+        if State == Enum.TeleportState.Started then
+            if _G.EscanorHubClosed then return end
+            -- Сохранить настройки для нового плейса
+            _G.TeleportHubSettings = _G.TeleportHubSettings or {}
+            _G.TeleportHubSettings._autoRestarted = true
+            local queued = tryQueueScript()
+            if queued then
+                warn("[Escanor HUB] Скрипт поставлен в очередь перезапуска!")
+            else
+                warn("[Escanor HUB] queue_on_teleport не найден. Попробуйте loadstring вручную после ТП.")
+            end
+        end
+    end)
+
+    -- Повтор при неудачной телепортации
+    pcall(function()
+        TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
+            if player == LP then
+                warn("[Escanor HUB] Teleport failed: " .. tostring(errorMessage) .. " — retry in 5s")
+                task.delay(5, function()
+                    local targetId = _G.TeleportHubSettings and _G.TeleportHubSettings._targetPlaceId
+                    if targetId then
+                        pcall(function() TeleportService:Teleport(targetId) end)
+                    end
+                end)
+            end
+        end)
+    end)
+end
+
+-- ===== ЛАУНЧЕР =====
+local function showLauncher()
+    local launcherGui = Instance.new("ScreenGui")
+    launcherGui.Name = "Launcher"
+    launcherGui.ResetOnSpawn = false
+    pcall(function() launcherGui.Parent = game:GetService("CoreGui") end)
+    if not launcherGui.Parent then launcherGui.Parent = LP:WaitForChild("PlayerGui") end
+
+    local main = Instance.new("Frame", launcherGui)
+    main.Size = UDim2.new(0, 420, 0, 360)
+    main.Position = UDim2.new(0.5, -210, 0.5, -180)
+    main.BackgroundColor3 = Color3.fromRGB(20, 20, 35)
+    main.BorderSizePixel = 0
+    main.ClipsDescendants = true
+    Instance.new("UICorner", main).CornerRadius = UDim.new(0, 16)
+    local gradient = Instance.new("UIGradient", main)
+    gradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 50)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 15, 30))
+    }
+    gradient.Rotation = -45
+
+    -- Переливающаяся рамка лаунчера (UIStroke)
+    local launcherStroke = Instance.new("UIStroke", main)
+    launcherStroke.Thickness = 2
+    launcherStroke.Color = Color3.fromRGB(140, 100, 255)
+    launcherStroke.Transparency = 0.15
+
+    -- Анимация перелива лаунчера
+    local launcherHue = 0
+    local launcherShimmerConn = RunService.Heartbeat:Connect(function(dt)
+        if not main or not main.Parent then return end
+        launcherHue = (launcherHue + dt * 1.2) % (math.pi * 2)
+        -- Фиолетовое переливание: оттенок 0.75 ± 0.12
+        local h = (0.75 + math.sin(launcherHue) * 0.12) % 1
+        local strokeCol = Color3.fromHSV(h, 0.7, 0.9)
+        launcherStroke.Color = strokeCol
+        -- Обновить градиент фона лаунчера с лёгким переливом
+        local bgH = (0.75 + math.sin(launcherHue * 0.7) * 0.05) % 1
+        local gradCol1 = Color3.fromHSV(bgH, 0.3, 0.15)
+        local gradCol2 = Color3.fromHSV((bgH + 0.03) % 1, 0.25, 0.08)
+        gradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, gradCol1),
+            ColorSequenceKeypoint.new(1, gradCol2)
+        }
+        gradient.Rotation = -45 + math.sin(launcherHue * 0.5) * 15
+        -- Обновить рамку заголовка
+        if titleStroke and titleStroke.Parent then
+            local h2 = (0.75 + math.sin(launcherHue + 1.0) * 0.12) % 1
+            titleStroke.Color = Color3.fromHSV(h2, 0.5, 0.75)
+        end
+    end)
+
+    -- Заголовок лаунчера
+    local titleBar = Instance.new("Frame", main)
+    titleBar.Size = UDim2.new(1, 0, 0, 32)
+    titleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+    titleBar.BorderSizePixel = 0
+    Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 8)
+
+    -- Переливающаяся рамка заголовка лаунчера
+    local titleStroke = Instance.new("UIStroke", titleBar)
+    titleStroke.Thickness = 1
+    titleStroke.Color = Color3.fromRGB(140, 100, 255)
+    titleStroke.Transparency = 0.4
+
+    local titleText = Instance.new("TextLabel", titleBar)
+    titleText.Size = UDim2.new(1, -70, 1, 0)
+    titleText.Position = UDim2.new(0, 10, 0, 0)
+    titleText.BackgroundTransparency = 1
+    titleText.Text = "🚀 Escanor HUB 🔥 v1.2"
+    titleText.TextColor3 = Color3.new(1, 1, 1)
+    titleText.Font = Enum.Font.GothamBold
+    titleText.TextSize = 16
+    titleText.TextXAlignment = Enum.TextXAlignment.Left
+
+    local minBtn = Instance.new("TextButton", titleBar)
+    minBtn.Size = UDim2.new(0, 28, 0, 28)
+    minBtn.Position = UDim2.new(1, -60, 0, 2)
+    minBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 85)
+    minBtn.Text = "–"
+    minBtn.TextColor3 = Color3.new(1, 1, 1)
+    minBtn.Font = Enum.Font.GothamBold
+    minBtn.TextSize = 18
+    Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 6)
+
+    local closeBtn = Instance.new("TextButton", titleBar)
+    closeBtn.Size = UDim2.new(0, 28, 0, 28)
+    closeBtn.Position = UDim2.new(1, -28, 0, 2)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 16
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
+
+    local launcherMinimized = false
+    local launcherFullHeight = 360
+    local contentFrame = Instance.new("Frame", main)
+    contentFrame.Size = UDim2.new(1, 0, 1, -32)
+    contentFrame.Position = UDim2.new(0, 0, 0, 32)
+    contentFrame.BackgroundTransparency = 1
+
+    minBtn.MouseButton1Click:Connect(function()
+        if not launcherMinimized then
+            main:TweenSize(UDim2.new(0, 420, 0, 32), Enum.EasingDirection.InOut, Enum.EasingStyle.Quad, 0.3, true)
+            minBtn.Text = "+"
+            contentFrame.Visible = false
+            launcherMinimized = true
+        else
+            main:TweenSize(UDim2.new(0, 420, 0, launcherFullHeight), Enum.EasingDirection.InOut, Enum.EasingStyle.Quad, 0.3, true)
+            minBtn.Text = "–"
+            contentFrame.Visible = true
+            launcherMinimized = false
+        end
+    end)
+
+    closeBtn.MouseButton1Click:Connect(function()
+        if launcherShimmerConn then launcherShimmerConn:Disconnect() end
+        launcherGui:Destroy()
+    end)
+
+    -- Перетаскивание лаунчера
+    local dragging = false
+    local dragStart, startPos
+    titleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = main.Position
+        end
+    end)
+    titleBar.InputEnded:Connect(function() dragging = false end)
+    UserInput.InputChanged:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    -- Контент лаунчера
+    local langLabel = Instance.new("TextLabel", contentFrame)
+    langLabel.Size = UDim2.new(1, -20, 0, 25)
+    langLabel.Position = UDim2.new(0, 10, 0, 33)
+    langLabel.BackgroundTransparency = 1
+    langLabel.Text = "🌐 Язык / Language:"
+    langLabel.TextColor3 = Color3.new(0.9, 0.9, 0.9)
+    langLabel.TextSize = 16
+    langLabel.Font = Enum.Font.Gotham
+    langLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    local selectedLang = "en"
+    local langButtons = {}
+    local function updateLangButtons()
+        for code, btn in pairs(langButtons) do
+            btn.BackgroundColor3 = code == selectedLang and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(60, 60, 120)
+        end
+    end
+    local langs = {"English", "Русский", "Українська"}
+    local langCodes = {"en", "ru", "ua"}
+    for i, name in ipairs(langs) do
+        local btn = Instance.new("TextButton", contentFrame)
+        btn.Size = UDim2.new(0.3, -5, 0, 36)
+        btn.Position = UDim2.new(0, 10 + (i-1)*130, 0, 63)
+        btn.Text = name
+        btn.TextColor3 = Color3.new(1, 1, 1)
+        btn.TextSize = 14
+        btn.Font = Enum.Font.GothamSemibold
+        btn.BackgroundColor3 = Color3.fromRGB(60, 60, 120)
+        btn.BorderSizePixel = 0
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+        btn.MouseButton1Click:Connect(function()
+            selectedLang = langCodes[i]
+            updateLangButtons()
+        end)
+        langButtons[langCodes[i]] = btn
+    end
+
+    local devLabel = Instance.new("TextLabel", contentFrame)
+    devLabel.Size = UDim2.new(1, -20, 0, 25)
+    devLabel.Position = UDim2.new(0, 10, 0, 113)
+    devLabel.BackgroundTransparency = 1
+    devLabel.Text = "📱 Устройство / Device:"
+    devLabel.TextColor3 = Color3.new(0.9, 0.9, 0.9)
+    devLabel.TextSize = 16
+    devLabel.Font = Enum.Font.Gotham
+    devLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    local selectedDevice = "PC"
+    local deviceButtons = {}
+    local function updateDevButtons()
+        for dev, btn in pairs(deviceButtons) do
+            btn.BackgroundColor3 = dev == selectedDevice and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(60, 60, 120)
+        end
+    end
+    local devs = {"PC", "Mobile"}
+    for i, dev in ipairs(devs) do
+        local btn = Instance.new("TextButton", contentFrame)
+        btn.Size = UDim2.new(0.4, -5, 0, 36)
+        btn.Position = UDim2.new(0, 10 + (i-1)*170, 0, 143)
+        btn.Text = dev == "PC" and "💻 ПК" or "📱 Телефон"
+        btn.TextColor3 = Color3.new(1, 1, 1)
+        btn.TextSize = 14
+        btn.Font = Enum.Font.GothamSemibold
+        btn.BackgroundColor3 = Color3.fromRGB(60, 60, 120)
+        btn.BorderSizePixel = 0
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+        btn.MouseButton1Click:Connect(function()
+            selectedDevice = dev
+            updateDevButtons()
+        end)
+        deviceButtons[dev] = btn
+    end
+
+    local themeLabel = Instance.new("TextLabel", contentFrame)
+    themeLabel.Size = UDim2.new(1, -20, 0, 25)
+    themeLabel.Position = UDim2.new(0, 10, 0, 193)
+    themeLabel.BackgroundTransparency = 1
+    themeLabel.Text = "🎨 Тема / Theme:"
+    themeLabel.TextColor3 = Color3.new(0.9, 0.9, 0.9)
+    themeLabel.TextSize = 16
+    themeLabel.Font = Enum.Font.Gotham
+    themeLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    local selectedTheme = "dark"
+    local themeButtons = {}
+    local function updateThemeButtons()
+        for theme, btn in pairs(themeButtons) do
+            btn.BackgroundColor3 = theme == selectedTheme and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(60, 60, 120)
+        end
+    end
+    local themes = {"dark", "light"}
+    local themeNames = { dark = "🌙 Тёмная", light = "☀️ Светлая" }
+    for i, theme in ipairs(themes) do
+        local btn = Instance.new("TextButton", contentFrame)
+        btn.Size = UDim2.new(0.4, -5, 0, 36)
+        btn.Position = UDim2.new(0, 10 + (i-1)*170, 0, 223)
+        btn.Text = themeNames[theme]
+        btn.TextColor3 = Color3.new(1, 1, 1)
+        btn.TextSize = 14
+        btn.Font = Enum.Font.GothamSemibold
+        btn.BackgroundColor3 = Color3.fromRGB(60, 60, 120)
+        btn.BorderSizePixel = 0
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+        btn.MouseButton1Click:Connect(function()
+            selectedTheme = theme
+            updateThemeButtons()
+            if theme == "dark" then
+                main.BackgroundColor3 = Color3.fromRGB(20, 20, 35)
+                titleText.TextColor3 = Color3.new(1,1,1)
+                langLabel.TextColor3 = Color3.new(0.9,0.9,0.9)
+                devLabel.TextColor3 = Color3.new(0.9,0.9,0.9)
+                themeLabel.TextColor3 = Color3.new(0.9,0.9,0.9)
+            else
+                main.BackgroundColor3 = Color3.fromRGB(240, 240, 245)
+                titleText.TextColor3 = Color3.new(0.1,0.1,0.15)
+                langLabel.TextColor3 = Color3.new(0.2,0.2,0.3)
+                devLabel.TextColor3 = Color3.new(0.2,0.2,0.3)
+                themeLabel.TextColor3 = Color3.new(0.2,0.2,0.3)
+            end
+        end)
+        themeButtons[theme] = btn
+    end
+
+    local execBtn = Instance.new("TextButton", contentFrame)
+    execBtn.Size = UDim2.new(0.8, 0, 0, 45)
+    execBtn.Position = UDim2.new(0.1, 0, 1, -55)
+    execBtn.Text = "🚀 Execute / Запустить"
+    execBtn.TextColor3 = Color3.new(1, 1, 1)
+    execBtn.TextSize = 18
+    execBtn.Font = Enum.Font.GothamBold
+    execBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 80)
+    execBtn.BorderSizePixel = 0
+    Instance.new("UICorner", execBtn).CornerRadius = UDim.new(0, 12)
+    execBtn.MouseButton1Click:Connect(function()
+        _G.TeleportHubSettings = {
+            language = selectedLang,
+            device = selectedDevice,
+            theme = selectedTheme
+        }
+        if launcherShimmerConn then launcherShimmerConn:Disconnect() end
+        launcherGui:Destroy()
+        StartEscanorHub_Common()
+    end)
+
+    UserInput.InputBegan:Connect(function(input, gp)
+        if gp then return end
+        if input.KeyCode == Enum.KeyCode.P then
+            _G.TeleportHubSettings = nil
+            _G.FavoriteLocations = nil
+            _G.TeleportHistory = nil
+            _G.AntiAFKEnabled = false
+            _G.ShowFPS = false
+            _G.FPSPosition = UDim2.new(0,5,0,5)
+            _G.FullbrightEnabled = false
+            _G.CoordsDisplayEnabled = false
+            _G.TimerEnabled = false
+            launcherGui:Destroy()
+            LP:Chat("📌 Настройки сброшены. При следующем запуске появится лаунчер.")
+        end
+    end)
+
+    updateLangButtons()
+    updateDevButtons()
+    updateThemeButtons()
+end
+
+-- ===== ОСНОВНАЯ ФУНКЦИЯ =====
+function StartEscanorHub_Common()
+    setupAutoRestart()
+
+    local settings = _G.TeleportHubSettings or {language = "en", device = "PC", theme = "dark"}
+    local isMobile = (settings.device == "Mobile")
+    local currentLang = settings.language or "en"
+
+    local guiTransparency = settings.transparency or 0.1
+    local teleportSpeed = settings.teleportSpeed or 50000
+    local starsEnabled = (settings.starsEnabled ~= false)
+    local playerTPOffset = settings.playerTPOffset or 2
+    local currentTheme = settings.theme or "dark"
+
+    local currentTab = "players"
+    local sortByDistance = false
+    local searchFilter = ""
+    local locationSearchFilter = ""
+    local savedPosition = nil
+    local autoTeleportActive = false
+    local autoTargetPlayer = nil
+    local autoLoopConnection = nil
+    local instantBtn = nil
+    local settingsWindow = nil -- legacy, используем settingsPanel
+
+    local favorites = _G.FavoriteLocations or {}
+    local history = _G.TeleportHistory or {}
+
+    local antiAFKEnabled = _G.AntiAFKEnabled or false
+    local showFPS = _G.ShowFPS or false
+    local antiAFKConnection = nil
+    local fpsConnection = nil
+    local fpsData = { gui = nil, label = nil, fpsCount = 0, fpsTime = 0 }
+
+    local fullbrightEnabled = _G.FullbrightEnabled or false
+    local coordsDisplayEnabled = _G.CoordsDisplayEnabled or false
+    local timerEnabled = _G.TimerEnabled or false
+    local fullbrightBackup = {}
+
+    local guiDestroyed = false
+    local sg = nil
+    local mainFrame = nil
+    local btns = {}
+    local bc = nil
+    local lf = nil
+    local lay = nil
+    local hue = 0
+    local connection = nil
+    local locations = {}
+    local locationListFrame = nil
+    local locationBtns = {}
+    local coordsLabel = nil
+    local sortTimer = nil
+    local themeElements = {}
+
+    local floatingGui = nil
+    local floatingButton = nil
+
+    local loadingFrame = nil
+    local minimizeBtn = nil
+    local isMinimized = false
+    local originalHeight = nil
+
+    -- Темы (полностью) с параметрами переливания
+    -- shimmerHue: базовый оттенок (0-1), shimmerRange: диапазон колебания оттенка, shimmerSat/shimmerVal: насыщенность/яркость
+    local themes = {
+        dark = {
+            mainBg = Color3.fromRGB(25,28,40), mainGradStart = Color3.fromRGB(25,28,40), mainGradEnd = Color3.fromRGB(15,18,30),
+            topBg = Color3.fromRGB(40,45,60), topGradStart = Color3.fromRGB(60,65,80), topGradEnd = Color3.fromRGB(40,45,60),
+            tabActive = Color3.fromRGB(120,120,220), tabInactive = Color3.fromRGB(70,70,130),
+            borderColor = Color3.new(1,1,1), textColor = Color3.new(1,1,1),
+            btnColor = Color3.fromRGB(70,70,130), inputBg = Color3.fromRGB(15,15,20),
+            shimmerHue = 0.75, shimmerRange = 0.12, shimmerSat = 0.7, shimmerVal = 0.85
+        },
+        light = {
+            mainBg = Color3.fromRGB(240,240,245), mainGradStart = Color3.fromRGB(240,240,245), mainGradEnd = Color3.fromRGB(220,220,225),
+            topBg = Color3.fromRGB(200,200,220), topGradStart = Color3.fromRGB(210,210,230), topGradEnd = Color3.fromRGB(190,190,210),
+            tabActive = Color3.fromRGB(80,120,220), tabInactive = Color3.fromRGB(180,180,200),
+            borderColor = Color3.new(0.3,0.3,0.4), textColor = Color3.new(0.1,0.1,0.15),
+            btnColor = Color3.fromRGB(180,180,200), inputBg = Color3.fromRGB(255,255,255),
+            shimmerHue = 0.72, shimmerRange = 0.10, shimmerSat = 0.45, shimmerVal = 0.70
+        },
+        pink = {
+            mainBg = Color3.fromRGB(40,20,30), mainGradStart = Color3.fromRGB(40,20,30), mainGradEnd = Color3.fromRGB(30,15,25),
+            topBg = Color3.fromRGB(60,30,45), topGradStart = Color3.fromRGB(80,40,60), topGradEnd = Color3.fromRGB(60,30,45),
+            tabActive = Color3.fromRGB(220,120,180), tabInactive = Color3.fromRGB(150,70,120),
+            borderColor = Color3.new(1,0.8,0.9), textColor = Color3.new(1,0.9,0.95),
+            btnColor = Color3.fromRGB(150,70,120), inputBg = Color3.fromRGB(30,15,25),
+            shimmerHue = 0.91, shimmerRange = 0.08, shimmerSat = 0.65, shimmerVal = 0.90
+        },
+        green = {
+            mainBg = Color3.fromRGB(20,35,25), mainGradStart = Color3.fromRGB(20,35,25), mainGradEnd = Color3.fromRGB(15,28,20),
+            topBg = Color3.fromRGB(30,50,35), topGradStart = Color3.fromRGB(40,65,45), topGradEnd = Color3.fromRGB(30,50,35),
+            tabActive = Color3.fromRGB(100,200,120), tabInactive = Color3.fromRGB(60,130,80),
+            borderColor = Color3.new(0.5,1,0.6), textColor = Color3.new(0.9,1,0.9),
+            btnColor = Color3.fromRGB(60,130,80), inputBg = Color3.fromRGB(20,35,25),
+            shimmerHue = 0.38, shimmerRange = 0.10, shimmerSat = 0.70, shimmerVal = 0.80
+        },
+        blue = {
+            mainBg = Color3.fromRGB(15,20,40), mainGradStart = Color3.fromRGB(15,20,40), mainGradEnd = Color3.fromRGB(10,15,30),
+            topBg = Color3.fromRGB(20,30,60), topGradStart = Color3.fromRGB(30,45,80), topGradEnd = Color3.fromRGB(20,30,60),
+            tabActive = Color3.fromRGB(80,120,255), tabInactive = Color3.fromRGB(50,80,180),
+            borderColor = Color3.new(0.6,0.7,1), textColor = Color3.new(0.85,0.9,1),
+            btnColor = Color3.fromRGB(50,80,180), inputBg = Color3.fromRGB(15,20,40),
+            shimmerHue = 0.60, shimmerRange = 0.10, shimmerSat = 0.75, shimmerVal = 0.90
+        }
+    }
+    themes["default"] = themes.dark
+
+    -- ===== ФУНКЦИЯ ВЫЧИСЛЕНИЯ ПЕРЕЛИВАЮЩЕГОСЯ ЦВЕТА =====
+    local function getShimmerColor(t, phase)
+        local baseH = t.shimmerHue or 0.75
+        local range = t.shimmerRange or 0.12
+        local sat = t.shimmerSat or 0.7
+        local val = t.shimmerVal or 0.85
+        local h = (baseH + math.sin(phase) * range) % 1
+        return Color3.fromHSV(h, sat, val)
+    end
+
+    local function getShimmerColorOffset(t, phase, offset)
+        local baseH = t.shimmerHue or 0.75
+        local range = t.shimmerRange or 0.12
+        local sat = t.shimmerSat or 0.7
+        local val = t.shimmerVal or 0.85
+        local h = (baseH + math.sin(phase + offset) * range) % 1
+        return Color3.fromHSV(h, sat, val)
+    end
+
+    local function getShimmerColorDim(t, phase, dimFactor)
+        local baseH = t.shimmerHue or 0.75
+        local range = t.shimmerRange or 0.12
+        local sat = t.shimmerSat or 0.7
+        local val = (t.shimmerVal or 0.85) * dimFactor
+        local h = (baseH + math.sin(phase) * range) % 1
+        return Color3.fromHSV(h, sat, val)
+    end
+
+    -- Переводы локаций (полная таблица включая Slap Battles)
+    local locationTranslations = {
+        -- Slap Battles
+        ["Debug room"] = { ru = "Дебаг комната", en = "Debug Room", ua = "Дебаг кімната" },
+        ["Main island"] = { ru = "Главный остров", en = "Main Island", ua = "Головний острів" },
+        ["Left island"] = { ru = "Левый остров", en = "Left Island", ua = "Лівий острів" },
+        ["Right island"] = { ru = "Правый остров", en = "Right Island", ua = "Правий острів" },
+        ["Moai"] = { ru = "Моаи", en = "Moai", ua = "Моаі" },
+        ["Castle"] = { ru = "Замок", en = "Castle", ua = "Замок" },
+        ["Kill cube"] = { ru = "Куб смерти", en = "Kill Cube", ua = "Куб смерті" },
+        ["Slapple island"] = { ru = "Остров Slapple", en = "Slapple Island", ua = "Острів Slapple" },
+        ["Lobby"] = { ru = "Лобби", en = "Lobby", ua = "Лобі" },
+        ["Basement"] = { ru = "Подвал", en = "Basement", ua = "Підвал" },
+        ["Blue portal"] = { ru = "Синий портал", en = "Blue Portal", ua = "Синій портал" },
+        ["Cloud"] = { ru = "Облако", en = "Cloud", ua = "Хмара" },
+        ["Brazil"] = { ru = "Бразил", en = "Brazil", ua = "Бразил" },
+        ["Plate"] = { ru = "Тарелка", en = "Plate", ua = "Тарілка" },
+        -- Barzil
+        ["Spawn"] = { ru = "Спавн", en = "Spawn", ua = "Спавн" },
+        ["Clown (Fan)"] = { ru = "Клоун (Фан)", en = "Clown (Fan)", ua = "Клоун (Фан)" },
+        ["Angry Brazil"] = { ru = "Злой Бразил", en = "Angry Brazil", ua = "Злий Бразил" },
+        ["OOG"] = { ru = "OOG", en = "OOG", ua = "OOG" },
+        ["RiftShot"] = { ru = "RiftShot", en = "RiftShot", ua = "RiftShot" },
+        ["Библиотека"] = { ru = "Библиотека", en = "Library", ua = "Бібліотека" },
+        ["ФастФуд/Море"] = { ru = "ФастФуд/Море", en = "FastFood/Sea", ua = "ФастФуд/Море" },
+        ["Часы на водопаде"] = { ru = "Часы на водопаде", en = "Clock at waterfall", ua = "Годинник на водоспаді" },
+        ["Водопад - Наверху"] = { ru = "Водопад - Наверху", en = "Waterfall - Top", ua = "Водоспад - Вгорі" },
+        ["Пикник"] = { ru = "Пикник", en = "Picnic", ua = "Пікнік" },
+        ["Кирки/Топоры"] = { ru = "Кирки/Топоры", en = "Pickaxes/Axes", ua = "Кирки/Сокири" },
+        ["Карусель"] = { ru = "Карусель", en = "Carousel", ua = "Карусель" },
+        ["Metaverse"] = { ru = "Metaverse", en = "Metaverse", ua = "Metaverse" },
+        ["Clock"] = { ru = "Часы", en = "Clock", ua = "Годинник" },
+        ["Машина"] = { ru = "Машина", en = "Car", ua = "Машина" },
+        ["Мортис"] = { ru = "Мортис", en = "Mortis", ua = "Мортис" },
+        ["Ключ (Fan)"] = { ru = "Ключ (Фан)", en = "Key (Fan)", ua = "Ключ (Фан)" },
+        ["Untitled Tag"] = { ru = "Untitled Tag", en = "Untitled Tag", ua = "Untitled Tag" },
+        ["Прохождение"] = { ru = "Прохождение", en = "Walkthrough", ua = "Проходження" },
+        ["Спавн"] = { ru = "Спавн", en = "Spawn", ua = "Спавн" },
+        ["Рычаг"] = { ru = "Рычаг", en = "Lever", ua = "Важіль" },
+        ["2 комната"] = { ru = "2 комната", en = "Room 2", ua = "Кімната 2" },
+        ["Начальный Туннель (Паркур)"] = { ru = "Начальный Туннель (Паркур)", en = "Initial Tunnel (Parkour)", ua = "Початковий тунель (Паркур)" },
+        ["1 локация"] = { ru = "1 локация", en = "Location 1", ua = "Локація 1" },
+        ["Конец 1 локации"] = { ru = "Конец 1 локации", en = "End of Location 1", ua = "Кінець локації 1" },
+        ["Начальный Туннель (Голем)"] = { ru = "Начальный Туннель (Голем)", en = "Initial Tunnel (Golem)", ua = "Початковий тунель (Голем)" },
+        ["Голем начало"] = { ru = "Голем начало", en = "Golem Start", ua = "Початок голема" },
+        ["Конец голема"] = { ru = "Конец голема", en = "Golem End", ua = "Кінець голема" },
+        ["Паркур Sbeve"] = { ru = "Паркур Sbeve", en = "Sbeve Parkour", ua = "Паркур Sbeve" },
+        ["Лазеры начало"] = { ru = "Лазеры начало", en = "Lasers Start", ua = "Лазери початок" },
+        ["Лазеры конец"] = { ru = "Лазеры конец", en = "Lasers End", ua = "Лазери кінець" },
+        ["1 и 2 воссоединение"] = { ru = "1 и 2 воссоединение", en = "1&2 Reunion", ua = "1 і 2 возз'єднання" },
+        ["Огонь начало"] = { ru = "Огонь начало", en = "Fire Start", ua = "Вогонь початок" },
+        ["Конец огня"] = { ru = "Конец огня", en = "Fire End", ua = "Кінець вогню" },
+        ["Начало поездов"] = { ru = "Начало поездов", en = "Trains Start", ua = "Початок поїздів" },
+        ["Конец поездов"] = { ru = "Конец поездов", en = "Trains End", ua = "Кінець поїздів" },
+        ["Пвп картошка"] = { ru = "Пвп картошка", en = "PVP Potato", ua = "PVP картопля" },
+        ["Сжимание пола и потолка, перчатка"] = { ru = "Сжимание пола и потолка, перчатка", en = "Floor & Ceiling Crush", ua = "Стискання підлоги та стелі" },
+        ["Конец сжимания пола и потолка, перчатка"] = { ru = "Конец сжимания пола и потолка, перчатка", en = "End of Crush", ua = "Кінець стискання" },
+        ["Машина в лабиринте"] = { ru = "Машина в лабиринте", en = "Car in Maze", ua = "Машина в лабіринті" },
+        ["Конец лабиринта"] = { ru = "Конец лабиринта", en = "Maze End", ua = "Кінець лабіринту" },
+        ["Комната начала"] = { ru = "Комната начала", en = "Starting Room", ua = "Кімната початку" },
+        ["Регенерация"] = { ru = "Регенерация", en = "Regeneration", ua = "Регенерація" },
+        ["Доп хп"] = { ru = "Доп хп", en = "Extra HP", ua = "Додаткове HP" },
+        ["Аватар"] = { ru = "Аватар", en = "Avatar", ua = "Аватар" },
+        ["Relude, Hunter"] = { ru = "Relude, Hunter", en = "Relude, Hunter", ua = "Relude, Hunter" },
+        ["Синий портал"] = { ru = "Синий портал", en = "Blue Portal", ua = "Синій портал" },
+        ["Зеленый портал"] = { ru = "Зеленый портал", en = "Green Portal", ua = "Зелений портал" },
+        ["Оранжевый портал"] = { ru = "Оранжевый портал", en = "Orange Portal", ua = "Помаранчевий портал" },
+        ["Конец"] = { ru = "Конец", en = "End", ua = "Кінець" },
+    }
+
+    local lang = {
+        en = {
+            tab_players = "Players", tab_locations = "Locations", tab_places = "Places", tab_help = "Help",
+            tab_favorites = "⭐ Favorites", tab_history = "📜 History", tab_other = "Other",
+            search_placeholder = "Search players...", search_loc_placeholder = "🔍 Search locations...",
+            sort_name = "ByName", sort_dist = "ByDist",
+            plate_location = "Plate (one-time)", save_loc = "+ Save current location",
+            coords_label = "📍 Your coords: ---", coords_input = "Coords:", tp_btn = "TP",
+            invalid_coords = "Invalid coordinates. Example: 220, -16, -15",
+            pos_saved = "Position saved!", cant_save = "Can't save position", no_saved = "No saved position",
+            select_player_first = "Select a player first (click on name)",
+            auto_on = "Auto teleport ON", auto_off = "Auto teleport OFF",
+            settings_title = "Settings", gui_size = "GUI Size:", small = "Small", medium = "Medium", large = "Large",
+            transparency = "Background transparency:", speed = "TP speed:",
+            theme = "Theme:", theme_default = "Default", theme_dark = "Dark", theme_light = "Light",
+            theme_pink = "Pink", theme_green = "Green", theme_blue = "Blue",
+            tp_offset = "TP offset (-100..100):",
+            place_id_label = "📍 Place ID: ",
+            teleport_btn = "TP →",
+            close = "Close",
+            clear_history = "Clear History",
+            history_empty = "No history yet",
+            favorites_empty = "No favorites yet",
+            anti_afk = "🛡️ Anti-AFK",
+            fps_ping = "📊 FPS / Ping",
+            fullbright = "☀️ Fullbright",
+            coords_display = "📍 Coordinates",
+            timer = "⏱️ Timer/Stopwatch",
+            help_title = "How to use Escanor HUB",
+            help_text = [[
+• TAB "Players" – click on any player name to teleport to him.
+  Use search field and sorting (ByName/ByDist).
+  Button "A" (green checkmark) – enables auto-teleport mode.
+  Button "R" refreshes the list.
+
+• TAB "Locations" – list of saved locations. Click to teleport.
+  Search box filters locations by name.
+  Click the star (⭐) to add/remove from Favorites.
+  "Plate" – teleports to the moving platform (one-time).
+  "+ Save current location" – saves your current position.
+
+• TAB "Favorites" – your favorite locations.
+
+• TAB "History" – recent teleports (click to repeat).
+
+• TAB "Other" – utilities: Anti-AFK, FPS/Ping, Fullbright, Coordinates, Timer.
+
+• TAB "Places" – quick teleport to other games by Place ID.
+
+• TOP BUTTONS:
+  P – hide GUI (floating button appears). K – bring GUI back.
+  R – refresh player list.
+  A – toggle auto-teleport (green when active).
+  S – open settings.
+  M – save current position.
+  L – load saved position.
+  – (minimize) – collapse GUI to top bar.
+
+• HOTKEYS:
+  K – toggle GUI / floating button.
+  M – save position.
+  L – toggle auto-teleport.
+  P – permanently delete GUI and reset settings (launcher will appear on restart).
+
+Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 100).
+            ]],
+        },
+        ru = {
+            tab_players = "Игроки", tab_locations = "Локации", tab_places = "Плейсы", tab_help = "Помощь",
+            tab_favorites = "⭐ Избранное", tab_history = "📜 История", tab_other = "Другое",
+            search_placeholder = "Поиск игроков...", search_loc_placeholder = "🔍 Поиск локаций...",
+            sort_name = "По имени", sort_dist = "По дистанции",
+            plate_location = "Тарелка (разово)", save_loc = "+ Сохранить текущее место",
+            coords_label = "📍 Твои координаты: ---", coords_input = "Коорд:", tp_btn = "ТП",
+            invalid_coords = "Некорректные координаты. Пример: 220, -16, -15",
+            pos_saved = "Позиция сохранена!", cant_save = "Не удалось сохранить", no_saved = "Нет сохранённой позиции",
+            select_player_first = "Сначала выберите игрока (нажмите на кнопку с ником)",
+            auto_on = "Авто-телепорт включён", auto_off = "Авто-телепорт выключён",
+            settings_title = "Настройки", gui_size = "Размер GUI:", small = "Маленький", medium = "Средний", large = "Большой",
+            transparency = "Прозрачность фона:", speed = "Скорость ТП:",
+            theme = "Тема:", theme_default = "Стандарт", theme_dark = "Тёмная", theme_light = "Светлая",
+            theme_pink = "Розовая", theme_green = "Зелёная", theme_blue = "Синяя",
+            tp_offset = "ТП отступ (-100..100):",
+            place_id_label = "📍 Place ID: ",
+            teleport_btn = "ТП →",
+            close = "Закрыть",
+            clear_history = "Очистить историю",
+            history_empty = "История пуста",
+            favorites_empty = "Избранное пусто",
+            anti_afk = "🛡️ Анти-АФК",
+            fps_ping = "📊 FPS / Пинг",
+            fullbright = "☀️ Fullbright",
+            coords_display = "📍 Координаты",
+            timer = "⏱️ Таймер/Секундомер",
+            help_title = "Как пользоваться Escanor HUB",
+            help_text = [[
+• ВКЛАДКА "Игроки" – кликните по имени игрока для телепортации.
+  Используйте поиск и сортировку (По имени/По дистанции).
+  Кнопка "A" (зелёная галочка) – включает режим авто-телепорта.
+  Кнопка "R" обновляет список.
+
+• ВКЛАДКА "Локации" – список сохранённых мест. Кликните для телепортации.
+  Поисковая строка фильтрует локации по названию.
+  Нажмите на звёздочку (⭐), чтобы добавить/удалить из Избранного.
+  "Тарелка" – разовая телепортация на платформу.
+  "+ Сохранить текущее место" – сохраняет вашу текущую позицию.
+
+• ВКЛАДКА "Избранное" – ваши избранные локации.
+
+• ВКЛАДКА "История" – последние телепорты (нажмите для повтора).
+
+• ВКЛАДКА "Другое" – утилиты: Анти-АФК, FPS/Пинг, Fullbright, Координаты, Таймер.
+
+• ВКЛАДКА "Плейсы" – быстрая телепортация в другие игры по ID.
+
+• ВЕРХНИЕ КНОПКИ:
+  P – скрыть GUI (появляется плавающая иконка). K – вернуть GUI.
+  R – обновить список игроков.
+  A – авто-телепорт.
+  S – настройки.
+  M – сохранить позицию.
+  L – загрузить сохранённую позицию.
+  – (свернуть) – свернуть GUI до верхней панели.
+
+• ГОРЯЧИЕ КЛАВИШИ:
+  K – переключить GUI / плавающую кнопку.
+  M – сохранить позицию.
+  L – авто-телепорт.
+  P – безвозвратно удалить GUI и сбросить настройки (при следующем запуске появится лаунчер).
+
+В настройках можно изменить размер GUI, прозрачность, скорость, тему и дистанцию до игрока (-100..100).
+            ]],
+        },
+        ua = {
+            tab_players = "Гравці", tab_locations = "Локації", tab_places = "Плейси", tab_help = "Допомога",
+            tab_favorites = "⭐ Обране", tab_history = "📜 Історія", tab_other = "Інше",
+            search_placeholder = "Пошук гравців...", search_loc_placeholder = "🔍 Пошук локацій...",
+            sort_name = "За ім'ям", sort_dist = "За відстанню",
+            plate_location = "Тарілка (разово)", save_loc = "+ Зберегти поточне місце",
+            coords_label = "📍 Твої координати: ---", coords_input = "Коорд:", tp_btn = "ТП",
+            invalid_coords = "Некоректні координати. Приклад: 220, -16, -15",
+            pos_saved = "Позицію збережено!", cant_save = "Не вдалося зберегти", no_saved = "Немає збереженої позиції",
+            select_player_first = "Спершу виберіть гравця (натисніть на кнопку з ніком)",
+            auto_on = "Авто-телепорт увімкнено", auto_off = "Авто-телепорт вимкнено",
+            settings_title = "Налаштування", gui_size = "Розмір GUI:", small = "Маленький", medium = "Середній", large = "Великий",
+            transparency = "Прозорість фону:", speed = "Швидкість ТП:",
+            theme = "Тема:", theme_default = "Стандарт", theme_dark = "Темна", theme_light = "Світла",
+            theme_pink = "Рожева", theme_green = "Зелена", theme_blue = "Синя",
+            tp_offset = "ТП відступ (-100..100):",
+            place_id_label = "📍 Place ID: ",
+            teleport_btn = "ТП →",
+            close = "Закрити",
+            clear_history = "Очистити історію",
+            history_empty = "Історія порожня",
+            favorites_empty = "Обране порожнє",
+            anti_afk = "🛡️ Анти-АФК",
+            fps_ping = "📊 FPS / Пінг",
+            fullbright = "☀️ Fullbright",
+            coords_display = "📍 Координати",
+            timer = "⏱️ Таймер/Секундомір",
+            help_title = "Як користуватися Escanor HUB",
+            help_text = [[
+• ВКЛАДКА "Гравці" – натисніть на ім'я гравця для телепортації.
+  Використовуйте пошук і сортування (За ім'ям/За відстанню).
+  Кнопка "A" (зелена галочка) – вмикає режим авто-телепорту.
+  Кнопка "R" оновлює список.
+
+• ВКЛАДКА "Локації" – список збережених місць. Натисніть для телепортації.
+  Пошуковий рядок фільтрує локації за назвою.
+  Натисніть на зірочку (⭐), щоб додати/видалити з Обраного.
+  "Тарілка" – разова телепортація на платформу.
+  "+ Зберегти поточне місце" – зберігає вашу поточну позицію.
+
+• ВКЛАДКА "Обране" – ваші обрані локації.
+
+• ВКЛАДКА "Історія" – останні телепорти (натисніть для повтору).
+
+• ВКЛАДКА "Інше" – утиліти: Анти-АФК, FPS/Пінг, Fullbright, Координати, Таймер.
+
+• ВКЛАДКА "Плейси" – швидка телепортація в інші ігри за ID.
+
+• ВЕРХНІ КНОПКИ:
+  P – приховати GUI (з'являється плавуча іконка). K – повернути GUI.
+  R – оновити список гравців.
+  A – авто-телепорт.
+  S – налаштування.
+  M – зберегти позицію.
+  L – завантажити збережену позицію.
+  – (згорнути) – згорнути GUI до верхньої панелі.
+
+• ГАРЯЧІ КЛАВІШІ:
+  K – перемкнути GUI / плавучу кнопку.
+  M – зберегти позицію.
+  L – авто-телепорт.
+  P – безповоротно видалити GUI та скинути налаштування (при наступному запуску з'явиться лаунчер).
+
+У налаштуваннях можна змінити розмір GUI, прозорість, швидкість, тему та дистанцію до гравця (-100..100).
+            ]],
+        }
+    }
+
+    local function getText(key)
+        return lang[currentLang] and lang[currentLang][key] or lang["en"][key] or key
+    end
+
+    local function getLocalizedLocationName(originalName)
+        local entry = locationTranslations[originalName]
+        if entry then return entry[currentLang] or originalName end
+        return originalName
+    end
+
+    -- ===== УТИЛИТЫ =====
+    local function startAntiAFK()
+        if antiAFKConnection then return end
+        local success, result = pcall(function()
+            return loadstring(game:HttpGet("https://pastebin.com/raw/mgEReA6Q"))()
+        end)
+        if success and type(result) == "function" then
+            antiAFKConnection = result
+        else
+            antiAFKConnection = true
+        end
+        _G.AntiAFKEnabled = true
+    end
+
+    local function stopAntiAFK()
+        if type(antiAFKConnection) == "function" then
+            pcall(antiAFKConnection)
+        end
+        antiAFKConnection = nil
+        _G.AntiAFKEnabled = false
+    end
+
+    -- FPS Widget
+    local function createFPSWidget()
+        if fpsData.gui then return end
+        local gui = Instance.new("ScreenGui")
+        gui.Name = "FPSWidget"
+        gui.ResetOnSpawn = false
+        pcall(function() gui.Parent = game:GetService("CoreGui") end)
+        if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
+        if not gui.Parent then return end
+
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.new(0, 160, 0, 24)
+        frame.Position = _G.FPSPosition
+        frame.BackgroundColor3 = Color3.fromRGB(25, 28, 40)
+        frame.BackgroundTransparency = 0.25
+        frame.BorderSizePixel = 0
+        local corner = Instance.new("UICorner", frame)
+        corner.CornerRadius = UDim.new(0, 6)
+        frame.Parent = gui
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Text = "FPS: -- | Ping: --"
+        label.TextColor3 = Color3.new(1, 1, 1)
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 13
+        label.Parent = frame
+
+        fpsData.gui = gui
+        fpsData.label = label
+
+        local dragging = false
+        local dragStart, startPos
+        frame.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = frame.Position
+            end
+        end)
+        frame.InputEnded:Connect(function() dragging = false end)
+        UserInput.InputChanged:Connect(function(input)
+            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local delta = input.Position - dragStart
+                frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                _G.FPSPosition = frame.Position
+            end
+        end)
+    end
+
+    local function updateFPSWidget(dt)
+        if not fpsData.label then return end
+        fpsData.fpsCount = fpsData.fpsCount + 1
+        fpsData.fpsTime = fpsData.fpsTime + dt
+        if fpsData.fpsTime >= 0.5 then
+            local avgFPS = fpsData.fpsCount / fpsData.fpsTime
+            local pingStr = Stats.Network.ServerStatsItem["Data Ping"]:GetValueString()
+            local pingNum = pingStr:match("^(%d+)") or "?"
+            fpsData.label.Text = string.format("FPS: %d | Ping: %s", math.floor(avgFPS), pingNum)
+            fpsData.fpsCount = 0
+            fpsData.fpsTime = 0
+        end
+    end
+
+    local function startFPS()
+        if fpsConnection then return end
+        createFPSWidget()
+        fpsConnection = RunService.Heartbeat:Connect(updateFPSWidget)
+        _G.ShowFPS = true
+    end
+
+    local function stopFPS()
+        if fpsConnection then
+            fpsConnection:Disconnect()
+            fpsConnection = nil
+        end
+        if fpsData.gui then
+            fpsData.gui:Destroy()
+            fpsData.gui = nil
+            fpsData.label = nil
+        end
+        _G.ShowFPS = false
+    end
+
+    -- ===== ВНЕШНИЕ МОДУЛИ =====
+    local function startFullbright()
+        if fullbrightEnabled then return end
+        fullbrightBackup = {
+            ClockTime = Lighting.ClockTime,
+            Brightness = Lighting.Brightness,
+            GlobalShadows = Lighting.GlobalShadows,
+            FogEnd = Lighting.FogEnd,
+            FogColor = Lighting.FogColor,
+            Ambient = Lighting.Ambient,
+            OutdoorAmbient = Lighting.OutdoorAmbient,
+            ShadowSoftness = Lighting.ShadowSoftness
+        }
+        local success, err = pcall(function()
+            loadstring(game:HttpGet("https://pastebin.com/raw/rCTuDHKi"))()
+        end)
+        if not success then
+            LP:Chat("❌ Ошибка загрузки Fullbright: " .. tostring(err))
+            return
+        end
+        fullbrightEnabled = true
+        _G.FullbrightEnabled = true
+    end
+
+    local function stopFullbright()
+        if not fullbrightEnabled then return end
+        if fullbrightBackup.ClockTime then
+            Lighting.ClockTime = fullbrightBackup.ClockTime
+            Lighting.Brightness = fullbrightBackup.Brightness
+            Lighting.GlobalShadows = fullbrightBackup.GlobalShadows
+            Lighting.FogEnd = fullbrightBackup.FogEnd
+            Lighting.FogColor = fullbrightBackup.FogColor
+            Lighting.Ambient = fullbrightBackup.Ambient
+            Lighting.OutdoorAmbient = fullbrightBackup.OutdoorAmbient
+            Lighting.ShadowSoftness = fullbrightBackup.ShadowSoftness
+        end
+        local gui = LP.PlayerGui:FindFirstChild("Fullbright")
+        if not gui then
+            pcall(function() gui = game:GetService("CoreGui"):FindFirstChild("Fullbright") end)
+        end
+        if gui then gui:Destroy() end
+        fullbrightEnabled = false
+        _G.FullbrightEnabled = false
+    end
+
+    local function startCoordsDisplay()
+        if coordsDisplayEnabled then return end
+        local success, err = pcall(function()
+            loadstring(game:HttpGet("https://pastebin.com/raw/SWf2qLAf"))()
+        end)
+        if not success then
+            LP:Chat("❌ Ошибка загрузки координат: " .. tostring(err))
+            return
+        end
+        coordsDisplayEnabled = true
+        _G.CoordsDisplayEnabled = true
+    end
+
+    local function stopCoordsDisplay()
+        if not coordsDisplayEnabled then return end
+        local gui = LP.PlayerGui:FindFirstChild("CoordsDisplay")
+        if not gui then
+            pcall(function() gui = game:GetService("CoreGui"):FindFirstChild("CoordsDisplay") end)
+        end
+        if gui then gui:Destroy() end
+        coordsDisplayEnabled = false
+        _G.CoordsDisplayEnabled = false
+    end
+
+    local function startTimer()
+        if timerEnabled then return end
+        local success, err = pcall(function()
+            loadstring(game:HttpGet("https://pastebin.com/raw/cRxzSZwL"))()
+        end)
+        if not success then
+            LP:Chat("❌ Ошибка загрузки таймера: " .. tostring(err))
+            return
+        end
+        timerEnabled = true
+        _G.TimerEnabled = true
+    end
+
+    local function stopTimer()
+        if not timerEnabled then return end
+        local gui = LP.PlayerGui:FindFirstChild("TimerGUI")
+        if not gui then
+            pcall(function() gui = game:GetService("CoreGui"):FindFirstChild("TimerGUI") end)
+        end
+        if gui then gui:Destroy() end
+        timerEnabled = false
+        _G.TimerEnabled = false
+    end
+
+    -- ===== ИСТОРИЯ =====
+    local function addHistoryEntry(name, cframe)
+        local entry = {name = name, cframe = cframe, time = os.time()}
+        table.insert(history, 1, entry)
+        if #history > 20 then table.remove(history) end
+        _G.TeleportHistory = history
+    end
+
+    -- ===== ЛОКАЦИИ =====
+    local function getLocationsForPlace(placeId)
+        if placeId == 6403373529 then
+            return {
+                {name="Debug room", cframe=CFrame.new(-17922,59,3561), isDefault=true},
+                {name="Main island", cframe=CFrame.new(5,-6,2), isDefault=true},
+                {name="Left island", cframe=CFrame.new(1,-6,164), isDefault=true},
+                {name="Right island", cframe=CFrame.new(-3,-6,-165), isDefault=true},
+                {name="Moai", cframe=CFrame.new(220,-16,-15), isDefault=true},
+                {name="Castle", cframe=CFrame.new(273,33,205), isDefault=true},
+                {name="Kill cube", cframe=CFrame.new(-242,-6,3), isDefault=true},
+                {name="Slapple island", cframe=CFrame.new(-378,51,-16), isDefault=true},
+                {name="Lobby", cframe=CFrame.new(-1197,327,-2), isDefault=true},
+                {name="Basement", cframe=CFrame.new(17895,-130,-3545), isDefault=true},
+                {name="Blue portal", cframe=CFrame.new(116,360,-3), isDefault=true},
+                {name="Cloud", cframe=CFrame.new(-124.3,-4.6,121.2), isDefault=true},
+                {name="Brazil", cframe=CFrame.new(-1124,310,0), isDefault=true},
+                {name="Plate", cframe=CFrame.new(0,0,0), isDefault=true}
+            }
+        elseif placeId == 7234087065 then
+            return {
+                {name="Spawn", cframe=CFrame.new(-1.4, 8.8, -8.5), isDefault=true},
+                {name="Clown (Fan)", cframe=CFrame.new(200, 3, 221), isDefault=true},
+                {name="Angry Brazil", cframe=CFrame.new(-65, 3, -164), isDefault=true},
+                {name="OOG", cframe=CFrame.new(-233, 3, 210), isDefault=true},
+                {name="RiftShot", cframe=CFrame.new(-261, 13, 460), isDefault=true},
+                {name="Библиотека", cframe=CFrame.new(318, 52, -43), isDefault=true},
+                {name="ФастФуд/Море", cframe=CFrame.new(303, 63, 200), isDefault=true},
+                {name="Часы на водопаде", cframe=CFrame.new(156, 231, 455), isDefault=true},
+                {name="Водопад - Наверху", cframe=CFrame.new(83, 287, 564), isDefault=true},
+                {name="Пикник", cframe=CFrame.new(35, 133, 423), isDefault=true},
+                {name="Кирки/Топоры", cframe=CFrame.new(42, 52, 330), isDefault=true},
+                {name="Карусель", cframe=CFrame.new(80, 3, 202), isDefault=true},
+                {name="Metaverse", cframe=CFrame.new(250, 94, -442), isDefault=true},
+                {name="Clock", cframe=CFrame.new(250, 150, -458.6), isDefault=true},
+                {name="Машина", cframe=CFrame.new(93.4, 60, -97.5), isDefault=true},
+                {name="Мортис", cframe=CFrame.new(251, -60, -361), isDefault=true},
+                {name="Ключ (Fan)", cframe=CFrame.new(247, -265, -366), isDefault=true},
+                {name="Untitled Tag", cframe=CFrame.new(-243, 300, -493), isDefault=true}
+            }
+        elseif placeId == 115782629143468 then
+            return {
+                {name="Прохождение", cframe=CFrame.new(0, 200, -2), isDefault=true}
+            }
+        elseif placeId == 127174121130060 then
+            return getLocationsForPlace(6403373529)
+        elseif placeId == 18550498098 then
+            return {
+                {name="Спавн", cframe=CFrame.new(570, 11, 112), isDefault=true},
+                {name="Рычаг", cframe=CFrame.new(613, 11, 146), isDefault=true},
+                {name="2 комната", cframe=CFrame.new(557, 6, 353), isDefault=true},
+                {name="Начальный Туннель (Паркур)", cframe=CFrame.new(602, 6, 360), isDefault=true},
+                {name="1 локация", cframe=CFrame.new(723, 28, 403), isDefault=true},
+                {name="Конец 1 локации", cframe=CFrame.new(831, 5, 404), isDefault=true},
+                {name="Начальный Туннель (Голем)", cframe=CFrame.new(535, 6, 364), isDefault=true},
+                {name="Голем начало", cframe=CFrame.new(487, 24, 510), isDefault=true},
+                {name="Конец голема", cframe=CFrame.new(486, 55, 641), isDefault=true},
+                {name="Паркур Sbeve", cframe=CFrame.new(690, -1, 720), isDefault=true},
+                {name="Лазеры начало", cframe=CFrame.new(1071, -30, 571), isDefault=true},
+                {name="Лазеры конец", cframe=CFrame.new(1218, -30, 572), isDefault=true},
+                {name="1 и 2 воссоединение", cframe=CFrame.new(1435, -63, 645), isDefault=true},
+                {name="Огонь начало", cframe=CFrame.new(1052, -36, 715), isDefault=true},
+                {name="Конец огня", cframe=CFrame.new(1200, -36, 715), isDefault=true},
+                {name="Начало поездов", cframe=CFrame.new(925, -4, 850), isDefault=true},
+                {name="Конец поездов", cframe=CFrame.new(1192, -4, 860), isDefault=true},
+                {name="Пвп картошка", cframe=CFrame.new(1917, -31, 893), isDefault=true},
+                {name="Сжимание пола и потолка, перчатка", cframe=CFrame.new(1821, -31, 400), isDefault=true},
+                {name="Конец сжимания пола и потолка, перчатка", cframe=CFrame.new(2066, -31, 397), isDefault=true},
+                {name="Машина в лабиринте", cframe=CFrame.new(2126, -31, 954), isDefault=true},
+                {name="Конец лабиринта", cframe=CFrame.new(2750, -31, 823), isDefault=true},
+                {name="Комната начала", cframe=CFrame.new(3231, -75, 822), isDefault=true},
+                {name="Регенерация", cframe=CFrame.new(3286, -75, 822), isDefault=true},
+                {name="Доп хп", cframe=CFrame.new(3271, -227, 822), isDefault=true},
+                {name="Аватар", cframe=CFrame.new(3270, -75, 821), isDefault=true},
+                {name="Relude, Hunter", waypoints = {
+                    CFrame.new(3286, -75, 822),
+                    CFrame.new(3271, -227, 822),
+                    CFrame.new(3270, -75, 821),
+                }, isDefault=true}
+            }
+        elseif placeId == 77283826005207 then
+            return {
+                {name="Синий портал", cframe=CFrame.new(847, 82, 381), isDefault=true},
+                {name="Зеленый портал", cframe=CFrame.new(-384, 82, 386), isDefault=true},
+                {name="Оранжевый портал", cframe=CFrame.new(142, 82, 923), isDefault=true},
+                {name="Конец", cframe=CFrame.new(142, 84, 287), isDefault=true}
+            }
+        else
+            return {}
+        end
+    end
+
+    local function startSequentialTeleport(waypoints)
+        task.spawn(function()
+            for i, cf in ipairs(waypoints) do
+                local myChar = LP.Character
+                local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if myHrp then myHrp.CFrame = cf end
+                task.wait(1)
+            end
+        end)
+    end
+
+    -- ========== ТЕЛЕПОРТАЦИЯ ==========
+    local function SmartTP(targetCF)
+        local char = LP.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not (char and hrp) then return end
+        local distance = (targetCF.Position - hrp.Position).Magnitude
+        if distance < 5 then return end
+        if loadingFrame then loadingFrame.Visible = true end
+        local duration = distance / teleportSpeed
+        local tween = TweenService:Create(hrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = targetCF})
+        tween:Play()
+        tween.Completed:Wait()
+        for i = 1, math.random(2,4) do
+            hrp.CFrame = hrp.CFrame + Vector3.new(math.random(-50,50)/100, math.random(-20,20)/100, math.random(-50,50)/100)
+            task.wait(0.01)
+        end
+        hrp.CFrame = targetCF
+        if loadingFrame then loadingFrame.Visible = false end
+        addHistoryEntry("Coordinates", targetCF)
+    end
+
+    local function teleportToPlate()
+        -- Оптимизированный поиск тарелки — ищем по имени сначала (быстро)
+        local plate = nil
+        -- Быстрый поиск по имени
+        for _, v in pairs(workspace:GetChildren()) do
+            if v:IsA("BasePart") and (v.Name == "MovingPlate" or v.Name:lower():find("plate")) then
+                plate = v
+                break
+            end
+            if v:IsA("Model") then
+                local found = v:FindFirstChild("MovingPlate")
+                if found and found:IsA("BasePart") then plate = found break end
+                for _, child in pairs(v:GetChildren()) do
+                    if child:IsA("BasePart") and child.Name:lower():find("plate") then
+                        plate = child break
+                    end
+                end
+                if plate then break end
+            end
+        end
+        -- Если не нашли — расширенный поиск в координатной области
+        if not plate then
+            local minX, maxX = -293, 291
+            local minY, maxY = -10, 10
+            local minZ, maxZ = -293, 288
+            for _, v in pairs(workspace:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    local p = v.Position
+                    if p.X > minX and p.X < maxX and p.Y > minY and p.Y < maxY and p.Z > minZ and p.Z < maxZ then
+                        if v.Name:lower():find("plate") or v.Name:lower():find("move") then
+                            plate = v break
+                        end
+                    end
+                end
+            end
+        end
+        if plate then
+            -- ТП в точный центр тарелки (используем CFrame центра + небольшой сдвиг вверх)
+            local centerCF = plate.CFrame * CFrame.new(0, plate.Size.Y/2 + 3, 0)
+            local char = LP.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then hrp.CFrame = centerCF end
+        else
+            showNotification("🛸 " .. getText("plate_location") .. " not found", 2)
+        end
+    end
+
+    local function parseNumber(str)
+        return tonumber(string.gsub(str, ",", "."))
+    end
+
+    local function addCurrentLocation()
+        local char = LP.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        local pos = hrp.Position
+        local name = string.format("Saved #%d [%d, %d, %d]", #locations + 1, math.floor(pos.X), math.floor(pos.Y), math.floor(pos.Z))
+        table.insert(locations, {name = name, cframe = hrp.CFrame, isDefault = false})
+        -- Мгновенно обновить список локаций — кнопка Save сдвинется вниз
+        refreshLocationsList()
+        -- Прокрутить к новой локации
+        if locationListFrame and locationListFrame.Parent and locationListFrame.Parent:IsA("ScrollingFrame") then
+            local scroll = locationListFrame.Parent
+            local btnH = isMobile and 30 or 36
+            local targetY = (#locations - 1) * (btnH + 6)
+            TweenService:Create(scroll, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {CanvasPosition = Vector2.new(0, math.max(0, targetY - 50))}):Play()
+        end
+    end
+
+    local function teleportToCoordinates(inputText)
+        if not inputText or inputText == "" then return end
+        local x,y,z = nil,nil,nil
+        for num in string.gmatch(inputText, "[-]?%d+[.]?%d*") do
+            if x == nil then x = parseNumber(num)
+            elseif y == nil then y = parseNumber(num)
+            elseif z == nil then z = parseNumber(num)
+            else break end
+        end
+        if x and y and z then
+            SmartTP(CFrame.new(x,y,z) * CFrame.new(0,0,2))
+        else
+            LP:Chat(getText("invalid_coords"))
+        end
+    end
+
+    local function updateCoordsLabel()
+        if not coordsLabel then return end
+        local char = LP.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local pos = hrp.Position
+            coordsLabel.Text = string.format("📍 X: %.1f, Y: %.1f, Z: %.1f", pos.X, pos.Y, pos.Z)
+        else
+            coordsLabel.Text = "📍 Ожидание персонажа..."
+        end
+    end
+
+    local function getDistanceToPlayer(p)
+        local char = LP.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return 1e9 end
+        local tChar = p.Character
+        local tHrp = tChar and tChar:FindFirstChild("HumanoidRootPart")
+        if not tHrp then return 1e9 end
+        return (hrp.Position - tHrp.Position).Magnitude
+    end
+
+    -- Таблица для хранения связей кнопка -> игрок (для обновления дистанции)
+    local btnPlayerMap = {}
+
+    local function refreshButtons()
+        if not bc then return end
+        for _, v in ipairs(btns) do v:Destroy() end
+        btns = {}
+        btnPlayerMap = {}
+        local playersList = {}
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LP and (searchFilter == "" or string.find(string.lower(p.Name), string.lower(searchFilter))) then
+                table.insert(playersList, p)
+            end
+        end
+        -- Всегда сортируем по дистанции (ByDist + ByName совмещены)
+        table.sort(playersList, function(a,b) return getDistanceToPlayer(a) < getDistanceToPlayer(b) end)
+        for _, p in ipairs(playersList) do
+            local dist = getDistanceToPlayer(p)
+            local distText = (dist < 1000) and string.format(" (%.0fm)", dist) or string.format(" (%.1fkm)", dist/1000)
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, -10, 0, isMobile and 24 or 36)
+            btn.Position = UDim2.new(0, 5, 0, 0)
+            btn.Text = p.Name .. distText
+            btn.TextColor3 = Color3.new(1,1,1)
+            btn.TextSize = isMobile and 10 or 14
+            btn.Font = Enum.Font.GothamSemibold
+            btn.BackgroundColor3 = Color3.new(1,0,0)
+            btn.BackgroundTransparency = 0.2
+            btn.BorderSizePixel = 0
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0,6)
+            corner.Parent = btn
+            btn.Parent = bc
+            btnPlayerMap[btn] = p
+            btn.MouseButton1Click:Connect(function()
+                if autoTeleportActive then
+                    if autoTargetPlayer == p then stopAutoTeleport() else startAutoTeleport(p) end
+                else
+                    local tChar = p.Character
+                    if tChar and tChar:FindFirstChild("HumanoidRootPart") then
+                        local targetCF = tChar.HumanoidRootPart.CFrame * CFrame.new(0,0,playerTPOffset)
+                        SmartTP(targetCF)
+                        addHistoryEntry(p.Name, tChar.HumanoidRootPart.CFrame)
+                    end
+                    autoTargetPlayer = p
+                end
+            end)
+            table.insert(btns, btn)
+        end
+        local th = #btns * ((isMobile and 24 or 36) + (lay and lay.Padding.Offset or 6)) + 50
+        if lf then lf.CanvasSize = UDim2.new(0,0,0,th) end
+    end
+
+    -- Обновление дистанции на кнопках игроков в реальном времени (без пересоздания)
+    local function updatePlayerDistances()
+        for btn, p in pairs(btnPlayerMap) do
+            if btn and btn.Parent and p and p.Parent then
+                local dist = getDistanceToPlayer(p)
+                local distText = (dist < 1000) and string.format(" (%.0fm)", dist) or string.format(" (%.1fkm)", dist/1000)
+                btn.Text = p.Name .. distText
+            end
+        end
+    end
+
+    -- Переменная для instant-teleport на локации
+    local autoLocationCFrame = nil
+    local autoLocationName = nil
+
+    local function stopAutoTeleport()
+        if autoLoopConnection then autoLoopConnection:Disconnect() end
+        autoLoopConnection = nil
+        autoTeleportActive = false
+        autoTargetPlayer = nil
+        autoLocationCFrame = nil
+        autoLocationName = nil
+        if instantBtn then
+            instantBtn.BackgroundColor3 = Color3.new(0.3,0.3,0.3)
+            instantBtn.Text = "🎯"
+        end
+        showNotification(getText("auto_off"), 1.5)
+    end
+
+    local function startAutoTeleport(targetPlayer)
+        if not targetPlayer then return end
+        autoTargetPlayer = targetPlayer
+        autoLocationCFrame = nil
+        autoLocationName = nil
+        autoTeleportActive = true
+        if autoLoopConnection then autoLoopConnection:Disconnect() end
+        autoLoopConnection = RunService.Heartbeat:Connect(function()
+            if autoTeleportActive and autoTargetPlayer and autoTargetPlayer.Character and autoTargetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                local targetCF = autoTargetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,playerTPOffset)
+                local myChar = LP.Character
+                local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if myHrp then myHrp.CFrame = targetCF end
+            end
+        end)
+        if instantBtn then
+            instantBtn.BackgroundColor3 = Color3.new(0,0.7,0)
+            instantBtn.Text = "✅"
+        end
+        showNotification("🎯 " .. getText("auto_on") .. ": " .. targetPlayer.Name, 2)
+    end
+
+    -- Instant-teleport на локацию (бесконечный ТП к точке)
+    local function startAutoTeleportLocation(cframe, name)
+        autoTargetPlayer = nil
+        autoLocationCFrame = cframe
+        autoLocationName = name or "Location"
+        autoTeleportActive = true
+        if autoLoopConnection then autoLoopConnection:Disconnect() end
+        autoLoopConnection = RunService.Heartbeat:Connect(function()
+            if autoTeleportActive and autoLocationCFrame then
+                local myChar = LP.Character
+                local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if myHrp then myHrp.CFrame = autoLocationCFrame end
+            end
+        end)
+        if instantBtn then
+            instantBtn.BackgroundColor3 = Color3.new(0,0.7,0)
+            instantBtn.Text = "✅"
+        end
+        showNotification("📍 " .. getText("auto_on") .. ": " .. autoLocationName, 2)
+    end
+
+    -- ========== ПРИМЕНЕНИЕ ТЕМЫ ==========
+    local function applyTheme(themeName)
+        local t = themes[themeName] or themes["dark"]
+        currentTheme = themeName
+        if mainFrame then
+            mainFrame.BackgroundColor3 = t.mainBg
+        end
+        -- Обновить переливание рамки под новую тему
+        if themeElements.mainStroke then
+            themeElements.mainStroke.Color = getShimmerColor(t, 0)
+        end
+        if themeElements.topStroke then
+            themeElements.topStroke.Color = getShimmerColorOffset(t, 0, 1.0)
+        end
+        if themeElements.mainGradient then
+            themeElements.mainGradient.Color = ColorSequence.new{
+                ColorSequenceKeypoint.new(0, t.mainGradStart),
+                ColorSequenceKeypoint.new(1, t.mainGradEnd)
+            }
+        end
+        if themeElements.topBar then themeElements.topBar.BackgroundColor3 = t.topBg end
+        if themeElements.topGradient then
+            themeElements.topGradient.Color = ColorSequence.new{
+                ColorSequenceKeypoint.new(0, t.topGradStart),
+                ColorSequenceKeypoint.new(1, t.topGradEnd)
+            }
+        end
+        for _, element in ipairs(themeElements.textElements or {}) do
+            if element and element.Parent then
+                element.TextColor3 = t.textColor
+            end
+        end
+        if themeElements.tabPlayers then themeElements.tabPlayers.BackgroundColor3 = (currentTab=="players") and t.tabActive or t.tabInactive end
+        if themeElements.tabLocations then themeElements.tabLocations.BackgroundColor3 = (currentTab=="locations") and t.tabActive or t.tabInactive end
+        if themeElements.tabPlaces then themeElements.tabPlaces.BackgroundColor3 = (currentTab=="places") and t.tabActive or t.tabInactive end
+        if themeElements.tabHelp then themeElements.tabHelp.BackgroundColor3 = (currentTab=="help") and t.tabActive or t.tabInactive end
+        if themeElements.tabFavorites then themeElements.tabFavorites.BackgroundColor3 = (currentTab=="favorites") and t.tabActive or t.tabInactive end
+        if themeElements.tabHistory then themeElements.tabHistory.BackgroundColor3 = (currentTab=="history") and t.tabActive or t.tabInactive end
+        if themeElements.tabOther then themeElements.tabOther.BackgroundColor3 = (currentTab=="other") and t.tabActive or t.tabInactive end
+        if themeElements.searchBox then themeElements.searchBox.TextColor3 = t.textColor end
+        if themeElements.locSearchBox then themeElements.locSearchBox.TextColor3 = t.textColor end
+        if themeElements.sortBtn then themeElements.sortBtn.TextColor3 = t.textColor end
+        if themeElements.helpTitle then themeElements.helpTitle.TextColor3 = t.textColor end
+        if themeElements.helpText then themeElements.helpText.TextColor3 = t.textColor end
+    end
+
+    -- ===== ПЛАВАЮЩАЯ ИКОНКА =====
+    local function createFloatingIcon()
+        if floatingGui then return end
+        floatingGui = Instance.new("ScreenGui")
+        floatingGui.Name = "FloatingIcon"
+        floatingGui.ResetOnSpawn = false
+        floatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        pcall(function() floatingGui.Parent = game:GetService("CoreGui") end)
+        if not floatingGui.Parent then
+            floatingGui.Parent = LP:WaitForChild("PlayerGui")
+        end
+
+        local btnSize = isMobile and 40 or 48
+        floatingButton = Instance.new("TextButton")
+        floatingButton.Size = UDim2.new(0, btnSize, 0, btnSize)
+        floatingButton.Position = UDim2.new(0.05, 0, 0.5, -btnSize/2)
+        floatingButton.BackgroundColor3 = Color3.fromRGB(12, 12, 15)
+        floatingButton.Text = "🚀"
+        floatingButton.TextColor3 = Color3.new(1, 1, 1)
+        floatingButton.TextSize = isMobile and 22 or 28
+        floatingButton.Font = Enum.Font.GothamBold
+        floatingButton.Draggable = true
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(1, 0)
+        corner.Parent = floatingButton
+
+        local stroke = Instance.new("UIStroke")
+        stroke.Thickness = 2
+        stroke.Color = Color3.fromRGB(0, 255, 255)
+        stroke.Parent = floatingButton
+
+        floatingButton.Parent = floatingGui
+
+        -- Анимация появления плавающей кнопки
+        floatingButton.Size = UDim2.new(0, 0, 0, 0)
+        floatingButton.BackgroundTransparency = 1
+        TweenService:Create(floatingButton, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, btnSize, 0, btnSize),
+            BackgroundTransparency = 0
+        }):Play()
+
+        floatingButton.MouseButton1Click:Connect(function()
+            -- Анимация пульса при нажатии
+            TweenService:Create(floatingButton, TweenInfo.new(0.1), {Size = UDim2.new(0, btnSize+8, 0, btnSize+8)}):Play()
+            task.delay(0.12, function()
+                if floatingButton and floatingButton.Parent then
+                    TweenService:Create(floatingButton, TweenInfo.new(0.15, Enum.EasingStyle.Back), {Size = UDim2.new(0, btnSize, 0, btnSize)}):Play()
+                end
+            end)
+            -- Эмулируем нажатие K — toggle GUI
+            if mainFrame then
+                mainFrame.Visible = not mainFrame.Visible
+                if mainFrame.Visible then
+                    -- Восстановить размер и позицию
+                    local guiW = isMobile and 210 or 360
+                    local guiH = isMinimized and ((isMobile and 28 or 40) + 4) or originalHeight
+                    mainFrame.Size = UDim2.new(0, guiW, 0, guiH)
+                    mainFrame.Position = UDim2.new(0.5, -guiW/2, 0.5, -guiH/2)
+                    mainFrame.BackgroundTransparency = guiTransparency
+                end
+            end
+        end)
+    end
+
+    -- ===== АНИМАЦИЯ ПОЯВЛЕНИЯ/СКРЫТИЯ GUI =====
+    local guiAnimating = false
+
+    local function animateIn(frame, callback)
+        if not frame or guiAnimating then return end
+        guiAnimating = true
+        frame.Visible = true
+        frame.BackgroundTransparency = 1
+        local guiW = isMobile and 210 or 360
+        local guiH = isMinimized and ((isMobile and 28 or 40) + 4) or originalHeight
+        local targetSize = UDim2.new(0, guiW, 0, guiH)
+        frame.Size = UDim2.new(0, guiW * 0.85, 0, guiH * 0.85)
+        frame.Position = UDim2.new(0.5, -guiW*0.425, 0.5, -guiH*0.425)
+        local tw1 = TweenService:Create(frame, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = targetSize,
+            Position = UDim2.new(0.5, -guiW/2, 0.5, -guiH/2),
+            BackgroundTransparency = guiTransparency
+        })
+        tw1:Play()
+        tw1.Completed:Connect(function()
+            guiAnimating = false
+            if callback then callback() end
+        end)
+    end
+
+    local function animateOut(frame, callback)
+        if not frame or guiAnimating then return end
+        guiAnimating = true
+        local guiW = isMobile and 210 or 360
+        local guiH = isMinimized and ((isMobile and 28 or 40) + 4) or originalHeight
+        local tw = TweenService:Create(frame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(0, guiW * 0.85, 0, guiH * 0.85),
+            Position = UDim2.new(0.5, -guiW*0.425, 0.5, -guiH*0.425)
+        })
+        tw:Play()
+        tw.Completed:Connect(function()
+            frame.Visible = false
+            frame.Size = UDim2.new(0, guiW, 0, guiH)
+            frame.Position = UDim2.new(0.5, -guiW/2, 0.5, -guiH/2)
+            frame.BackgroundTransparency = guiTransparency
+            guiAnimating = false
+            if callback then callback() end
+        end)
+    end
+
+    -- Анимация появления элемента (для кнопок, вкладок)
+    local function animateElement(element, delay)
+        if not element then return end
+        local origTrans = element.BackgroundTransparency
+        element.BackgroundTransparency = 1
+        if element:IsA("TextLabel") or element:IsA("TextButton") or element:IsA("TextBox") then
+            local origTextTrans = element.TextTransparency
+            element.TextTransparency = 1
+            task.delay(delay or 0, function()
+                if not element or not element.Parent then return end
+                TweenService:Create(element, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {
+                    BackgroundTransparency = origTrans,
+                    TextTransparency = origTextTrans
+                }):Play()
+            end)
+        else
+            task.delay(delay or 0, function()
+                if not element or not element.Parent then return end
+                TweenService:Create(element, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {
+                    BackgroundTransparency = origTrans
+                }):Play()
+            end)
+        end
+    end
+
+    -- Всплывающее уведомление
+    local function showNotification(text, duration)
+        if not sg then return end
+        local notif = Instance.new("TextLabel")
+        notif.Size = UDim2.new(0, 250, 0, 35)
+        notif.Position = UDim2.new(0.5, -125, 0, -40)
+        notif.BackgroundColor3 = Color3.fromRGB(40, 180, 80)
+        notif.BackgroundTransparency = 0.1
+        notif.Text = text
+        notif.TextColor3 = Color3.new(1,1,1)
+        notif.TextSize = 13
+        notif.Font = Enum.Font.GothamBold
+        notif.BorderSizePixel = 0
+        Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 8)
+        notif.Parent = sg
+        -- Появление сверху
+        TweenService:Create(notif, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Position = UDim2.new(0.5, -125, 0, 10)
+        }):Play()
+        -- Исчезновение
+        task.delay(duration or 2, function()
+            if notif and notif.Parent then
+                local tw = TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {
+                    Position = UDim2.new(0.5, -125, 0, -40),
+                    BackgroundTransparency = 1,
+                    TextTransparency = 1
+                })
+                tw:Play()
+                tw.Completed:Connect(function()
+                    if notif and notif.Parent then notif:Destroy() end
+                end)
+            end
+        end)
+    end
+
+    local function showMainGUI()
+        if mainFrame and not guiAnimating then
+            mainFrame.Visible = true
+            local guiW = isMobile and 210 or 360
+            local guiH = isMinimized and ((isMobile and 28 or 40) + 4) or originalHeight
+            mainFrame.Size = UDim2.new(0, guiW, 0, guiH)
+            mainFrame.Position = UDim2.new(0.5, -guiW/2, 0.5, -guiH/2)
+            mainFrame.BackgroundTransparency = guiTransparency
+        end
+    end
+
+    local function hideMainGUI()
+        if mainFrame and not guiAnimating then
+            mainFrame.Visible = false
+        end
+    end
+
+    local function destroyGUI()
+        if guiDestroyed then return end
+        guiDestroyed = true
+        _G.EscanorHubClosed = true
+        _G.EscanorHubAlreadyRunning = nil -- Разрешить повторный запуск через loadstring
+        if sg then sg:Destroy() end
+        sg = nil; mainFrame = nil; btns = {}; locationBtns = {}
+        if settingsPanel then settingsPanel:Destroy() end
+        settingsPanel = nil
+        settingsOpen = false
+        if connection then connection:Disconnect() end
+        connection = nil
+        if sortTimer then sortTimer:Disconnect() end
+        sortTimer = nil
+        if floatingGui then floatingGui:Destroy(); floatingGui = nil; floatingButton = nil end
+        if antiAFKConnection then stopAntiAFK() end
+        if fpsConnection then stopFPS() end
+        stopFullbright()
+        stopCoordsDisplay()
+        stopTimer()
+        _G.TeleportHubSettings = nil
+        _G.FavoriteLocations = nil
+        _G.TeleportHistory = nil
+        _G.AntiAFKEnabled = false
+        _G.ShowFPS = false
+        _G.FPSPosition = UDim2.new(0,5,0,5)
+        _G.FullbrightEnabled = false
+        _G.CoordsDisplayEnabled = false
+        _G.TimerEnabled = false
+    end
+
+    -- ========== ОБНОВЛЕНИЕ СПИСКА ЛОКАЦИЙ (с анимациями) ==========
+    local function refreshLocationsList()
+        if not locationListFrame then return end
+        for _, v in ipairs(locationBtns) do v:Destroy() end
+        locationBtns = {}
+
+        local filteredLocs = {}
+        for _, loc in ipairs(locations) do
+            if locationSearchFilter == "" or string.find(string.lower(getLocalizedLocationName(loc.name)), string.lower(locationSearchFilter)) then
+                table.insert(filteredLocs, loc)
+            end
+        end
+
+        for i, loc in ipairs(filteredLocs) do
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, -40, 0, isMobile and 30 or 36)
+            btn.Position = UDim2.new(0, 5, 0, 0)
+            local displayName = getLocalizedLocationName(loc.name)
+            if loc.waypoints then displayName = displayName .. " (sequence)" end
+            if isMobile then
+                btn.Text = displayName
+            else
+                btn.Text = displayName .. (loc.cframe and (" [" .. math.floor(loc.cframe.X) .. ", " .. math.floor(loc.cframe.Y) .. ", " .. math.floor(loc.cframe.Z) .. "]") or "")
+            end
+            btn.TextColor3 = Color3.new(1,1,1)
+            btn.TextSize = isMobile and 10 or 13
+            btn.Font = Enum.Font.GothamSemibold
+            btn.BackgroundColor3 = Color3.new(0.2,0.5,0.8)
+            btn.BackgroundTransparency = 1
+            btn.TextTransparency = 1
+            btn.BorderSizePixel = 0
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0,6)
+            corner.Parent = btn
+            btn.Parent = locationListFrame
+
+            -- Анимация появления каждой кнопки локации
+            local delay = math.min(i * 0.03, 0.5)
+            task.delay(delay, function()
+                if btn and btn.Parent then
+                    TweenService:Create(btn, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        BackgroundTransparency = 0.2,
+                        TextTransparency = 0
+                    }):Play()
+                end
+            end)
+
+            -- Анимация нажатия
+            btn.MouseButton1Down:Connect(function()
+                if btn and btn.Parent then
+                    TweenService:Create(btn, TweenInfo.new(0.1), {Size = UDim2.new(1, -44, 0, (isMobile and 30 or 36) - 2)}):Play()
+                end
+            end)
+            btn.MouseButton1Up:Connect(function()
+                if btn and btn.Parent then
+                    TweenService:Create(btn, TweenInfo.new(0.15, Enum.EasingStyle.Back), {Size = UDim2.new(1, -40, 0, isMobile and 30 or 36)}):Play()
+                end
+            end)
+
+            local favBtn = Instance.new("TextButton")
+            favBtn.Size = UDim2.new(0, 22, 0, 22)
+            favBtn.Position = UDim2.new(1, -28, 0.5, -11)
+            favBtn.Text = table.find(favorites, loc.name) and "★" or "☆"
+            favBtn.TextColor3 = Color3.new(1, 1, 0)
+            favBtn.TextSize = 16
+            favBtn.Font = Enum.Font.GothamBold
+            favBtn.BackgroundColor3 = Color3.fromRGB(0,0,0)
+            favBtn.BackgroundTransparency = 0.6
+            favBtn.BorderSizePixel = 0
+            local favCorner = Instance.new("UICorner")
+            favCorner.CornerRadius = UDim.new(0, 5)
+            favCorner.Parent = favBtn
+            favBtn.Parent = btn
+            favBtn.MouseButton1Click:Connect(function()
+                -- Анимация звезды
+                TweenService:Create(favBtn, TweenInfo.new(0.15, Enum.EasingStyle.Back), {
+                    Size = UDim2.new(0, 28, 0, 28),
+                    Position = UDim2.new(1, -31, 0.5, -14)
+                }):Play()
+                task.delay(0.15, function()
+                    if favBtn and favBtn.Parent then
+                        TweenService:Create(favBtn, TweenInfo.new(0.15), {
+                            Size = UDim2.new(0, 22, 0, 22),
+                            Position = UDim2.new(1, -28, 0.5, -11)
+                        }):Play()
+                    end
+                end)
+                local idx = table.find(favorites, loc.name)
+                if idx then
+                    table.remove(favorites, idx)
+                else
+                    table.insert(favorites, loc.name)
+                end
+                _G.FavoriteLocations = favorites
+                task.delay(0.2, function() refreshLocationsList() end)
+            end)
+
+            if not loc.isDefault then
+                local delBtn = Instance.new("TextButton")
+                delBtn.Size = UDim2.new(0, 22, 0, 22)
+                delBtn.Position = UDim2.new(1,-54,0.5,-11)
+                delBtn.Text = "X"
+                delBtn.TextColor3 = Color3.new(1,1,1)
+                delBtn.TextSize = 10
+                delBtn.BackgroundColor3 = Color3.new(0.5,0.1,0.1)
+                delBtn.BorderSizePixel = 0
+                local delCorner = Instance.new("UICorner")
+                delCorner.CornerRadius = UDim.new(0,5)
+                delCorner.Parent = delBtn
+                delBtn.Parent = btn
+                delBtn.MouseButton1Click:Connect(function()
+                    -- Анимация удаления — сжатие и исчезновение
+                    TweenService:Create(btn, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                        BackgroundTransparency = 1,
+                        TextTransparency = 1,
+                        Size = UDim2.new(1, -40, 0, 0)
+                    }):Play()
+                    task.delay(0.25, function()
+                        table.remove(locations, table.find(locations, loc))
+                        refreshLocationsList()
+                    end)
+                end)
+            end
+
+            btn.MouseButton1Click:Connect(function()
+                -- Подсветка при нажатии — вспышка
+                local origColor = btn.BackgroundColor3
+                TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.new(1,1,1)}):Play()
+                task.delay(0.1, function()
+                    if btn and btn.Parent then
+                        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = origColor}):Play()
+                    end
+                end)
+                -- Если instant-teleport активен — привязать к этой локации
+                if autoTeleportActive then
+                    if loc.cframe then
+                        startAutoTeleportLocation(loc.cframe * CFrame.new(0,0,2), getLocalizedLocationName(loc.name))
+                    end
+                else
+                    if loc.waypoints then
+                        startSequentialTeleport(loc.waypoints)
+                    elseif loc.cframe then
+                        if loc.name == "Plate" then
+                            teleportToPlate()
+                        else
+                            SmartTP(loc.cframe * CFrame.new(0,0,2))
+                        end
+                    end
+                end
+                addHistoryEntry(loc.name, loc.cframe)
+            end)
+            table.insert(locationBtns, btn)
+        end
+
+        -- Кнопка "Сохранить текущее место" — всегда внизу списка
+        local addLocBtn = Instance.new("TextButton")
+        addLocBtn.Size = UDim2.new(1, -10, 0, isMobile and 30 or 36)
+        addLocBtn.Position = UDim2.new(0, 5, 0, 0)
+        addLocBtn.Text = getText("save_loc")
+        addLocBtn.TextColor3 = Color3.new(1,1,1)
+        addLocBtn.TextSize = isMobile and 10 or 13
+        addLocBtn.Font = Enum.Font.GothamSemibold
+        addLocBtn.BackgroundColor3 = Color3.new(0.1,0.5,0.1)
+        addLocBtn.BackgroundTransparency = 0.2
+        addLocBtn.BorderSizePixel = 0
+        local addCorner = Instance.new("UICorner")
+        addCorner.CornerRadius = UDim.new(0,6)
+        addCorner.Parent = addLocBtn
+        addLocBtn.Parent = locationListFrame
+        addLocBtn.MouseButton1Click:Connect(function()
+            -- Анимация нажатия Save
+            TweenService:Create(addLocBtn, TweenInfo.new(0.1), {
+                BackgroundColor3 = Color3.new(0.3, 0.9, 0.3),
+                Size = UDim2.new(1, -14, 0, (isMobile and 30 or 36) - 2)
+            }):Play()
+            task.delay(0.12, function()
+                if addLocBtn and addLocBtn.Parent then
+                    TweenService:Create(addLocBtn, TweenInfo.new(0.15, Enum.EasingStyle.Back), {
+                        BackgroundColor3 = Color3.new(0.1, 0.5, 0.1),
+                        Size = UDim2.new(1, -10, 0, isMobile and 30 or 36)
+                    }):Play()
+                end
+            end)
+            addCurrentLocation()
+            showNotification(getText("pos_saved"), 1.5)
+        end)
+        table.insert(locationBtns, addLocBtn)
+
+        local th = #locationBtns * ((isMobile and 30 or 36) + 6) + 50
+        local scroll = locationListFrame.Parent
+        if scroll and scroll:IsA("ScrollingFrame") then scroll.CanvasSize = UDim2.new(0,0,0,th) end
+    end
+
+    -- ===== НАСТРОЙКИ (полноэкранная панель внутри GUI) =====
+    local settingsOpen = false
+    local settingsPanel = nil
+
+    local function createSettingsWindow()
+        -- Если уже открыта — закрыть с анимацией
+        if settingsOpen and settingsPanel and settingsPanel.Parent then
+            TweenService:Create(settingsPanel, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                Position = UDim2.new(1, 0, 0, 0)
+            }):Play()
+            task.delay(0.3, function()
+                if settingsPanel and settingsPanel.Parent then settingsPanel:Destroy() end
+                settingsPanel = nil
+                settingsOpen = false
+            end)
+            return
+        end
+
+        settingsOpen = true
+        settingsPanel = Instance.new("Frame")
+        settingsPanel.Size = UDim2.new(1, 0, 1, 0)
+        settingsPanel.Position = UDim2.new(1, 0, 0, 0) -- начинаем за правым краем
+        settingsPanel.BackgroundColor3 = Color3.fromRGB(18, 18, 30)
+        settingsPanel.BackgroundTransparency = 0.02
+        settingsPanel.BorderSizePixel = 0
+        settingsPanel.ZIndex = 10
+        settingsPanel.ClipsDescendants = true
+        settingsPanel.Parent = mainFrame
+
+        -- Анимация выезда слева
+        TweenService:Create(settingsPanel, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Position = UDim2.new(0, 0, 0, 0)
+        }):Play()
+
+        -- Кнопка "Назад"
+        local backBtn = Instance.new("TextButton")
+        backBtn.Size = UDim2.new(1, 0, 0, isMobile and 28 or 36)
+        backBtn.Position = UDim2.new(0, 0, 0, 0)
+        backBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+        backBtn.BorderSizePixel = 0
+        backBtn.Text = "< " .. getText("settings_title")
+        backBtn.TextColor3 = Color3.new(1,1,1)
+        backBtn.TextSize = isMobile and 12 or 15
+        backBtn.Font = Enum.Font.GothamBold
+        backBtn.TextXAlignment = Enum.TextXAlignment.Left
+        backBtn.ZIndex = 11
+        Instance.new("UICorner", backBtn).CornerRadius = UDim.new(0, 8)
+        local backPad = Instance.new("UIPadding", backBtn)
+        backPad.PaddingLeft = UDim.new(0, 10)
+        backBtn.Parent = settingsPanel
+
+        backBtn.MouseButton1Click:Connect(function()
+            TweenService:Create(settingsPanel, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                Position = UDim2.new(1, 0, 0, 0)
+            }):Play()
+            task.delay(0.3, function()
+                if settingsPanel and settingsPanel.Parent then settingsPanel:Destroy() end
+                settingsPanel = nil
+                settingsOpen = false
+            end)
+        end)
+
+        local scroll = Instance.new("ScrollingFrame")
+        scroll.Size = UDim2.new(1, -10, 1, -(isMobile and 34 or 42))
+        scroll.Position = UDim2.new(0, 5, 0, isMobile and 32 or 40)
+        scroll.BackgroundTransparency = 1
+        scroll.BorderSizePixel = 0
+        scroll.ZIndex = 11
+        scroll.ScrollBarThickness = 3
+        scroll.Parent = settingsPanel
+
+        local layout = Instance.new("UIListLayout")
+        layout.Padding = UDim.new(0, 10)
+        layout.Parent = scroll
+
+        local function makeRow(text, btnText, onClick, height)
+            local fr = Instance.new("Frame")
+            fr.Size = UDim2.new(1, 0, 0, height or 36)
+            fr.BackgroundTransparency = 1
+            fr.ZIndex = 12
+            fr.Parent = scroll
+            local lbl = Instance.new("TextLabel")
+            lbl.Size = UDim2.new(0.55, 0, 1, 0)
+            lbl.BackgroundTransparency = 1
+            lbl.Text = text
+            lbl.TextColor3 = Color3.new(1,1,1)
+            lbl.TextSize = isMobile and 11 or 12
+            lbl.Font = Enum.Font.Gotham
+            lbl.ZIndex = 12
+            lbl.Parent = fr
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(0.35, 0, 1, 0)
+            btn.Position = UDim2.new(0.6, 0, 0, 0)
+            btn.Text = btnText
+            btn.TextColor3 = Color3.new(0,0,0)
+            btn.BackgroundColor3 = Color3.new(1,1,1)
+            btn.BorderSizePixel = 0
+            btn.ZIndex = 12
+            local btnCorner = Instance.new("UICorner")
+            btnCorner.CornerRadius = UDim.new(0, 5)
+            btnCorner.Parent = btn
+            btn.Parent = fr
+            onClick(btn)
+            return btn
+        end
+
+        local sizeText = {getText("small"), getText("medium"), getText("large")}
+        local sizeIdx = 2
+        makeRow(getText("gui_size"), sizeText[sizeIdx], function(btn)
+            btn.MouseButton1Click:Connect(function()
+                sizeIdx = sizeIdx % 3 + 1
+                btn.Text = sizeText[sizeIdx]
+                local w,h = 350,400
+                if sizeIdx == 1 then w,h=250,300 elseif sizeIdx == 2 then w,h=350,400 else w,h=450,480 end
+                if isMobile then h = 250 end
+                mainFrame.Size = UDim2.new(0,w,0,h)
+                mainFrame.Position = UDim2.new(0.5,-w/2,0.5,-h/2)
+                originalHeight = h
+                refreshButtons(); refreshLocationsList()
+            end)
+        end, 36)
+
+        local transVal = guiTransparency
+        makeRow(getText("transparency"), math.floor(transVal*100).."%", function(btn)
+            btn.MouseButton1Click:Connect(function()
+                transVal = (transVal+0.1)%1.1
+                if transVal>1 then transVal=0 end
+                btn.Text = math.floor(transVal*100).."%"
+                mainFrame.BackgroundTransparency = transVal
+                guiTransparency = transVal
+            end)
+        end, 36)
+
+        local speeds = {10000,25000,50000,100000,200000}
+        local spIdx = 3
+        makeRow(getText("speed"), tostring(teleportSpeed).." stud/s", function(btn)
+            btn.MouseButton1Click:Connect(function()
+                spIdx = spIdx%5+1
+                teleportSpeed = speeds[spIdx]
+                btn.Text = tostring(teleportSpeed).." stud/s"
+            end)
+        end, 36)
+
+        local themesList = {"dark", "light", "pink", "green", "blue"}
+        local themeIdx = 1
+        for i, name in ipairs(themesList) do if name == currentTheme then themeIdx = i break end end
+        local themeNames = {
+            dark = getText("theme_dark"),
+            light = getText("theme_light"),
+            pink = getText("theme_pink"),
+            green = getText("theme_green"),
+            blue = getText("theme_blue")
+        }
+        makeRow(getText("theme"), themeNames[themesList[themeIdx]], function(btn)
+            btn.MouseButton1Click:Connect(function()
+                themeIdx = themeIdx % #themesList + 1
+                local newTheme = themesList[themeIdx]
+                btn.Text = themeNames[newTheme]
+                applyTheme(newTheme)
+            end)
+        end, 36)
+
+        -- TP offset
+        local tpOffsetFrame = Instance.new("Frame")
+        tpOffsetFrame.Size = UDim2.new(1,0,0,44)
+        tpOffsetFrame.BackgroundTransparency = 1
+        tpOffsetFrame.ZIndex = 12
+        tpOffsetFrame.Parent = scroll
+
+        local tpOffsetLabel = Instance.new("TextLabel")
+        tpOffsetLabel.Size = UDim2.new(0.55,0,1,0)
+        tpOffsetLabel.BackgroundTransparency = 1
+        tpOffsetLabel.Text = getText("tp_offset")
+        tpOffsetLabel.TextColor3 = Color3.new(1,1,1)
+        tpOffsetLabel.TextSize = isMobile and 11 or 12
+        tpOffsetLabel.Font = Enum.Font.Gotham
+        tpOffsetLabel.ZIndex = 12
+        tpOffsetLabel.Parent = tpOffsetFrame
+
+        local tpOffsetContainer = Instance.new("Frame")
+        tpOffsetContainer.Size = UDim2.new(0.4,0,1,0)
+        tpOffsetContainer.Position = UDim2.new(0.6,0,0,0)
+        tpOffsetContainer.BackgroundTransparency = 1
+        tpOffsetContainer.ZIndex = 12
+        tpOffsetContainer.Parent = tpOffsetFrame
+
+        local tpOffsetBox = Instance.new("TextBox")
+        tpOffsetBox.Size = UDim2.new(0,50,1,-4)
+        tpOffsetBox.Position = UDim2.new(0,0,0,2)
+        tpOffsetBox.BackgroundColor3 = Color3.new(0.2,0.2,0.25)
+        tpOffsetBox.Text = tostring(playerTPOffset)
+        tpOffsetBox.TextColor3 = Color3.new(1,1,1)
+        tpOffsetBox.TextSize = 13
+        tpOffsetBox.Font = Enum.Font.Gotham
+        tpOffsetBox.ZIndex = 12
+        tpOffsetBox.Parent = tpOffsetContainer
+        Instance.new("UICorner", tpOffsetBox).CornerRadius = UDim.new(0,4)
+
+        local minusBtn = Instance.new("TextButton")
+        minusBtn.Size = UDim2.new(0,20,0,20)
+        minusBtn.Position = UDim2.new(0,55,0.5,-10)
+        minusBtn.Text = "-"
+        minusBtn.TextColor3 = Color3.new(1,1,1)
+        minusBtn.BackgroundColor3 = Color3.new(0.4,0.4,0.5)
+        minusBtn.Font = Enum.Font.GothamBold
+        minusBtn.TextSize = 14
+        minusBtn.ZIndex = 12
+        minusBtn.Parent = tpOffsetContainer
+        Instance.new("UICorner", minusBtn).CornerRadius = UDim.new(0,4)
+        minusBtn.MouseButton1Click:Connect(function()
+            playerTPOffset = math.max(-100, playerTPOffset - 1)
+            tpOffsetBox.Text = tostring(playerTPOffset)
+        end)
+
+        local plusBtn = Instance.new("TextButton")
+        plusBtn.Size = UDim2.new(0,20,0,20)
+        plusBtn.Position = UDim2.new(0,78,0.5,-10)
+        plusBtn.Text = "+"
+        plusBtn.TextColor3 = Color3.new(1,1,1)
+        plusBtn.BackgroundColor3 = Color3.new(0.4,0.4,0.5)
+        plusBtn.Font = Enum.Font.GothamBold
+        plusBtn.TextSize = 14
+        plusBtn.ZIndex = 12
+        plusBtn.Parent = tpOffsetContainer
+        Instance.new("UICorner", plusBtn).CornerRadius = UDim.new(0,4)
+        plusBtn.MouseButton1Click:Connect(function()
+            playerTPOffset = math.min(100, playerTPOffset + 1)
+            tpOffsetBox.Text = tostring(playerTPOffset)
+        end)
+
+        tpOffsetBox.FocusLost:Connect(function()
+            local val = tonumber(tpOffsetBox.Text)
+            if val then
+                playerTPOffset = math.clamp(math.floor(val), -100, 100)
+                tpOffsetBox.Text = tostring(playerTPOffset)
+            else
+                tpOffsetBox.Text = tostring(playerTPOffset)
+            end
+        end)
+
+        layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            scroll.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y+20)
+        end)
+        task.wait()
+        scroll.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y+20)
+    end
+
+    -- ===== СБОРКА ГЛАВНОГО GUI =====
+    local function createGUI()
+        if guiDestroyed then return end
+        if sg and sg.Parent then sg:Destroy() end
+
+        sg = Instance.new("ScreenGui")
+        sg.Name = "EscanorHUB"
+        sg.ResetOnSpawn = false
+        pcall(function() sg.Parent = LP:WaitForChild("PlayerGui") end)
+
+        local guiWidth = isMobile and 210 or 360
+        local guiHeight = isMobile and 270 or 425
+        originalHeight = guiHeight
+
+        mainFrame = Instance.new("Frame")
+        mainFrame.Size = UDim2.new(0, guiWidth, 0, guiHeight)
+        mainFrame.Position = UDim2.new(0.5, -guiWidth/2, 0.5, -guiHeight/2)
+        mainFrame.BackgroundColor3 = themes[currentTheme].mainBg
+        mainFrame.BackgroundTransparency = guiTransparency
+        mainFrame.BorderSizePixel = 0
+        mainFrame.ClipsDescendants = true
+        Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0,12)
+
+        -- Переливающаяся рамка основного GUI (UIStroke)
+        local mainStroke = Instance.new("UIStroke", mainFrame)
+        mainStroke.Thickness = 2.5
+        mainStroke.Color = Color3.fromRGB(140, 100, 255)
+        mainStroke.Transparency = 0.1
+        themeElements.mainStroke = mainStroke
+
+        local mainGradient = Instance.new("UIGradient", mainFrame)
+        mainGradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, themes[currentTheme].mainGradStart),
+            ColorSequenceKeypoint.new(1, themes[currentTheme].mainGradEnd)
+        }
+        mainGradient.Rotation = 45
+        themeElements.mainGradient = mainGradient
+        mainFrame.Parent = sg
+
+        -- Индикатор загрузки
+        loadingFrame = Instance.new("Frame")
+        loadingFrame.Size = UDim2.new(0, 60, 0, 60)
+        loadingFrame.Position = UDim2.new(0.5, -30, 0.5, -30)
+        loadingFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        loadingFrame.BackgroundTransparency = 0.5
+        loadingFrame.BorderSizePixel = 0
+        loadingFrame.Visible = false
+        local loadCorner = Instance.new("UICorner", loadingFrame)
+        loadCorner.CornerRadius = UDim.new(1, 0)
+        local loadLabel = Instance.new("TextLabel", loadingFrame)
+        loadLabel.Size = UDim2.new(1,0,1,0)
+        loadLabel.BackgroundTransparency = 1
+        loadLabel.Text = "🌀"
+        loadLabel.TextColor3 = Color3.new(1,1,1)
+        loadLabel.TextSize = 24
+        loadLabel.Font = Enum.Font.GothamBold
+        loadingFrame.Parent = sg
+
+        -- Верхняя панель (только заголовок, сворачивание и закрытие)
+        local topBar = Instance.new("Frame")
+        topBar.Size = UDim2.new(1,0,0, isMobile and 28 or 40)
+        topBar.BackgroundColor3 = themes[currentTheme].topBg
+        topBar.BorderSizePixel = 0
+        local topCorner = Instance.new("UICorner")
+        topCorner.CornerRadius = UDim.new(0,10)
+        topCorner.Parent = topBar
+        topBar.Parent = mainFrame
+        themeElements.topBar = topBar
+
+        -- Переливающаяся рамка верхней панели
+        local topStroke = Instance.new("UIStroke", topBar)
+        topStroke.Thickness = 1.5
+        topStroke.Color = Color3.fromRGB(140, 100, 255)
+        topStroke.Transparency = 0.35
+        themeElements.topStroke = topStroke
+
+        local topGradient = Instance.new("UIGradient", topBar)
+        topGradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, themes[currentTheme].topGradStart),
+            ColorSequenceKeypoint.new(1, themes[currentTheme].topGradEnd)
+        }
+        themeElements.topGradient = topGradient
+
+        local titleLabel = Instance.new("TextLabel")
+        titleLabel.Size = UDim2.new(0, isMobile and 100 or 180, 0, 16)
+        titleLabel.Position = UDim2.new(0, 0, 0, 2)
+        titleLabel.BackgroundTransparency = 1
+        titleLabel.Text = "Escanor HUB 🔥 v1.2"
+        titleLabel.TextColor3 = themes[currentTheme].textColor
+        titleLabel.TextSize = isMobile and 11 or 16
+        titleLabel.Font = Enum.Font.GothamBold
+        titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+        titleLabel.Parent = topBar
+        themeElements.titleLabel = titleLabel
+
+        local subTitle = Instance.new("TextLabel")
+        subTitle.Size = UDim2.new(0, isMobile and 100 or 180, 0, 12)
+        subTitle.Position = UDim2.new(0, 0, 0, isMobile and 16 or 18)
+        subTitle.BackgroundTransparency = 1
+        subTitle.Text = "🌀 teleport"
+        subTitle.TextColor3 = themes[currentTheme].textColor
+        subTitle.TextSize = isMobile and 8 or 10
+        subTitle.Font = Enum.Font.Gotham
+        subTitle.TextXAlignment = Enum.TextXAlignment.Left
+        subTitle.Parent = topBar
+
+        local btnSize = isMobile and 22 or 28
+        local gap = 6
+        local shift = 22
+        local function makeTopBtn(xOffset, text, color)
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(0, btnSize, 0, btnSize)
+            btn.Position = UDim2.new(1, xOffset - shift, 0, (topBar.Size.Y.Offset - btnSize)/2)
+            btn.Text = text
+            btn.TextColor3 = Color3.new(1,1,1)
+            btn.TextSize = isMobile and 10 or 14
+            btn.BackgroundColor3 = color
+            btn.BackgroundTransparency = 0.15
+            btn.BorderSizePixel = 0
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0,5)
+            corner.Parent = btn
+            btn.Parent = topBar
+            return btn
+        end
+
+        local closeBtn = makeTopBtn(-gap, "X", Color3.new(0.6,0.15,0.15))
+        local minimizeBtn = makeTopBtn(-(btnSize + 2*gap), "–", Color3.new(0.3,0.3,0.5))
+
+        closeBtn.MouseButton1Click:Connect(function()
+            -- Крестик = полное удаление GUI (как P)
+            destroyGUI()
+        end)
+        minimizeBtn.MouseButton1Click:Connect(function()
+            -- Анимация нажатия кнопки сворачивания
+            TweenService:Create(minimizeBtn, TweenInfo.new(0.08), {Size = UDim2.new(0, btnSize-4, 0, btnSize-4)}):Play()
+            task.delay(0.1, function()
+                if minimizeBtn and minimizeBtn.Parent then
+                    TweenService:Create(minimizeBtn, TweenInfo.new(0.1, Enum.EasingStyle.Back), {Size = UDim2.new(0, btnSize, 0, btnSize)}):Play()
+                end
+            end)
+            if not isMinimized then
+                local targetHeight = topBar.Size.Y.Offset + 4
+                TweenService:Create(mainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+                    Size = UDim2.new(0, guiWidth, 0, targetHeight)
+                }):Play()
+                minimizeBtn.Text = "+"
+                isMinimized = true
+            else
+                TweenService:Create(mainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                    Size = UDim2.new(0, guiWidth, 0, originalHeight)
+                }):Play()
+                minimizeBtn.Text = "–"
+                isMinimized = false
+            end
+        end)
+
+        -- Перетаскивание главного окна за заголовок
+        local isDragging = false
+        local dragStart, startPos
+        topBar.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                isDragging = true
+                dragStart = input.Position
+                startPos = mainFrame.Position
+            end
+        end)
+        topBar.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                isDragging = false
+            end
+        end)
+        UserInput.InputChanged:Connect(function(input)
+            if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local delta = input.Position - dragStart
+                mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            end
+        end)
+
+        -- Панель действий (L, M, S, A, R)
+        local actionBarHeight = isMobile and 28 or 40
+        local actionBar = Instance.new("Frame")
+        actionBar.Size = UDim2.new(1, 0, 0, actionBarHeight)
+        actionBar.Position = UDim2.new(0, 0, 0, topBar.Size.Y.Offset)
+        actionBar.BackgroundColor3 = themes[currentTheme].topBg
+        actionBar.BackgroundTransparency = 0.3
+        actionBar.BorderSizePixel = 0
+        actionBar.Parent = mainFrame
+
+        local function makeActionBtn(xOffset, text, color)
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(0, btnSize, 0, btnSize)
+            btn.Position = UDim2.new(1, xOffset - shift, 0, (actionBarHeight - btnSize)/2)
+            btn.Text = text
+            btn.TextColor3 = Color3.new(1,1,1)
+            btn.TextSize = isMobile and 10 or 14
+            btn.BackgroundColor3 = color
+            btn.BackgroundTransparency = 0.15
+            btn.BorderSizePixel = 0
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0,5)
+            corner.Parent = btn
+            btn.Parent = actionBar
+            return btn
+        end
+
+        local loadPosBtn = makeActionBtn(-gap, "📂", Color3.new(0.25,0.25,0.25))
+        local savePosBtn = makeActionBtn(-(btnSize + 2*gap), "💾", Color3.new(0.25,0.25,0.25))
+        local settingsBtn = makeActionBtn(-(2*btnSize + 3*gap), "⚙", Color3.new(0.2,0.2,0.4))
+        instantBtn = makeActionBtn(-(3*btnSize + 4*gap), "🎯", Color3.new(0.3,0.3,0.3))
+        local refreshBtn = makeActionBtn(-(4*btnSize + 5*gap), "🔄", Color3.new(0.15,0.5,0.15))
+
+        savePosBtn.MouseButton1Click:Connect(function()
+            local char = LP.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                savedPosition = hrp.CFrame
+                LP:Chat(getText("pos_saved"))
+                addCurrentLocation()
+            else
+                LP:Chat(getText("cant_save"))
+            end
+        end)
+
+        loadPosBtn.MouseButton1Click:Connect(function()
+            if savedPosition then SmartTP(savedPosition * CFrame.new(0,0,2)) else LP:Chat(getText("no_saved")) end
+        end)
+
+        refreshBtn.MouseButton1Click:Connect(function()
+            refreshButtons()
+            if currentTab == "locations" then refreshLocationsList() end
+            if currentTab == "favorites" then refreshFavorites() end
+            if currentTab == "history" then refreshHistory() end
+        end)
+
+        instantBtn.MouseButton1Click:Connect(function()
+            if autoTeleportActive then stopAutoTeleport()
+            else
+                if autoTargetPlayer then startAutoTeleport(autoTargetPlayer)
+                else LP:Chat(getText("select_player_first")) end
+            end
+        end)
+
+        settingsBtn.MouseButton1Click:Connect(function()
+            createSettingsWindow()
+        end)
+
+        -- Панель вкладок и контент
+        local totalTopHeight = topBar.Size.Y.Offset + actionBarHeight
+        local tabBarY = totalTopHeight + (isMobile and 6 or 10)
+        local tabBarHeight = isMobile and 20 or 28
+
+        local tabBarScroll = Instance.new("ScrollingFrame")
+        tabBarScroll.Size = UDim2.new(1, -10, 0, tabBarHeight)
+        tabBarScroll.Position = UDim2.new(0, 5, 0, tabBarY)
+        tabBarScroll.BackgroundTransparency = 1
+        tabBarScroll.BorderSizePixel = 0
+        tabBarScroll.ScrollingDirection = Enum.ScrollingDirection.X
+        tabBarScroll.ScrollBarThickness = 3
+        tabBarScroll.ClipsDescendants = true
+        tabBarScroll.Parent = mainFrame
+
+        local tabBarInner = Instance.new("Frame")
+        tabBarInner.Size = UDim2.new(0, 0, 1, 0)
+        tabBarInner.BackgroundTransparency = 1
+        tabBarInner.Parent = tabBarScroll
+
+        local function makeTab(x, width, text)
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(0, width, 1, 0)
+            btn.Position = UDim2.new(0, x, 0, 0)
+            btn.Text = text
+            btn.TextColor3 = Color3.new(1,1,1)
+            btn.TextSize = isMobile and 8 or 11
+            btn.Font = Enum.Font.GothamBold
+            btn.BackgroundColor3 = themes[currentTheme].tabInactive
+            btn.BackgroundTransparency = 0.25
+            btn.BorderSizePixel = 0
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0, 5)
+            corner.Parent = btn
+            btn.Parent = tabBarInner
+            return btn
+        end
+
+        local tabPlayers = makeTab(0, isMobile and 40 or 55, getText("tab_players"))
+        local tabLocations = makeTab(isMobile and 44 or 60, isMobile and 45 or 55, getText("tab_locations"))
+        local tabFavorites = makeTab(isMobile and 93 or 120, isMobile and 50 or 65, getText("tab_favorites"))
+        local tabHistory = makeTab(isMobile and 148 or 190, isMobile and 50 or 65, getText("tab_history"))
+        local tabOther = makeTab(isMobile and 203 or 260, isMobile and 45 or 55, getText("tab_other"))
+        local tabPlaces = makeTab(isMobile and 252 or 320, isMobile and 45 or 55, getText("tab_places"))
+        local tabHelp = makeTab(isMobile and 301 or 380, isMobile and 45 or 55, getText("tab_help"))
+
+        local totalTabsWidth = (isMobile and 301+45 or 380+55) + 10
+        tabBarInner.Size = UDim2.new(0, totalTabsWidth, 1, 0)
+        tabBarScroll.CanvasSize = UDim2.new(0, totalTabsWidth, 0, 0)
+
+        themeElements.tabPlayers = tabPlayers
+        themeElements.tabLocations = tabLocations
+        themeElements.tabFavorites = tabFavorites
+        themeElements.tabHistory = tabHistory
+        themeElements.tabOther = tabOther
+        themeElements.tabPlaces = tabPlaces
+        themeElements.tabHelp = tabHelp
+
+        if not themeElements.textElements then themeElements.textElements = {} end
+        local textElements = themeElements.textElements
+        table.insert(textElements, titleLabel)
+        table.insert(textElements, subTitle)
+        table.insert(textElements, tabPlayers)
+        table.insert(textElements, tabLocations)
+        table.insert(textElements, tabFavorites)
+        table.insert(textElements, tabHistory)
+        table.insert(textElements, tabOther)
+        table.insert(textElements, tabPlaces)
+        table.insert(textElements, tabHelp)
+
+        local contentY = tabBarY + tabBarHeight + 4
+        local playersContent = Instance.new("Frame")
+        playersContent.Size = UDim2.new(1, -10, 1, -contentY - 4)
+        playersContent.Position = UDim2.new(0, 5, 0, contentY)
+        playersContent.BackgroundTransparency = 1
+        playersContent.Parent = mainFrame
+
+        local locationsContent = playersContent:Clone(); locationsContent.Visible = false; locationsContent.Parent = mainFrame
+        local favoritesContent = playersContent:Clone(); favoritesContent.Visible = false; favoritesContent.Parent = mainFrame
+        local historyContent = playersContent:Clone(); historyContent.Visible = false; historyContent.Parent = mainFrame
+        local otherContent = playersContent:Clone(); otherContent.Visible = false; otherContent.Parent = mainFrame
+        local placesContent = playersContent:Clone(); placesContent.Visible = false; placesContent.Parent = mainFrame
+        local helpContent = playersContent:Clone(); helpContent.Visible = false; helpContent.Parent = mainFrame
+
+        -- Players tab
+        local searchFrameHeight = isMobile and 34 or 28
+        local searchFrame = Instance.new("Frame")
+        searchFrame.Size = UDim2.new(1, 0, 0, searchFrameHeight)
+        searchFrame.Position = UDim2.new(0, 0, 0, 2)
+        searchFrame.BackgroundTransparency = 1
+        searchFrame.Parent = playersContent
+
+        local searchBox = Instance.new("TextBox")
+        if isMobile then
+            searchBox.Size = UDim2.new(1, 0, 0, 18)
+            searchBox.Position = UDim2.new(0, 0, 0, 0)
+        else
+            searchBox.Size = UDim2.new(0.7, 0, 1, 0)
+            searchBox.Position = UDim2.new(0, 0, 0, 0)
+        end
+        searchBox.BackgroundColor3 = themes[currentTheme].inputBg
+        searchBox.Text = ""
+        searchBox.TextColor3 = themes[currentTheme].textColor
+        searchBox.TextSize = isMobile and 9 or 12
+        searchBox.Font = Enum.Font.Gotham
+        searchBox.PlaceholderText = getText("search_placeholder")
+        searchBox.Parent = searchFrame
+        themeElements.searchBox = searchBox
+        table.insert(textElements, searchBox)
+
+        local sortBtn = Instance.new("TextButton")
+        if isMobile then
+            sortBtn.Size = UDim2.new(1, 0, 0, 18)
+            sortBtn.Position = UDim2.new(0, 0, 0, 20)
+        else
+            sortBtn.Size = UDim2.new(0.25, 0, 1, 0)
+            sortBtn.Position = UDim2.new(0.73, 0, 0, 0)
+        end
+        sortBtn.Text = getText("sort_name")
+        sortBtn.TextColor3 = Color3.new(1,1,1)
+        sortBtn.TextSize = isMobile and 9 or 12
+        sortBtn.BackgroundColor3 = Color3.new(0.2,0.2,0.2)
+        sortBtn.BorderSizePixel = 0
+        sortBtn.Parent = searchFrame
+        themeElements.sortBtn = sortBtn
+        table.insert(textElements, sortBtn)
+
+        if starsEnabled then
+            local starsContainer = Instance.new("Frame")
+            starsContainer.Size = UDim2.new(1, 0, 1, 0)
+            starsContainer.Position = UDim2.new(0, 0, 0, 0)
+            starsContainer.BackgroundTransparency = 1
+            starsContainer.Parent = playersContent
+            for i=1,10 do
+                local s = Instance.new("ImageLabel")
+                s.Size = UDim2.new(0,math.random(2,3),0,math.random(2,3))
+                s.Image = "rbxasset://textures/ui/common/white-circle.png"
+                s.ImageColor3 = Color3.new(1,1,1)
+                s.ImageTransparency = 0.6
+                s.BackgroundTransparency = 1
+                s.Position = UDim2.new(math.random(),0,math.random(),0)
+                s.Parent = starsContainer
+                local function anim()
+                    local d = math.random(4,12)
+                    local np = UDim2.new(math.random(),0,math.random(),0)
+                    local tw = TweenService:Create(s, TweenInfo.new(d, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1, false, 0), {Position = np})
+                    tw:Play()
+                    tw.Completed:Connect(anim)
+                end
+                anim()
+            end
+        end
+
+        local playerScroll = Instance.new("ScrollingFrame")
+        playerScroll.Size = UDim2.new(1, 0, 1, -(searchFrameHeight + 10))
+        playerScroll.Position = UDim2.new(0, 0, 0, searchFrameHeight + 6)
+        playerScroll.BackgroundTransparency = 1
+        playerScroll.BorderSizePixel = 0
+        playerScroll.CanvasSize = UDim2.new(0,0,0,0)
+        playerScroll.ScrollBarThickness = 2
+        playerScroll.ClipsDescendants = true
+        playerScroll.Parent = playersContent
+
+        bc = Instance.new("Frame")
+        bc.Size = UDim2.new(1,0,1,0)
+        bc.BackgroundTransparency = 1
+        bc.Parent = playerScroll
+
+        lay = Instance.new("UIListLayout")
+        lay.Padding = UDim.new(0, isMobile and 3 or 6)
+        lay.SortOrder = Enum.SortOrder.Name
+        lay.Parent = bc
+
+        lf = playerScroll
+
+        -- Locations tab
+        coordsLabel = Instance.new("TextLabel")
+        coordsLabel.Size = UDim2.new(1, 0, 0, isMobile and 0 or 18)
+        coordsLabel.Position = UDim2.new(0, 4, 0, 2)
+        coordsLabel.BackgroundTransparency = 1
+        coordsLabel.Text = getText("coords_label")
+        coordsLabel.TextColor3 = themes[currentTheme].textColor
+        coordsLabel.TextSize = isMobile and 8 or 11
+        coordsLabel.Font = Enum.Font.GothamBold
+        coordsLabel.TextXAlignment = Enum.TextXAlignment.Left
+        coordsLabel.Visible = not isMobile
+        coordsLabel.Parent = locationsContent
+        table.insert(textElements, coordsLabel)
+
+        local locSearchBox = Instance.new("TextBox")
+        locSearchBox.Size = UDim2.new(1, 0, 0, 18)
+        locSearchBox.Position = UDim2.new(0, 4, 0, isMobile and 2 or 22)
+        locSearchBox.BackgroundColor3 = themes[currentTheme].inputBg
+        locSearchBox.Text = ""
+        locSearchBox.PlaceholderText = getText("search_loc_placeholder")
+        locSearchBox.TextColor3 = themes[currentTheme].textColor
+        locSearchBox.TextSize = 9
+        locSearchBox.Font = Enum.Font.Gotham
+        locSearchBox.Parent = locationsContent
+        themeElements.locSearchBox = locSearchBox
+        table.insert(textElements, locSearchBox)
+        locSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+            locationSearchFilter = locSearchBox.Text
+            refreshLocationsList()
+        end)
+
+        local inputPanel = Instance.new("Frame")
+        inputPanel.Size = UDim2.new(1, -8, 0, isMobile and 32 or 40)
+        inputPanel.Position = UDim2.new(0, 4, 0, isMobile and 24 or 44)
+        inputPanel.BackgroundColor3 = Color3.new(0.15,0.15,0.2)
+        inputPanel.BackgroundTransparency = 0.4
+        inputPanel.BorderSizePixel = 1
+        inputPanel.BorderColor3 = Color3.new(0.5,0.5,0.6)
+        inputPanel.Parent = locationsContent
+
+        local coordLabel = Instance.new("TextLabel")
+        coordLabel.Size = UDim2.new(0, 40, 0, 14)
+        coordLabel.Position = UDim2.new(0, 4, 0, 2)
+        coordLabel.BackgroundTransparency = 1
+        coordLabel.Text = getText("coords_input")
+        coordLabel.TextColor3 = Color3.new(1,1,1)
+        coordLabel.TextSize = isMobile and 8 or 10
+        coordLabel.Font = Enum.Font.GothamBold
+        coordLabel.Parent = inputPanel
+        table.insert(textElements, coordLabel)
+
+        local coordInput = Instance.new("TextBox")
+        coordInput.Size = UDim2.new(1, -60, 0, 16)
+        coordInput.Position = UDim2.new(0, 4, 0, 18)
+        coordInput.BackgroundColor3 = Color3.new(0.05,0.05,0.07)
+        coordInput.Text = ""
+        coordInput.TextColor3 = Color3.new(1,1,1)
+        coordInput.TextSize = 9
+        coordInput.Font = Enum.Font.Gotham
+        coordInput.PlaceholderText = "X, Y, Z"
+        coordInput.Parent = inputPanel
+
+        local tpCoordBtn = Instance.new("TextButton")
+        tpCoordBtn.Size = UDim2.new(0, 50, 0, 16)
+        tpCoordBtn.Position = UDim2.new(1, -54, 0, 18)
+        tpCoordBtn.Text = getText("tp_btn")
+        tpCoordBtn.TextSize = 9
+        tpCoordBtn.BackgroundColor3 = Color3.new(0.2,0.5,0.2)
+        tpCoordBtn.Parent = inputPanel
+        tpCoordBtn.MouseButton1Click:Connect(function()
+            teleportToCoordinates(coordInput.Text)
+        end)
+
+        local locScroll = Instance.new("ScrollingFrame")
+        locScroll.Size = UDim2.new(1, -4, 1, isMobile and -60 or -95)
+        locScroll.Position = UDim2.new(0, 2, 0, isMobile and 60 or 90)
+        locScroll.BackgroundTransparency = 1
+        locScroll.BorderSizePixel = 0
+        locScroll.CanvasSize = UDim2.new(0,0,0,0)
+        locScroll.ScrollBarThickness = 2
+        locScroll.Parent = locationsContent
+
+        locationListFrame = Instance.new("Frame")
+        locationListFrame.Size = UDim2.new(1,0,1,0)
+        locationListFrame.BackgroundTransparency = 1
+        locationListFrame.Parent = locScroll
+
+        local locLayout = Instance.new("UIListLayout")
+        locLayout.Padding = UDim.new(0, isMobile and 3 or 6)
+        locLayout.Parent = locationListFrame
+
+        -- Favorites tab
+        local favScroll = Instance.new("ScrollingFrame")
+        favScroll.Size = UDim2.new(1, -4, 1, -4)
+        favScroll.Position = UDim2.new(0, 2, 0, 2)
+        favScroll.BackgroundTransparency = 1
+        favScroll.BorderSizePixel = 0
+        favScroll.CanvasSize = UDim2.new(0,0,0,0)
+        favScroll.Parent = favoritesContent
+        local favLayout = Instance.new("UIListLayout")
+        favLayout.Padding = UDim.new(0, 3)
+        favLayout.Parent = favScroll
+
+        local function refreshFavorites()
+            for _, child in ipairs(favScroll:GetChildren()) do
+                if child:IsA("TextButton") then child:Destroy() end
+            end
+            if #favorites == 0 then
+                local emptyLabel = Instance.new("TextLabel")
+                emptyLabel.Size = UDim2.new(1, 0, 0, 20)
+                emptyLabel.Position = UDim2.new(0, 2, 0, 2)
+                emptyLabel.BackgroundTransparency = 1
+                emptyLabel.Text = getText("favorites_empty")
+                emptyLabel.TextColor3 = Color3.new(0.7, 0.7, 0.7)
+                emptyLabel.TextSize = 10
+                emptyLabel.Font = Enum.Font.Gotham
+                emptyLabel.Parent = favScroll
+                favScroll.CanvasSize = UDim2.new(0,0,0,30)
+                return
+            end
+            for _, favName in ipairs(favorites) do
+                local loc = nil
+                for _, l in ipairs(locations) do
+                    if l.name == favName then loc = l; break end
+                end
+                if loc then
+                    local btn = Instance.new("TextButton")
+                    btn.Size = UDim2.new(1, -4, 0, 22)
+                    btn.Position = UDim2.new(0, 2, 0, 0)
+                    btn.Text = getLocalizedLocationName(loc.name)
+                    btn.TextColor3 = Color3.new(1,1,1)
+                    btn.TextSize = 10
+                    btn.Font = Enum.Font.GothamSemibold
+                    btn.BackgroundColor3 = Color3.new(0.2,0.5,0.8)
+                    btn.BackgroundTransparency = 0.2
+                    btn.BorderSizePixel = 0
+                    local corner = Instance.new("UICorner")
+                    corner.CornerRadius = UDim.new(0,5)
+                    corner.Parent = btn
+                    btn.Parent = favScroll
+                    btn.MouseButton1Click:Connect(function()
+                        if loc.cframe then
+                            SmartTP(loc.cframe * CFrame.new(0,0,2))
+                            addHistoryEntry(loc.name, loc.cframe)
+                        end
+                    end)
+                end
+            end
+            favScroll.CanvasSize = UDim2.new(0,0,0, favLayout.AbsoluteContentSize.Y + 40)
+        end
+
+        -- History tab
+        local histScroll = Instance.new("ScrollingFrame")
+        histScroll.Size = UDim2.new(1, -4, 1, -30)
+        histScroll.Position = UDim2.new(0, 2, 0, 2)
+        histScroll.BackgroundTransparency = 1
+        histScroll.BorderSizePixel = 0
+        histScroll.CanvasSize = UDim2.new(0,0,0,0)
+        histScroll.Parent = historyContent
+        local histLayout = Instance.new("UIListLayout")
+        histLayout.Padding = UDim.new(0, 3)
+        histLayout.Parent = histScroll
+
+        local function refreshHistory()
+            for _, child in ipairs(histScroll:GetChildren()) do
+                if child:IsA("TextButton") then child:Destroy() end
+            end
+            if #history == 0 then
+                local emptyLabel = Instance.new("TextLabel")
+                emptyLabel.Size = UDim2.new(1, 0, 0, 20)
+                emptyLabel.Position = UDim2.new(0, 2, 0, 2)
+                emptyLabel.BackgroundTransparency = 1
+                emptyLabel.Text = getText("history_empty")
+                emptyLabel.TextColor3 = Color3.new(0.7, 0.7, 0.7)
+                emptyLabel.TextSize = 10
+                emptyLabel.Font = Enum.Font.Gotham
+                emptyLabel.Parent = histScroll
+                histScroll.CanvasSize = UDim2.new(0,0,0,30)
+                return
+            end
+            for _, entry in ipairs(history) do
+                local btn = Instance.new("TextButton")
+                btn.Size = UDim2.new(1, -4, 0, 22)
+                btn.Position = UDim2.new(0, 2, 0, 0)
+                local timeStr = os.date("%H:%M", entry.time)
+                btn.Text = entry.name .. " (" .. timeStr .. ")"
+                btn.TextColor3 = Color3.new(1,1,1)
+                btn.TextSize = 10
+                btn.Font = Enum.Font.GothamSemibold
+                btn.BackgroundColor3 = Color3.new(0.2,0.5,0.8)
+                btn.BackgroundTransparency = 0.2
+                btn.BorderSizePixel = 0
+                local corner = Instance.new("UICorner")
+                corner.CornerRadius = UDim.new(0,5)
+                corner.Parent = btn
+                btn.Parent = histScroll
+                btn.MouseButton1Click:Connect(function()
+                    if entry.cframe then
+                        SmartTP(entry.cframe * CFrame.new(0,0,2))
+                        addHistoryEntry(entry.name, entry.cframe)
+                    end
+                end)
+            end
+            histScroll.CanvasSize = UDim2.new(0,0,0, histLayout.AbsoluteContentSize.Y + 40)
+        end
+
+        local clearHistBtn = Instance.new("TextButton")
+        clearHistBtn.Size = UDim2.new(0.8, 0, 0, 20)
+        clearHistBtn.Position = UDim2.new(0.1, 0, 1, -24)
+        clearHistBtn.Text = getText("clear_history")
+        clearHistBtn.TextColor3 = Color3.new(1,1,1)
+        clearHistBtn.BackgroundColor3 = Color3.new(0.5,0.1,0.1)
+        clearHistBtn.BorderSizePixel = 0
+        Instance.new("UICorner", clearHistBtn).CornerRadius = UDim.new(0,5)
+        clearHistBtn.Parent = historyContent
+        table.insert(textElements, clearHistBtn)
+        clearHistBtn.MouseButton1Click:Connect(function()
+            history = {}
+            _G.TeleportHistory = {}
+            refreshHistory()
+        end)
+
+        -- Other tab
+        local function createOtherUtility(yPos, label, state, onToggle)
+            local frame = Instance.new("Frame")
+            frame.Size = UDim2.new(1, -4, 0, 24)
+            frame.Position = UDim2.new(0, 2, 0, yPos)
+            frame.BackgroundTransparency = 1
+            frame.Parent = otherContent
+
+            local lbl = Instance.new("TextLabel")
+            lbl.Size = UDim2.new(0.6, 0, 1, 0)
+            lbl.BackgroundTransparency = 1
+            lbl.Text = label
+            lbl.TextColor3 = themes[currentTheme].textColor
+            lbl.TextSize = 10
+            lbl.Font = Enum.Font.GothamSemibold
+            lbl.TextXAlignment = Enum.TextXAlignment.Left
+            lbl.Parent = frame
+            table.insert(textElements, lbl)
+
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(0, 45, 0, 20)
+            btn.Position = UDim2.new(0.7, 0, 0.5, -10)
+            btn.Text = state and "ON" or "OFF"
+            btn.TextColor3 = Color3.new(1,1,1)
+            btn.BackgroundColor3 = state and Color3.fromRGB(0,200,0) or Color3.fromRGB(80,80,80)
+            btn.BorderSizePixel = 0
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
+            btn.Parent = frame
+
+            btn.MouseButton1Click:Connect(function()
+                state = not state
+                btn.Text = state and "ON" or "OFF"
+                btn.BackgroundColor3 = state and Color3.fromRGB(0,200,0) or Color3.fromRGB(80,80,80)
+                onToggle(state)
+            end)
+        end
+
+        createOtherUtility(2, getText("anti_afk"), antiAFKEnabled, function(enabled)
+            antiAFKEnabled = enabled
+            if enabled then startAntiAFK() else stopAntiAFK() end
+        end)
+        createOtherUtility(28, getText("fps_ping"), showFPS, function(enabled)
+            showFPS = enabled
+            if enabled then startFPS() else stopFPS() end
+        end)
+        createOtherUtility(54, getText("fullbright"), fullbrightEnabled, function(enabled)
+            if enabled then startFullbright() else stopFullbright() end
+        end)
+        createOtherUtility(80, getText("coords_display"), coordsDisplayEnabled, function(enabled)
+            if enabled then startCoordsDisplay() else stopCoordsDisplay() end
+        end)
+        createOtherUtility(106, getText("timer"), timerEnabled, function(enabled)
+            if enabled then startTimer() else stopTimer() end
+        end)
+
+        -- Places tab
+        local placesScroll = Instance.new("ScrollingFrame")
+        placesScroll.Size = UDim2.new(1, -4, 1, -4)
+        placesScroll.Position = UDim2.new(0, 2, 0, 2)
+        placesScroll.BackgroundTransparency = 1
+        placesScroll.BorderSizePixel = 0
+        placesScroll.CanvasSize = UDim2.new(0,0,0,0)
+        placesScroll.Parent = placesContent
+        local placesLayout = Instance.new("UIListLayout")
+        placesLayout.Padding = UDim.new(0, 4)
+        placesLayout.Parent = placesScroll
+
+        local placeEntries = {
+            {name = "Slap Battles", id = 6403373529},
+            {name = "Barzil", id = 7234087065},
+            {name = "Untitled Tag", id = 115782629143468},
+            {name = "Glove Game", id = 127174121130060},
+            {name = "Guide", id = 18550498098},
+            {name = "DoorKeeper", id = 125845699717230},
+            {name = "Plate", id = 106620300132058},
+            {name = "Poltergeist", id = 103505724406848},
+            {name = "G-X", id = 77283826005207},
+        }
+        for _, place in ipairs(placeEntries) do
+            local frame = Instance.new("Frame")
+            frame.Size = UDim2.new(1, -4, 0, 28)
+            frame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+            frame.BackgroundTransparency = 0.2
+            frame.BorderSizePixel = 0
+            Instance.new("UICorner", frame).CornerRadius = UDim.new(0,6)
+            frame.Parent = placesScroll
+
+            local label = Instance.new("TextLabel")
+            label.Size = UDim2.new(1, -55, 1, 0)
+            label.Position = UDim2.new(0, 4, 0, 0)
+            label.BackgroundTransparency = 1
+            label.Text = place.name .. " (ID: " .. tostring(place.id) .. ")"
+            label.TextColor3 = Color3.new(1,1,1)
+            label.TextSize = 9
+            label.Font = Enum.Font.GothamBold
+            label.TextXAlignment = Enum.TextXAlignment.Left
+            label.Parent = frame
+            table.insert(textElements, label)
+
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(0, 50, 1, 0)
+            btn.Position = UDim2.new(1, -52, 0, 0)
+            btn.Text = getText("teleport_btn")
+            btn.TextColor3 = Color3.new(1,1,1)
+            btn.BackgroundColor3 = Color3.fromRGB(60, 180, 80)
+            btn.BorderSizePixel = 0
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
+            btn.Parent = frame
+            table.insert(textElements, btn)
+            btn.MouseButton1Click:Connect(function()
+                -- Сохранить настройки для авто-перезапуска в новом плейсе
+                _G.TeleportHubSettings = {
+                    language = currentLang,
+                    device = settings.device,
+                    theme = currentTheme,
+                    transparency = guiTransparency,
+                    teleportSpeed = teleportSpeed,
+                    playerTPOffset = playerTPOffset,
+                    starsEnabled = starsEnabled,
+                    _autoRestarted = true,
+                    _targetPlaceId = place.id
+                }
+                _G.EscanorHubClosed = false
+                -- Анимация кнопки ТП
+                TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.new(1,1,1)}):Play()
+                showNotification("🚀 Телепорт в " .. place.name .. "...", 3)
+                task.delay(0.3, function()
+                    local ok, err = pcall(function()
+                        TeleportService:Teleport(place.id)
+                    end)
+                    if not ok then
+                        showNotification("❌ Ошибка: " .. tostring(err), 3)
+                    end
+                end)
+            end)
+        end
+        placesScroll.CanvasSize = UDim2.new(0, 0, 0, #placeEntries * 32 + 20)
+
+        -- Help tab
+        local helpScroll = Instance.new("ScrollingFrame")
+        helpScroll.Size = UDim2.new(1, -4, 1, -4)
+        helpScroll.Position = UDim2.new(0, 2, 0, 2)
+        helpScroll.BackgroundTransparency = 1
+        helpScroll.BorderSizePixel = 0
+        helpScroll.CanvasSize = UDim2.new(0,0,0,0)
+        helpScroll.Parent = helpContent
+        local helpLayout = Instance.new("UIListLayout")
+        helpLayout.Padding = UDim.new(0, 6)
+        helpLayout.Parent = helpScroll
+        local helpTitle = Instance.new("TextLabel")
+        helpTitle.Size = UDim2.new(1, 0, 0, 18)
+        helpTitle.BackgroundTransparency = 1
+        helpTitle.Text = getText("help_title")
+        helpTitle.TextColor3 = themes[currentTheme].textColor
+        helpTitle.TextSize = 12
+        helpTitle.Font = Enum.Font.GothamBold
+        helpTitle.Parent = helpScroll
+        themeElements.helpTitle = helpTitle
+        table.insert(textElements, helpTitle)
+
+        local helpText = Instance.new("TextLabel")
+        helpText.Size = UDim2.new(1, 0, 0, 200)
+        helpText.BackgroundTransparency = 1
+        helpText.Text = getText("help_text")
+        helpText.TextColor3 = themes[currentTheme].textColor
+        helpText.TextSize = 9
+        helpText.Font = Enum.Font.Gotham
+        helpText.TextWrapped = true
+        helpText.Parent = helpScroll
+        themeElements.helpText = helpText
+        table.insert(textElements, helpText)
+
+        -- Подпись (увеличенная, внизу GUI)
+        local creditLabel = Instance.new("TextLabel")
+        creditLabel.Size = UDim2.new(1, -10, 0, 18)
+        creditLabel.Position = UDim2.new(0, 5, 1, -20)
+        creditLabel.BackgroundTransparency = 1
+        creditLabel.Text = "🔥 By: Brobothotspot"
+        creditLabel.TextColor3 = Color3.new(0.55, 0.5, 0.65)
+        creditLabel.TextSize = isMobile and 8 or 10
+        creditLabel.Font = Enum.Font.GothamSemibold
+        creditLabel.TextXAlignment = Enum.TextXAlignment.Center
+        creditLabel.Parent = mainFrame
+        themeElements.creditLabel = creditLabel
+        table.insert(textElements, creditLabel)
+
+        locations = getLocationsForPlace(game.PlaceId)
+        if not locations or #locations == 0 then locations = {} end
+
+        local function switchTab(tab)
+            currentTab = tab
+            playersContent.Visible = (tab == "players")
+            locationsContent.Visible = (tab == "locations")
+            favoritesContent.Visible = (tab == "favorites")
+            historyContent.Visible = (tab == "history")
+            otherContent.Visible = (tab == "other")
+            placesContent.Visible = (tab == "places")
+            helpContent.Visible = (tab == "help")
+            local t = themes[currentTheme]
+            if t then
+                tabPlayers.BackgroundColor3 = (tab=="players") and t.tabActive or t.tabInactive
+                tabLocations.BackgroundColor3 = (tab=="locations") and t.tabActive or t.tabInactive
+                tabFavorites.BackgroundColor3 = (tab=="favorites") and t.tabActive or t.tabInactive
+                tabHistory.BackgroundColor3 = (tab=="history") and t.tabActive or t.tabInactive
+                tabOther.BackgroundColor3 = (tab=="other") and t.tabActive or t.tabInactive
+                tabPlaces.BackgroundColor3 = (tab=="places") and t.tabActive or t.tabInactive
+                tabHelp.BackgroundColor3 = (tab=="help") and t.tabActive or t.tabInactive
+            end
+            if tab == "players" then refreshButtons()
+            elseif tab == "locations" then refreshLocationsList()
+            elseif tab == "favorites" then refreshFavorites()
+            elseif tab == "history" then refreshHistory()
+            end
+        end
+
+        tabPlayers.MouseButton1Click:Connect(function() switchTab("players") end)
+        tabLocations.MouseButton1Click:Connect(function() switchTab("locations") end)
+        tabFavorites.MouseButton1Click:Connect(function() switchTab("favorites") end)
+        tabHistory.MouseButton1Click:Connect(function() switchTab("history") end)
+        tabOther.MouseButton1Click:Connect(function() switchTab("other") end)
+        tabPlaces.MouseButton1Click:Connect(function() switchTab("places") end)
+        tabHelp.MouseButton1Click:Connect(function() switchTab("help") end)
+        switchTab("players")
+
+        searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+            searchFilter = searchBox.Text
+            refreshButtons()
+        end)
+
+        -- Кнопка обновления списка (сортировка всегда по дистанции)
+        sortBtn.Text = getText("sort_dist")
+        sortBtn.MouseButton1Click:Connect(function()
+            refreshButtons()
+        end)
+
+        createFloatingIcon()
+
+        UserInput.InputBegan:Connect(function(input, gp)
+            if gp then return end
+            if input.KeyCode == Enum.KeyCode.K then
+                if mainFrame then mainFrame.Visible = not mainFrame.Visible end
+            end
+            if input.KeyCode == Enum.KeyCode.M then
+                local char = LP.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    savedPosition = hrp.CFrame
+                    LP:Chat(getText("pos_saved").." (M)")
+                    addCurrentLocation()
+                else
+                    LP:Chat(getText("cant_save"))
+                end
+            end
+            if input.KeyCode == Enum.KeyCode.L then
+                if autoTeleportActive then stopAutoTeleport()
+                else
+                    if autoTargetPlayer then startAutoTeleport(autoTargetPlayer)
+                    else LP:Chat(getText("select_player_first")) end
+                end
+            end
+            if input.KeyCode == Enum.KeyCode.P then
+                if not guiDestroyed then destroyGUI() end
+            end
+        end)
+
+        Players.PlayerAdded:Connect(refreshButtons)
+        Players.PlayerRemoving:Connect(refreshButtons)
+        refreshButtons()
+        refreshLocationsList()
+
+        connection = RunService.RenderStepped:Connect(function(dt)
+            if not sg or not sg.Parent then if connection then connection:Disconnect() end return end
+            hue = (hue + dt * 1.2) % (math.pi * 2)
+
+            -- Получить параметры переливания для текущей темы
+            local t = themes[currentTheme] or themes["dark"]
+
+            -- === ПЕРЕЛИВАЮЩАЯСЯ РАМКА ОСНОВНОГО GUI ===
+            if themeElements.mainStroke then
+                themeElements.mainStroke.Color = getShimmerColor(t, hue)
+            end
+
+            -- === ПЕРЕЛИВАЮЩАЯСЯ РАМКА ВЕРХНЕЙ ПАНЕЛИ ===
+            if themeElements.topStroke then
+                themeElements.topStroke.Color = getShimmerColorOffset(t, hue, 1.0)
+            end
+
+            -- === ПЕРЕЛИВАЮЩИЙСЯ ГРАДИЕНТ ФОНА ===
+            if themeElements.mainGradient then
+                local bgCol1 = getShimmerColorDim(t, hue * 0.7, 0.18)
+                local bgCol2 = getShimmerColorDim(t, hue * 0.7 + 0.5, 0.10)
+                themeElements.mainGradient.Color = ColorSequence.new{
+                    ColorSequenceKeypoint.new(0, bgCol1),
+                    ColorSequenceKeypoint.new(1, bgCol2)
+                }
+                themeElements.mainGradient.Rotation = 45 + math.sin(hue * 0.4) * 20
+            end
+
+            -- === ПЕРЕЛИВАЮЩИЙСЯ ГРАДИЕНТ ВЕРХНЕЙ ПАНЕЛИ ===
+            if themeElements.topGradient then
+                local topCol1 = getShimmerColorDim(t, hue * 0.9, 0.30)
+                local topCol2 = getShimmerColorDim(t, hue * 0.9 + 0.8, 0.20)
+                themeElements.topGradient.Color = ColorSequence.new{
+                    ColorSequenceKeypoint.new(0, topCol1),
+                    ColorSequenceKeypoint.new(1, topCol2)
+                }
+            end
+
+            -- === ПЕРЕЛИВАНИЕ КНОПОК ИГРОКОВ ===
+            local playerCol = getShimmerColor(t, hue * 1.3)
+            for _, b in ipairs(btns) do
+                if b and b.Parent then
+                    if autoTeleportActive and autoTargetPlayer and b.Text:find(autoTargetPlayer.Name) then
+                        b.BackgroundColor3 = Color3.new(0,0.9,0)
+                        b.BackgroundTransparency = 0.1
+                    else
+                        b.BackgroundColor3 = playerCol
+                        b.BackgroundTransparency = 0.2
+                    end
+                end
+            end
+            updateCoordsLabel()
+            -- Обновление дистанции на кнопках игроков каждый кадр
+            updatePlayerDistances()
+        end)
+
+        applyTheme(currentTheme)
+
+        -- ===== АНИМАЦИЯ ПОЯВЛЕНИЯ GUI =====
+        -- Начинаем маленьким и прозрачным, разворачиваемся с эффектом Back
+        mainFrame.Size = UDim2.new(0, guiWidth * 0.3, 0, guiHeight * 0.3)
+        mainFrame.Position = UDim2.new(0.5, -guiWidth * 0.15, 0.5, -guiHeight * 0.15)
+        mainFrame.BackgroundTransparency = 1
+        if themeElements.mainStroke then themeElements.mainStroke.Transparency = 1 end
+        task.delay(0.05, function()
+            if not mainFrame or not mainFrame.Parent then return end
+            TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Size = UDim2.new(0, guiWidth, 0, guiHeight),
+                Position = UDim2.new(0.5, -guiWidth/2, 0.5, -guiHeight/2),
+                BackgroundTransparency = guiTransparency
+            }):Play()
+            if themeElements.mainStroke then
+                TweenService:Create(themeElements.mainStroke, TweenInfo.new(0.6, Enum.EasingStyle.Quad), {
+                    Transparency = 0.1
+                }):Play()
+            end
+        end)
+
+        -- Уведомление при авто-перезапуске
+        if _G.TeleportHubSettings and _G.TeleportHubSettings._autoRestarted then
+            task.delay(1, function()
+                showNotification("🔄 Escanor HUB перезапущен!", 2)
+            end)
+            _G.TeleportHubSettings._autoRestarted = nil
+        end
+    end
+
+    local function onCharacterAdded()
+        task.wait(0.5)
+        if guiDestroyed then return end
+        if sg and sg.Parent then
+            showMainGUI()
+            refreshButtons()
+            refreshLocationsList()
+        else
+            createGUI()
+        end
+    end
+
+    createGUI()
+    _G.EscanorHubClosed = false -- GUI открыт — разрешить авто-перезапуск
+    LP.CharacterAdded:Connect(onCharacterAdded)
+    LP:Chat("🔥 Escanor HUB v1.2 загружен! By: Brobothotspot")
+
+    if antiAFKEnabled then startAntiAFK() end
+    if showFPS then startFPS() end
+    if fullbrightEnabled then startFullbright() end
+    if coordsDisplayEnabled then startCoordsDisplay() end
+    if timerEnabled then startTimer() end
+end
+
+-- ===== АВТО-ДЕТЕКТ PLACE ID И ПЕРЕЗАПУСК =====
+-- Если текущий плейс в списке поддерживаемых — скрипт работает
+-- Если нет — всё равно запускаем (пользователь мог вручную запустить)
+local currentPlaceId = game.PlaceId
+local isSupported = SUPPORTED_PLACE_IDS[currentPlaceId] ~= nil
+
+-- При телепортации через Places tab, скрипт перезапускается через loadstring
+-- Здесь мы детектим что уже в новом плейсе и запускаем GUI
+if _G.EscanorHubAlreadyRunning then
+    warn("Escanor HUB уже запущен в этом плейсе.")
+    return
+end
+_G.EscanorHubAlreadyRunning = true
+
+-- ===== ТОЧКА ВХОДА =====
+if not _G.TeleportHubSettings or not _G.TeleportHubSettings.language then
+    -- Первый запуск или после сброса — показать лаунчер
+    showLauncher()
+else
+    -- Настройки уже есть (авто-перезапуск или повторный запуск)
+    StartEscanorHub_Common()
+end
