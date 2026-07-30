@@ -1,0 +1,756 @@
+--[[
+    Anti-AFK GUI v2.1
+    - Перетаскивание как в AUTO LBRICK v3.0 (Draggable + Active)
+    - 12 тем с переводом
+    - 3 языка (English, Русский, Українська)
+    - Полное закрытие по клавише P или на ❌
+    - Радужная кнопка и переливающаяся обводка
+    Автор: Probothotspot
+]]
+ 
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+local CoreGui = (pcall(function() return gethui() end) and gethui()) or game:GetService("CoreGui")
+ 
+-- Удаляем старый GUI, если был
+if CoreGui:FindFirstChild("AntiAFKGUI") then
+    CoreGui.AntiAFKGUI:Destroy()
+end
+ 
+-- Константы
+local MAIN_SIZE = UDim2.new(0, 260, 0, 200)
+local MINIMIZED_HEIGHT = 32
+local SETTINGS_SIZE = UDim2.new(0, 260, 0, 300)
+ 
+-- 12 тем
+local themes = {
+    Purple = {
+        Name = "Purple",
+        Background = Color3.fromRGB(25, 20, 35),
+        Gradient1 = Color3.fromRGB(35, 25, 50),
+        Gradient2 = Color3.fromRGB(25, 20, 35),
+        TitleBar = Color3.fromRGB(45, 30, 65),
+        TextColor = Color3.fromRGB(220, 210, 240),
+        ButtonColor = Color3.fromRGB(60, 40, 85),
+        ButtonText = Color3.fromRGB(255, 255, 255),
+    },
+    DarkRed = {
+        Name = "Dark Red",
+        Background = Color3.fromRGB(30, 15, 15),
+        Gradient1 = Color3.fromRGB(40, 20, 20),
+        Gradient2 = Color3.fromRGB(30, 15, 15),
+        TitleBar = Color3.fromRGB(50, 20, 20),
+        TextColor = Color3.fromRGB(230, 200, 200),
+        ButtonColor = Color3.fromRGB(70, 25, 25),
+        ButtonText = Color3.fromRGB(255, 255, 255),
+    },
+    OceanBlue = {
+        Name = "Ocean Blue",
+        Background = Color3.fromRGB(10, 25, 40),
+        Gradient1 = Color3.fromRGB(15, 35, 50),
+        Gradient2 = Color3.fromRGB(10, 25, 40),
+        TitleBar = Color3.fromRGB(20, 40, 55),
+        TextColor = Color3.fromRGB(200, 220, 240),
+        ButtonColor = Color3.fromRGB(30, 50, 70),
+        ButtonText = Color3.fromRGB(255, 255, 255),
+    },
+    Emerald = {
+        Name = "Emerald",
+        Background = Color3.fromRGB(10, 30, 20),
+        Gradient1 = Color3.fromRGB(15, 40, 25),
+        Gradient2 = Color3.fromRGB(10, 30, 20),
+        TitleBar = Color3.fromRGB(20, 45, 30),
+        TextColor = Color3.fromRGB(200, 240, 210),
+        ButtonColor = Color3.fromRGB(25, 55, 35),
+        ButtonText = Color3.fromRGB(255, 255, 255),
+    },
+    Monochrome = {
+        Name = "Monochrome",
+        Background = Color3.fromRGB(30, 30, 30),
+        Gradient1 = Color3.fromRGB(40, 40, 40),
+        Gradient2 = Color3.fromRGB(30, 30, 30),
+        TitleBar = Color3.fromRGB(45, 45, 45),
+        TextColor = Color3.fromRGB(220, 220, 220),
+        ButtonColor = Color3.fromRGB(60, 60, 60),
+        ButtonText = Color3.fromRGB(255, 255, 255),
+    },
+    Sunset = {
+        Name = "Sunset",
+        Background = Color3.fromRGB(40, 25, 20),
+        Gradient1 = Color3.fromRGB(55, 35, 25),
+        Gradient2 = Color3.fromRGB(40, 25, 20),
+        TitleBar = Color3.fromRGB(60, 35, 30),
+        TextColor = Color3.fromRGB(240, 210, 190),
+        ButtonColor = Color3.fromRGB(80, 45, 35),
+        ButtonText = Color3.fromRGB(255, 255, 255),
+    },
+    NeonPink = {
+        Name = "Neon Pink",
+        Background = Color3.fromRGB(35, 20, 35),
+        Gradient1 = Color3.fromRGB(50, 25, 50),
+        Gradient2 = Color3.fromRGB(35, 20, 35),
+        TitleBar = Color3.fromRGB(60, 30, 60),
+        TextColor = Color3.fromRGB(240, 200, 240),
+        ButtonColor = Color3.fromRGB(80, 35, 80),
+        ButtonText = Color3.fromRGB(255, 255, 255),
+    },
+    CyberYellow = {
+        Name = "Cyber Yell",
+        Background = Color3.fromRGB(30, 30, 15),
+        Gradient1 = Color3.fromRGB(40, 40, 20),
+        Gradient2 = Color3.fromRGB(30, 30, 15),
+        TitleBar = Color3.fromRGB(50, 50, 25),
+        TextColor = Color3.fromRGB(230, 230, 180),
+        ButtonColor = Color3.fromRGB(60, 60, 30),
+        ButtonText = Color3.fromRGB(255, 255, 255),
+    },
+    Forest = {
+        Name = "Forest",
+        Background = Color3.fromRGB(20, 30, 20),
+        Gradient1 = Color3.fromRGB(30, 40, 30),
+        Gradient2 = Color3.fromRGB(20, 30, 20),
+        TitleBar = Color3.fromRGB(35, 45, 35),
+        TextColor = Color3.fromRGB(200, 230, 200),
+        ButtonColor = Color3.fromRGB(45, 60, 45),
+        ButtonText = Color3.fromRGB(255, 255, 255),
+    },
+    DeepSea = {
+        Name = "Deep Sea",
+        Background = Color3.fromRGB(15, 20, 35),
+        Gradient1 = Color3.fromRGB(20, 30, 50),
+        Gradient2 = Color3.fromRGB(15, 20, 35),
+        TitleBar = Color3.fromRGB(25, 35, 55),
+        TextColor = Color3.fromRGB(190, 210, 240),
+        ButtonColor = Color3.fromRGB(35, 45, 70),
+        ButtonText = Color3.fromRGB(255, 255, 255),
+    },
+    Crimson = {
+        Name = "Crimson",
+        Background = Color3.fromRGB(35, 15, 20),
+        Gradient1 = Color3.fromRGB(50, 20, 25),
+        Gradient2 = Color3.fromRGB(35, 15, 20),
+        TitleBar = Color3.fromRGB(55, 20, 30),
+        TextColor = Color3.fromRGB(240, 190, 200),
+        ButtonColor = Color3.fromRGB(70, 25, 35),
+        ButtonText = Color3.fromRGB(255, 255, 255),
+    },
+    Lavender = {
+        Name = "Lavender",
+        Background = Color3.fromRGB(35, 25, 45),
+        Gradient1 = Color3.fromRGB(50, 35, 60),
+        Gradient2 = Color3.fromRGB(35, 25, 45),
+        TitleBar = Color3.fromRGB(60, 40, 70),
+        TextColor = Color3.fromRGB(230, 210, 250),
+        ButtonColor = Color3.fromRGB(80, 50, 95),
+        ButtonText = Color3.fromRGB(255, 255, 255),
+    },
+}
+ 
+-- Переводы с родными названиями языков и тем
+local translations = {
+    EN = {
+        title = "🛡️ Anti-AFK",
+        status_on = "🟢 Enabled",
+        status_off = "🔴 Disabled",
+        toggle_on = "Turn Off",
+        toggle_off = "Turn On",
+        settings_title = "Settings",
+        language_label = "Language:",
+        theme_label = "Theme:",
+        lang_en = "English",
+        lang_ru = "Русский",
+        lang_ua = "Українська",
+        author = "By Probothotspot",
+        theme_names = {
+            Purple = "Purple",
+            DarkRed = "Dark Red",
+            OceanBlue = "Ocean Blue",
+            Emerald = "Emerald",
+            Monochrome = "Monochrome",
+            Sunset = "Sunset",
+            NeonPink = "Neon Pink",
+            CyberYellow = "Cyber Yellow",
+            Forest = "Forest",
+            DeepSea = "Deep Sea",
+            Crimson = "Crimson",
+            Lavender = "Lavender",
+        },
+    },
+    RU = {
+        title = "🛡️ Анти-АФК",
+        status_on = "🟢 Включён",
+        status_off = "🔴 Выключен",
+        toggle_on = "Выключить",
+        toggle_off = "Включить",
+        settings_title = "Настройки",
+        language_label = "Язык:",
+        theme_label = "Тема:",
+        lang_en = "English",
+        lang_ru = "Русский",
+        lang_ua = "Українська",
+        author = "От Probothotspot",
+        theme_names = {
+            Purple = "Фиолетовая",
+            DarkRed = "Тёмно-красная",
+            OceanBlue = "Океанская синяя",
+            Emerald = "Изумрудная",
+            Monochrome = "Монохромная",
+            Sunset = "Закатная",
+            NeonPink = "Неон-розовая",
+            CyberYellow = "Кибер-жёлтая",
+            Forest = "Лесная",
+            DeepSea = "Глубокое море",
+            Crimson = "Малиновая",
+            Lavender = "Лавандовая",
+        },
+    },
+    UA = {
+        title = "🛡️ Анти-АФК",
+        status_on = "🟢 Увімкнено",
+        status_off = "🔴 Вимкнено",
+        toggle_on = "Вимкнути",
+        toggle_off = "Увімкнути",
+        settings_title = "Налаштування",
+        language_label = "Мова:",
+        theme_label = "Тема:",
+        lang_en = "English",
+        lang_ru = "Русский",
+        lang_ua = "Українська",
+        author = "Від Probothotspot",
+        theme_names = {
+            Purple = "Фіолетова",
+            DarkRed = "Темно-червона",
+            OceanBlue = "Океанська синя",
+            Emerald = "Смарагдова",
+            Monochrome = "Монохромна",
+            Sunset = "Захід сонця",
+            NeonPink = "Неон-рожева",
+            CyberYellow = "Кібер-жовта",
+            Forest = "Лісова",
+            DeepSea = "Глибоке море",
+            Crimson = "Малинова",
+            Lavender = "Лавандова",
+        },
+    },
+}
+ 
+-- Состояние
+local currentLanguage = _G.AntiAFK_Lang or "RU"
+local currentThemeName = _G.AntiAFK_Theme or "Purple"
+local isEnabled = _G.AntiAFK_Enabled or false
+local antiAFKConnection = nil
+ 
+-- Сохранение настроек
+local function saveSettings()
+    _G.AntiAFK_Lang = currentLanguage
+    _G.AntiAFK_Theme = currentThemeName
+    _G.AntiAFK_Enabled = isEnabled
+end
+ 
+-- Анти-АФК
+local function startAntiAFK()
+    if antiAFKConnection then return end
+    antiAFKConnection = Players.LocalPlayer.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
+end
+ 
+local function stopAntiAFK()
+    if antiAFKConnection then
+        antiAFKConnection:Disconnect()
+        antiAFKConnection = nil
+    end
+end
+ 
+-- Восстановление состояния
+if isEnabled then
+    startAntiAFK()
+end
+ 
+-- GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AntiAFKGUI"
+screenGui.Parent = CoreGui
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.DisplayOrder = 999
+screenGui.ResetOnSpawn = false   -- сохраняет GUI при респавне
+ 
+-- Основное окно
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "Main"
+mainFrame.Size = MAIN_SIZE
+mainFrame.Position = UDim2.new(0.5, -130, 0.5, -100)
+mainFrame.BackgroundColor3 = themes[currentThemeName].Background
+mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
+mainFrame.Active = true
+mainFrame.Draggable = true    -- перетаскивание за любое свободное место
+mainFrame.Parent = screenGui
+ 
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 8)
+ 
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Thickness = 2
+mainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+mainStroke.Parent = mainFrame
+ 
+local mainGradient = Instance.new("UIGradient")
+mainGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, themes[currentThemeName].Gradient1),
+    ColorSequenceKeypoint.new(1, themes[currentThemeName].Gradient2),
+})
+mainGradient.Rotation = 45
+mainGradient.Parent = mainFrame
+ 
+-- Заголовок
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 32)
+titleBar.BackgroundColor3 = themes[currentThemeName].TitleBar
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 8)
+ 
+local titleText = Instance.new("TextLabel")
+titleText.Size = UDim2.new(1, -70, 1, 0)
+titleText.Position = UDim2.new(0, 10, 0, 0)
+titleText.BackgroundTransparency = 1
+titleText.Text = translations[currentLanguage].title
+titleText.TextColor3 = themes[currentThemeName].TextColor
+titleText.Font = Enum.Font.GothamBold
+titleText.TextSize = 16
+titleText.TextXAlignment = Enum.TextXAlignment.Left
+titleText.Parent = titleBar
+ 
+-- Кнопка сворачивания
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 28, 0, 28)
+minimizeBtn.Position = UDim2.new(1, -58, 0, 2)
+minimizeBtn.BackgroundColor3 = themes[currentThemeName].ButtonColor
+minimizeBtn.Text = "–"
+minimizeBtn.TextColor3 = themes[currentThemeName].ButtonText
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.TextSize = 18
+minimizeBtn.BorderSizePixel = 0
+Instance.new("UICorner", minimizeBtn).CornerRadius = UDim.new(0, 4)
+minimizeBtn.Parent = titleBar
+ 
+-- Кнопка закрытия (❌)
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 28, 0, 28)
+closeBtn.Position = UDim2.new(1, -28, 0, 2)
+closeBtn.BackgroundColor3 = themes[currentThemeName].ButtonColor
+closeBtn.Text = "❌"
+closeBtn.TextColor3 = themes[currentThemeName].ButtonText
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 14
+closeBtn.BorderSizePixel = 0
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 4)
+closeBtn.Parent = titleBar
+ 
+-- Содержимое
+local contentFrame = Instance.new("Frame")
+contentFrame.Size = UDim2.new(1, 0, 1, -32)
+contentFrame.Position = UDim2.new(0, 0, 0, 32)
+contentFrame.BackgroundTransparency = 1
+contentFrame.BorderSizePixel = 0
+contentFrame.Parent = mainFrame
+ 
+-- Статус
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, -20, 0, 30)
+statusLabel.Position = UDim2.new(0, 10, 0, 10)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = isEnabled and translations[currentLanguage].status_on or translations[currentLanguage].status_off
+statusLabel.TextColor3 = themes[currentThemeName].TextColor
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextSize = 16
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = contentFrame
+ 
+-- Радужная кнопка вкл/выкл
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(1, -20, 0, 36)
+toggleBtn.Position = UDim2.new(0, 10, 0, 50)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(255,255,255)
+toggleBtn.Text = isEnabled and translations[currentLanguage].toggle_on or translations[currentLanguage].toggle_off
+toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 16
+toggleBtn.BorderSizePixel = 0
+Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 6)
+ 
+local rainbowGradient = Instance.new("UIGradient")
+rainbowGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255,0,0)),
+    ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255,255,0)),
+    ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0,255,0)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0,255,255)),
+    ColorSequenceKeypoint.new(0.67, Color3.fromRGB(0,0,255)),
+    ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255,0,255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255,0,0)),
+})
+rainbowGradient.Parent = toggleBtn
+Instance.new("UIStroke", toggleBtn).Thickness = 1
+toggleBtn.Parent = contentFrame
+ 
+-- Кнопка настроек
+local settingsBtn = Instance.new("TextButton")
+settingsBtn.Size = UDim2.new(1, -20, 0, 30)
+settingsBtn.Position = UDim2.new(0, 10, 0, 96)
+settingsBtn.BackgroundColor3 = themes[currentThemeName].ButtonColor
+settingsBtn.Text = "⚙️ " .. translations[currentLanguage].settings_title
+settingsBtn.TextColor3 = themes[currentThemeName].ButtonText
+settingsBtn.Font = Enum.Font.Gotham
+settingsBtn.TextSize = 14
+settingsBtn.BorderSizePixel = 0
+Instance.new("UICorner", settingsBtn).CornerRadius = UDim.new(0, 4)
+settingsBtn.Parent = contentFrame
+ 
+-- Подпись автора
+local authorLabel = Instance.new("TextLabel")
+authorLabel.Size = UDim2.new(1, -20, 0, 20)
+authorLabel.Position = UDim2.new(0, 10, 0, 140)
+authorLabel.BackgroundTransparency = 1
+authorLabel.Text = translations[currentLanguage].author
+authorLabel.TextColor3 = themes[currentThemeName].TextColor
+authorLabel.Font = Enum.Font.Gotham
+authorLabel.TextSize = 12
+authorLabel.TextXAlignment = Enum.TextXAlignment.Left
+authorLabel.Parent = contentFrame
+ 
+-- Сворачивание
+local isCollapsed = false
+local collapseTween = nil
+minimizeBtn.MouseButton1Click:Connect(function()
+    if collapseTween then collapseTween:Cancel() end
+    if isCollapsed then
+        mainFrame.ClipsDescendants = false
+        collapseTween = TweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = MAIN_SIZE})
+        collapseTween:Play()
+        collapseTween.Completed:Connect(function()
+            mainFrame.ClipsDescendants = true
+            contentFrame.Visible = true
+        end)
+        contentFrame.Visible = true
+        minimizeBtn.Text = "–"
+        isCollapsed = false
+    else
+        contentFrame.Visible = false
+        mainFrame.ClipsDescendants = true
+        collapseTween = TweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(MAIN_SIZE.X.Scale, MAIN_SIZE.X.Offset, 0, MINIMIZED_HEIGHT)})
+        collapseTween:Play()
+        minimizeBtn.Text = "+"
+        isCollapsed = true
+    end
+end)
+ 
+-- Окно настроек
+local settingsFrame = Instance.new("Frame")
+settingsFrame.Name = "SettingsFrame"
+settingsFrame.Size = SETTINGS_SIZE
+settingsFrame.Position = UDim2.new(0.5, -130, 0.5, -150)
+settingsFrame.BackgroundColor3 = themes[currentThemeName].Background
+settingsFrame.BorderSizePixel = 0
+settingsFrame.Visible = false
+settingsFrame.ClipsDescendants = true
+settingsFrame.Active = true
+settingsFrame.Draggable = true   -- перетаскивание за любое свободное место
+settingsFrame.Parent = screenGui
+ 
+Instance.new("UICorner", settingsFrame).CornerRadius = UDim.new(0, 8)
+local setStroke = Instance.new("UIStroke", settingsFrame)
+setStroke.Thickness = 2
+setStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+ 
+local setGradient = Instance.new("UIGradient", settingsFrame)
+setGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, themes[currentThemeName].Gradient1),
+    ColorSequenceKeypoint.new(1, themes[currentThemeName].Gradient2),
+})
+setGradient.Rotation = 45
+ 
+-- Заголовок настроек
+local settingsTitleBar = Instance.new("Frame")
+settingsTitleBar.Size = UDim2.new(1, 0, 0, 32)
+settingsTitleBar.BackgroundColor3 = themes[currentThemeName].TitleBar
+settingsTitleBar.BorderSizePixel = 0
+Instance.new("UICorner", settingsTitleBar).CornerRadius = UDim.new(0, 8)
+settingsTitleBar.Parent = settingsFrame
+ 
+local settingsTitleText = Instance.new("TextLabel")
+settingsTitleText.Size = UDim2.new(1, -40, 1, 0)
+settingsTitleText.Position = UDim2.new(0, 10, 0, 0)
+settingsTitleText.BackgroundTransparency = 1
+settingsTitleText.Text = translations[currentLanguage].settings_title
+settingsTitleText.TextColor3 = themes[currentThemeName].TextColor
+settingsTitleText.Font = Enum.Font.GothamBold
+settingsTitleText.TextSize = 16
+settingsTitleText.TextXAlignment = Enum.TextXAlignment.Left
+settingsTitleText.Parent = settingsTitleBar
+ 
+local settingsCloseBtn = Instance.new("TextButton")
+settingsCloseBtn.Size = UDim2.new(0, 28, 0, 28)
+settingsCloseBtn.Position = UDim2.new(1, -30, 0, 2)
+settingsCloseBtn.BackgroundColor3 = themes[currentThemeName].ButtonColor
+settingsCloseBtn.Text = "❌"
+settingsCloseBtn.TextColor3 = themes[currentThemeName].ButtonText
+settingsCloseBtn.Font = Enum.Font.GothamBold
+settingsCloseBtn.TextSize = 14
+settingsCloseBtn.BorderSizePixel = 0
+Instance.new("UICorner", settingsCloseBtn).CornerRadius = UDim.new(0, 4)
+settingsCloseBtn.Parent = settingsTitleBar
+ 
+settingsCloseBtn.MouseButton1Click:Connect(function()
+    settingsFrame.Visible = false
+end)
+ 
+local settingsContent = Instance.new("Frame")
+settingsContent.Size = UDim2.new(1, 0, 1, -32)
+settingsContent.Position = UDim2.new(0, 0, 0, 32)
+settingsContent.BackgroundTransparency = 1
+settingsContent.BorderSizePixel = 0
+settingsContent.Parent = settingsFrame
+ 
+-- Язык
+local langLabel = Instance.new("TextLabel")
+langLabel.Size = UDim2.new(1, -20, 0, 20)
+langLabel.Position = UDim2.new(0, 10, 0, 10)
+langLabel.BackgroundTransparency = 1
+langLabel.Text = translations[currentLanguage].language_label
+langLabel.TextColor3 = themes[currentThemeName].TextColor
+langLabel.Font = Enum.Font.Gotham
+langLabel.TextSize = 14
+langLabel.TextXAlignment = Enum.TextXAlignment.Left
+langLabel.Parent = settingsContent
+ 
+local langButtons = {}
+local languages = {"EN", "RU", "UA"}
+local langHolder = Instance.new("Frame")
+langHolder.Size = UDim2.new(1, -20, 0, 30)
+langHolder.Position = UDim2.new(0, 10, 0, 35)
+langHolder.BackgroundTransparency = 1
+langHolder.BorderSizePixel = 0
+langHolder.Parent = settingsContent
+ 
+for i, lang in ipairs(languages) do
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 80, 1, 0)
+    btn.Position = UDim2.new(0, (i-1)*85, 0, 0)
+    btn.BackgroundColor3 = lang == currentLanguage and themes[currentThemeName].ButtonColor or themes[currentThemeName].Background
+    btn.Text = translations[currentLanguage]["lang_"..lang:lower()]
+    btn.TextColor3 = themes[currentThemeName].ButtonText
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 14
+    btn.BorderSizePixel = 0
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+    btn.Parent = langHolder
+    langButtons[lang] = btn
+ 
+    btn.MouseButton1Click:Connect(function()
+        if currentLanguage == lang then return end
+        currentLanguage = lang
+        saveSettings()
+        updateLanguageUI()
+        for l, b in pairs(langButtons) do
+            b.BackgroundColor3 = l == currentLanguage and themes[currentThemeName].ButtonColor or themes[currentThemeName].Background
+        end
+    end)
+end
+ 
+-- Тема
+local themeLabel = Instance.new("TextLabel")
+themeLabel.Size = UDim2.new(1, -20, 0, 20)
+themeLabel.Position = UDim2.new(0, 10, 0, 75)
+themeLabel.BackgroundTransparency = 1
+themeLabel.Text = translations[currentLanguage].theme_label
+themeLabel.TextColor3 = themes[currentThemeName].TextColor
+themeLabel.Font = Enum.Font.Gotham
+themeLabel.TextSize = 14
+themeLabel.TextXAlignment = Enum.TextXAlignment.Left
+themeLabel.Parent = settingsContent
+ 
+local themeScroll = Instance.new("ScrollingFrame")
+themeScroll.Size = UDim2.new(1, -10, 1, -105)
+themeScroll.Position = UDim2.new(0, 5, 0, 100)
+themeScroll.BackgroundTransparency = 0.9
+themeScroll.BackgroundColor3 = themes[currentThemeName].Background
+themeScroll.BorderSizePixel = 0
+themeScroll.ScrollBarThickness = 4
+themeScroll.ScrollBarImageColor3 = themes[currentThemeName].TextColor
+themeScroll.CanvasSize = UDim2.new(0, 0, 0, #themes * 35)
+themeScroll.Parent = settingsContent
+ 
+local themeList = Instance.new("UIListLayout")
+themeList.SortOrder = Enum.SortOrder.LayoutOrder
+themeList.Padding = UDim.new(0, 4)
+themeList.Parent = themeScroll
+ 
+local themeButtons = {}
+for name, themeData in pairs(themes) do
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Size = UDim2.new(1, -10, 0, 30)
+    btn.BackgroundColor3 = themeData.ButtonColor
+    btn.Text = translations[currentLanguage].theme_names[name]
+    btn.TextColor3 = themeData.ButtonText
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 14
+    btn.BorderSizePixel = 0
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+    btn.Parent = themeScroll
+ 
+    if name == currentThemeName then
+        btn.BorderSizePixel = 2
+        btn.BorderColor3 = Color3.fromRGB(255,255,255)
+    end
+ 
+    btn.MouseButton1Click:Connect(function()
+        currentThemeName = name
+        saveSettings()
+        applyTheme()
+        for _, b in pairs(themeButtons) do
+            b.BorderSizePixel = b.Name == name and 2 or 0
+            b.BorderColor3 = b.Name == name and Color3.fromRGB(255,255,255) or Color3.new(0,0,0)
+        end
+        applyThemeToSettingsFrame()
+    end)
+    themeButtons[name] = btn
+end
+ 
+-- Кнопка настроек
+settingsBtn.MouseButton1Click:Connect(function()
+    if settingsFrame.Visible then
+        settingsFrame.Visible = false
+    else
+        settingsFrame.Position = UDim2.new(mainFrame.Position.X.Scale, mainFrame.Position.X.Offset + 270, mainFrame.Position.Y.Scale, mainFrame.Position.Y.Offset)
+        settingsFrame.Visible = true
+    end
+end)
+ 
+-- Закрытие всего (остановка + удаление GUI)
+local function closeAll()
+    if antiAFKConnection then stopAntiAFK() end
+    if rainbowBorderConnection then rainbowBorderConnection:Disconnect() end
+    if rainbowButtonConnection then rainbowButtonConnection:Disconnect() end
+    screenGui:Destroy()
+end
+ 
+closeBtn.MouseButton1Click:Connect(closeAll)
+ 
+-- Горячая клавиша P
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.P then
+        closeAll()
+    end
+end)
+ 
+-- Применение темы
+function applyTheme()
+    local theme = themes[currentThemeName]
+    mainFrame.BackgroundColor3 = theme.Background
+    mainGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, theme.Gradient1),
+        ColorSequenceKeypoint.new(1, theme.Gradient2),
+    })
+    titleBar.BackgroundColor3 = theme.TitleBar
+    titleText.TextColor3 = theme.TextColor
+    statusLabel.TextColor3 = theme.TextColor
+    authorLabel.TextColor3 = theme.TextColor
+    settingsBtn.BackgroundColor3 = theme.ButtonColor
+    settingsBtn.TextColor3 = theme.ButtonText
+    minimizeBtn.BackgroundColor3 = theme.ButtonColor
+    minimizeBtn.TextColor3 = theme.ButtonText
+    closeBtn.BackgroundColor3 = theme.ButtonColor
+    closeBtn.TextColor3 = theme.ButtonText
+    if settingsFrame.Visible then
+        applyThemeToSettingsFrame()
+    end
+end
+ 
+function applyThemeToSettingsFrame()
+    local theme = themes[currentThemeName]
+    settingsFrame.BackgroundColor3 = theme.Background
+    setGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, theme.Gradient1),
+        ColorSequenceKeypoint.new(1, theme.Gradient2),
+    })
+    settingsTitleBar.BackgroundColor3 = theme.TitleBar
+    settingsTitleText.TextColor3 = theme.TextColor
+    settingsCloseBtn.BackgroundColor3 = theme.ButtonColor
+    settingsCloseBtn.TextColor3 = theme.ButtonText
+    langLabel.TextColor3 = theme.TextColor
+    themeLabel.TextColor3 = theme.TextColor
+    themeScroll.BackgroundColor3 = theme.Background
+    themeScroll.ScrollBarImageColor3 = theme.TextColor
+    for _, btn in pairs(themeButtons) do
+        btn.BackgroundColor3 = themes[btn.Name].ButtonColor
+        btn.TextColor3 = themes[btn.Name].ButtonText
+    end
+    for l, b in pairs(langButtons) do
+        b.BackgroundColor3 = l == currentLanguage and themes[currentThemeName].ButtonColor or themes[currentThemeName].Background
+    end
+end
+ 
+-- Обновление языка
+function updateLanguageUI()
+    local lang = translations[currentLanguage]
+    titleText.Text = lang.title
+    statusLabel.Text = isEnabled and lang.status_on or lang.status_off
+    toggleBtn.Text = isEnabled and lang.toggle_on or lang.toggle_off
+    settingsBtn.Text = "⚙️ " .. lang.settings_title
+    authorLabel.Text = lang.author
+    settingsTitleText.Text = lang.settings_title
+    langLabel.Text = lang.language_label
+    themeLabel.Text = lang.theme_label
+    for l, btn in pairs(langButtons) do
+        btn.Text = lang["lang_"..l:lower()]
+    end
+    -- Обновить названия тем
+    for name, btn in pairs(themeButtons) do
+        btn.Text = lang.theme_names[name]
+    end
+end
+ 
+-- Переключение анти-АФК
+toggleBtn.MouseButton1Click:Connect(function()
+    isEnabled = not isEnabled
+    if isEnabled then
+        startAntiAFK()
+    else
+        stopAntiAFK()
+    end
+    saveSettings()
+    statusLabel.Text = isEnabled and translations[currentLanguage].status_on or translations[currentLanguage].status_off
+    toggleBtn.Text = isEnabled and translations[currentLanguage].toggle_on or translations[currentLanguage].toggle_off
+end)
+ 
+-- Анимация радужной обводки
+local rainbowBorderConnection = nil
+local borderHue = 0
+rainbowBorderConnection = RunService.Heartbeat:Connect(function(delta)
+    borderHue = (borderHue + delta * 0.5) % 1
+    mainStroke.Color = Color3.fromHSV(borderHue, 1, 1)
+    setStroke.Color = Color3.fromHSV(borderHue, 1, 1)
+end)
+ 
+-- Анимация радужного градиента кнопки
+local rainbowButtonConnection = nil
+local rainbowOffset = 0
+rainbowButtonConnection = RunService.Heartbeat:Connect(function(delta)
+    rainbowOffset = (rainbowOffset + delta * 0.2) % 1
+    rainbowGradient.Offset = Vector2.new(rainbowOffset, 0)
+end)
+ 
+screenGui.Destroying:Connect(function()
+    if rainbowBorderConnection then rainbowBorderConnection:Disconnect() end
+    if rainbowButtonConnection then rainbowButtonConnection:Disconnect() end
+    if antiAFKConnection then stopAntiAFK() end
+end)
+ 
+-- Первоначальная установка
+applyTheme()
+updateLanguageUI()
