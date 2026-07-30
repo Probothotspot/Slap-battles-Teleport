@@ -1,0 +1,832 @@
+--[[
+    Platform GUI — By: Probothotspot
+    Фиолетово-переливающийся GUI (финальная версия)
+    Табы: Управление / Настройки
+    Консоль с вкл/выкл
+    Сворачивание -/+, закрытие X (полное удаление + остановка)
+    Спавн снизу экрана, скрытие/удаление по P
+    Изменения применяются сразу!
+]]
+
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- ============ НАСТРОЙКИ (изменяемые в GUI) ============
+local cfg = {
+    Y = -12438,
+    Thickness = 100,
+    SizeXZ = 50000,
+    Transparency = 0.5,
+    Material = "SmoothPlastic",
+    CanCollide = true,
+}
+
+local platform = nil
+local isMinimized = false
+local currentTab = "control"
+local logsEnabled = true
+local logEntries = {}
+
+-- Флаги для остановки скрипта
+local guiActive = true       -- пока true – всё работает
+local gradientLoopThread = nil
+local inputConnection = nil
+
+-- ============ ФУНКЦИИ ПЛАТФОРМЫ ============
+local function getTargetY()
+    return cfg.Y + (cfg.Thickness / 2) + 3
+end
+
+local function createPlatform()
+    if platform then platform:Destroy() end
+    platform = Instance.new("Part")
+    platform.Name = "PBH_Platform"
+    platform.Size = Vector3.new(cfg.SizeXZ, cfg.Thickness, cfg.SizeXZ)
+    platform.Position = Vector3.new(0, cfg.Y, 0)
+    platform.Anchored = true
+    platform.CanCollide = cfg.CanCollide
+    platform.Transparency = cfg.Transparency
+    platform.BrickColor = BrickColor.new("Really black")
+    platform.Material = Enum.Material[cfg.Material]
+    platform.Parent = Workspace
+end
+
+local function teleportToPlatform()
+    if not platform or not platform.Parent then return end
+    local char = player.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if root then
+        root.CFrame = CFrame.new(0, getTargetY(), 0) * (root.CFrame - root.Position)
+    end
+end
+
+local function deletePlatform()
+    if platform then platform:Destroy(); platform = nil end
+end
+
+-- ============ УДАЛИТЬ СТАРЫЙ GUI ============
+if playerGui:FindFirstChild("PlatformGUI_PBH") then
+    playerGui:FindFirstChild("PlatformGUI_PBH"):Destroy()
+end
+
+-- ============ УТИЛИТЫ ============
+local function corner(p, r)
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 8); c.Parent = p
+end
+local function stroke(p, col, th)
+    local s = Instance.new("UIStroke"); s.Color = col or Color3.fromRGB(130,70,200)
+    s.Thickness = th or 1; s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; s.Parent = p; return s
+end
+local function padding(p, t, b, l, r)
+    local pd = Instance.new("UIPadding"); pd.PaddingTop = UDim.new(0,t); pd.PaddingBottom = UDim.new(0,b)
+    pd.PaddingLeft = UDim.new(0,l); pd.PaddingRight = UDim.new(0,r); pd.Parent = p
+end
+
+-- ============ GUI ============
+local gui = Instance.new("ScreenGui")
+gui.Name = "PlatformGUI_PBH"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = playerGui
+
+-- === ОСНОВНОЙ ФРЕЙМ ===
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.Size = UDim2.new(0, 270, 0, 310)
+main.Position = UDim2.new(0.5, -135, 1, -330)
+main.BackgroundColor3 = Color3.fromRGB(20, 12, 35)
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+main.ClipsDescendants = true
+main.Parent = gui
+corner(main, 10)
+local mainStroke = stroke(main, Color3.fromRGB(140, 70, 220), 2)
+local mainGrad = Instance.new("UIGradient")
+mainGrad.Color = ColorSequence.new(Color3.fromRGB(30, 15, 50), Color3.fromRGB(15, 8, 30))
+mainGrad.Rotation = 135
+mainGrad.Parent = main
+
+-- === ЗАГОЛОВОК ===
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 34)
+header.BackgroundTransparency = 1
+header.Parent = main
+
+local dot = Instance.new("Frame")
+dot.Size = UDim2.new(0, 7, 0, 7)
+dot.Position = UDim2.new(0, 10, 0.5, -3)
+dot.BackgroundColor3 = Color3.fromRGB(180, 100, 255)
+dot.BorderSizePixel = 0
+dot.Parent = header
+corner(dot, 4)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -100, 1, 0)
+title.Position = UDim2.new(0, 24, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "PLATFORM GUI"
+title.TextColor3 = Color3.fromRGB(200, 150, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 13
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = header
+
+local minBtn = Instance.new("TextButton")
+minBtn.Size = UDim2.new(0, 22, 0, 22)
+minBtn.Position = UDim2.new(1, -52, 0.5, -11)
+minBtn.BackgroundColor3 = Color3.fromRGB(50, 25, 80)
+minBtn.BorderSizePixel = 0
+minBtn.Text = "-"
+minBtn.TextColor3 = Color3.new(1, 1, 1)
+minBtn.Font = Enum.Font.GothamBold
+minBtn.TextSize = 16
+minBtn.Parent = header
+corner(minBtn, 6)
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 22, 0, 22)
+closeBtn.Position = UDim2.new(1, -26, 0.5, -11)
+closeBtn.BackgroundColor3 = Color3.fromRGB(90, 25, 25)
+closeBtn.BorderSizePixel = 0
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 12
+closeBtn.Parent = header
+corner(closeBtn, 6)
+
+local hLine = Instance.new("Frame")
+hLine.Size = UDim2.new(1, -16, 0, 1)
+hLine.Position = UDim2.new(0, 8, 0, 34)
+hLine.BackgroundColor3 = Color3.fromRGB(100, 50, 180)
+hLine.BackgroundTransparency = 0.5
+hLine.BorderSizePixel = 0
+hLine.Parent = main
+
+-- === ТАБЫ ===
+local tabBar = Instance.new("Frame")
+tabBar.Size = UDim2.new(1, 0, 0, 26)
+tabBar.Position = UDim2.new(0, 0, 0, 36)
+tabBar.BackgroundTransparency = 1
+tabBar.Parent = main
+
+local tabControl = Instance.new("TextButton")
+tabControl.Size = UDim2.new(0.5, 0, 1, 0)
+tabControl.Position = UDim2.new(0, 0, 0, 0)
+tabControl.BackgroundTransparency = 1
+tabControl.Text = "Управление"
+tabControl.TextColor3 = Color3.fromRGB(200, 160, 255)
+tabControl.Font = Enum.Font.GothamBold
+tabControl.TextSize = 10
+tabControl.BorderSizePixel = 0
+tabControl.Parent = tabBar
+
+local tabSettings = Instance.new("TextButton")
+tabSettings.Size = UDim2.new(0.5, 0, 1, 0)
+tabSettings.Position = UDim2.new(0.5, 0, 0, 0)
+tabSettings.BackgroundTransparency = 1
+tabSettings.Text = "Настройки"
+tabSettings.TextColor3 = Color3.fromRGB(120, 100, 140)
+tabSettings.Font = Enum.Font.GothamBold
+tabSettings.TextSize = 10
+tabSettings.BorderSizePixel = 0
+tabSettings.Parent = tabBar
+
+local tabIndicator = Instance.new("Frame")
+tabIndicator.Size = UDim2.new(0.3, 0, 0, 2)
+tabIndicator.Position = UDim2.new(0.1, 0, 1, -2)
+tabIndicator.BackgroundColor3 = Color3.fromRGB(180, 100, 255)
+tabIndicator.BorderSizePixel = 0
+tabIndicator.Parent = tabBar
+corner(tabIndicator, 1)
+
+local tLine = Instance.new("Frame")
+tLine.Size = UDim2.new(1, -16, 0, 1)
+tLine.Position = UDim2.new(0, 8, 0, 62)
+tLine.BackgroundColor3 = Color3.fromRGB(80, 40, 140)
+tLine.BackgroundTransparency = 0.6
+tLine.BorderSizePixel = 0
+tLine.Parent = main
+
+-- ========== СТРАНИЦА: УПРАВЛЕНИЕ ==========
+local controlPage = Instance.new("Frame")
+controlPage.Name = "ControlPage"
+controlPage.Size = UDim2.new(1, 0, 1, -64)
+controlPage.Position = UDim2.new(0, 0, 0, 64)
+controlPage.BackgroundTransparency = 1
+controlPage.Visible = true
+controlPage.Parent = main
+
+local function makeActionBtn(text, posY, c1, c2)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, -16, 0, 30)
+    b.Position = UDim2.new(0, 8, 0, posY)
+    b.BackgroundColor3 = Color3.new(1, 1, 1)
+    b.BackgroundTransparency = 0.9
+    b.BorderSizePixel = 0
+    b.Text = text
+    b.TextColor3 = Color3.new(1, 1, 1)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 12
+    b.AutoButtonColor = false
+    b.Parent = controlPage
+    corner(b, 7)
+    local textStroke = Instance.new("UIStroke")
+    textStroke.Color = Color3.fromRGB(0, 0, 0)
+    textStroke.Thickness = 1
+    textStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+    textStroke.Parent = b
+    local g = Instance.new("UIGradient")
+    g.Color = ColorSequence.new(c1, c2)
+    g.Rotation = 135
+    g.Parent = b
+    b.MouseEnter:Connect(function()
+        TweenService:Create(b, TweenInfo.new(0.12), { Size = UDim2.new(1, -12, 0, 31) }):Play()
+    end)
+    b.MouseLeave:Connect(function()
+        TweenService:Create(b, TweenInfo.new(0.12), { Size = UDim2.new(1, -16, 0, 30) }):Play()
+    end)
+    return b
+end
+
+local btnCreate = makeActionBtn("Создать платформу", 0, Color3.fromRGB(80,45,160), Color3.fromRGB(55,30,120))
+local btnTP = makeActionBtn("Телепорт к платформе", 34, Color3.fromRGB(35,120,75), Color3.fromRGB(22,80,50))
+local btnDelete = makeActionBtn("Удалить платформу", 68, Color3.fromRGB(145,35,45), Color3.fromRGB(100,22,30))
+
+local statusFrame = Instance.new("Frame")
+statusFrame.Size = UDim2.new(1, -16, 0, 38)
+statusFrame.Position = UDim2.new(0, 8, 0, 104)
+statusFrame.BackgroundColor3 = Color3.fromRGB(15, 8, 25)
+statusFrame.BackgroundTransparency = 0.2
+statusFrame.BorderSizePixel = 0
+statusFrame.Parent = controlPage
+corner(statusFrame, 6)
+stroke(statusFrame, Color3.fromRGB(70, 35, 120), 1)
+
+local statusText = Instance.new("TextLabel")
+statusText.Size = UDim2.new(1, -10, 0, 14)
+statusText.Position = UDim2.new(0, 5, 0, 3)
+statusText.BackgroundTransparency = 1
+statusText.Text = "Статус: не создана"
+statusText.TextColor3 = Color3.fromRGB(180, 80, 80)
+statusText.Font = Enum.Font.Gotham
+statusText.TextSize = 10
+statusText.TextXAlignment = Enum.TextXAlignment.Left
+statusText.Parent = statusFrame
+
+local infoText = Instance.new("TextLabel")
+infoText.Size = UDim2.new(1, -10, 0, 12)
+infoText.Position = UDim2.new(0, 5, 0, 19)
+infoText.BackgroundTransparency = 1
+infoText.Text = "Y: -- | Size: -- | Mat: --"
+infoText.TextColor3 = Color3.fromRGB(150, 120, 190)
+infoText.Font = Enum.Font.Code
+infoText.TextSize = 9
+infoText.TextXAlignment = Enum.TextXAlignment.Left
+infoText.Parent = statusFrame
+
+-- Консоль
+local consoleFrame = Instance.new("Frame")
+consoleFrame.Size = UDim2.new(1, -16, 0, 70)
+consoleFrame.Position = UDim2.new(0, 8, 0, 148)
+consoleFrame.BackgroundColor3 = Color3.fromRGB(10, 5, 18)
+consoleFrame.BackgroundTransparency = 0.1
+consoleFrame.BorderSizePixel = 0
+consoleFrame.ClipsDescendants = true
+consoleFrame.Parent = controlPage
+corner(consoleFrame, 6)
+stroke(consoleFrame, Color3.fromRGB(60, 30, 100), 1)
+
+local consoleHeader = Instance.new("Frame")
+consoleHeader.Size = UDim2.new(1, 0, 0, 18)
+consoleHeader.BackgroundTransparency = 1
+consoleHeader.Parent = consoleFrame
+
+local consoleTitle = Instance.new("TextLabel")
+consoleTitle.Size = UDim2.new(0.5, 0, 1, 0)
+consoleTitle.Position = UDim2.new(0, 6, 0, 0)
+consoleTitle.BackgroundTransparency = 1
+consoleTitle.Text = "CONSOLE"
+consoleTitle.TextColor3 = Color3.fromRGB(130, 80, 200)
+consoleTitle.Font = Enum.Font.GothamBold
+consoleTitle.TextSize = 8
+consoleTitle.TextXAlignment = Enum.TextXAlignment.Left
+consoleTitle.Parent = consoleHeader
+
+local logToggle = Instance.new("TextButton")
+logToggle.Size = UDim2.new(0, 30, 0, 14)
+logToggle.Position = UDim2.new(1, -36, 0, 2)
+logToggle.BackgroundColor3 = Color3.fromRGB(50, 100, 60)
+logToggle.BorderSizePixel = 0
+logToggle.Text = "ON"
+logToggle.TextColor3 = Color3.new(1, 1, 1)
+logToggle.Font = Enum.Font.GothamBold
+logToggle.TextSize = 8
+logToggle.Parent = consoleHeader
+corner(logToggle, 4)
+
+local consoleScroll = Instance.new("ScrollingFrame")
+consoleScroll.Size = UDim2.new(1, -6, 1, -20)
+consoleScroll.Position = UDim2.new(0, 3, 0, 19)
+consoleScroll.BackgroundTransparency = 1
+consoleScroll.BorderSizePixel = 0
+consoleScroll.ScrollBarThickness = 3
+consoleScroll.ScrollBarImageColor3 = Color3.fromRGB(120, 60, 200)
+consoleScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+consoleScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+consoleScroll.Parent = consoleFrame
+
+local consoleLayout = Instance.new("UIListLayout")
+consoleLayout.SortOrder = Enum.SortOrder.LayoutOrder
+consoleLayout.Padding = UDim.new(0, 1)
+consoleLayout.Parent = consoleScroll
+
+-- ========== СТРАНИЦА: НАСТРОЙКИ ==========
+local settingsPage = Instance.new("Frame")
+settingsPage.Name = "SettingsPage"
+settingsPage.Size = UDim2.new(1, 0, 1, -64)
+settingsPage.Position = UDim2.new(0, 0, 0, 64)
+settingsPage.BackgroundTransparency = 1
+settingsPage.Visible = false
+settingsPage.Parent = main
+
+local settingsScroll = Instance.new("ScrollingFrame")
+settingsScroll.Size = UDim2.new(1, -8, 1, -4)
+settingsScroll.Position = UDim2.new(0, 4, 0, 2)
+settingsScroll.BackgroundTransparency = 1
+settingsScroll.BorderSizePixel = 0
+settingsScroll.ScrollBarThickness = 3
+settingsScroll.ScrollBarImageColor3 = Color3.fromRGB(120, 60, 200)
+settingsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+settingsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+settingsScroll.Parent = settingsPage
+
+local setLayout = Instance.new("UIListLayout")
+setLayout.SortOrder = Enum.SortOrder.LayoutOrder
+setLayout.Padding = UDim.new(0, 4)
+setLayout.Parent = settingsScroll
+padding(settingsScroll, 2, 2, 4, 4)
+
+-- Применение изменений к существующей платформе
+local function applySettingsIfPlatformExists()
+    if platform and platform.Parent then
+        createPlatform()
+    end
+end
+
+local function makeSettingRow(name, getValue, onMinus, onPlus, order)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 28)
+    row.BackgroundColor3 = Color3.fromRGB(18, 10, 30)
+    row.BackgroundTransparency = 0.3
+    row.BorderSizePixel = 0
+    row.LayoutOrder = order
+    row.Parent = settingsScroll
+    corner(row, 6)
+    stroke(row, Color3.fromRGB(60, 30, 100), 1)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.4, 0, 1, 0)
+    lbl.Position = UDim2.new(0, 8, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = name
+    lbl.TextColor3 = Color3.fromRGB(160, 130, 200)
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 10
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = row
+
+    local valLbl = Instance.new("TextLabel")
+    valLbl.Name = "Value"
+    valLbl.Size = UDim2.new(0.3, 0, 1, 0)
+    valLbl.Position = UDim2.new(0.35, 0, 0, 0)
+    valLbl.BackgroundTransparency = 1
+    valLbl.Text = tostring(getValue())
+    valLbl.TextColor3 = Color3.fromRGB(200, 170, 255)
+    valLbl.Font = Enum.Font.Code
+    valLbl.TextSize = 10
+    valLbl.Parent = row
+
+    local minusB = Instance.new("TextButton")
+    minusB.Size = UDim2.new(0, 22, 0, 20)
+    minusB.Position = UDim2.new(1, -52, 0.5, -10)
+    minusB.BackgroundColor3 = Color3.fromRGB(60, 30, 90)
+    minusB.BorderSizePixel = 0
+    minusB.Text = "-"
+    minusB.TextColor3 = Color3.new(1,1,1)
+    minusB.Font = Enum.Font.GothamBold
+    minusB.TextSize = 14
+    minusB.Parent = row
+    corner(minusB, 4)
+
+    local plusB = Instance.new("TextButton")
+    plusB.Size = UDim2.new(0, 22, 0, 20)
+    plusB.Position = UDim2.new(1, -26, 0.5, -10)
+    plusB.BackgroundColor3 = Color3.fromRGB(60, 30, 90)
+    plusB.BorderSizePixel = 0
+    plusB.Text = "+"
+    plusB.TextColor3 = Color3.new(1,1,1)
+    plusB.Font = Enum.Font.GothamBold
+    plusB.TextSize = 14
+    plusB.Parent = row
+    corner(plusB, 4)
+
+    minusB.MouseButton1Click:Connect(function()
+        onMinus()
+        valLbl.Text = tostring(getValue())
+        applySettingsIfPlatformExists()
+        addLog(name .. " = " .. tostring(getValue()), Color3.fromRGB(180,180,255))
+    end)
+    plusB.MouseButton1Click:Connect(function()
+        onPlus()
+        valLbl.Text = tostring(getValue())
+        applySettingsIfPlatformExists()
+        addLog(name .. " = " .. tostring(getValue()), Color3.fromRGB(180,180,255))
+    end)
+    return valLbl
+end
+
+local function makeToggleRow(name, getValue, onToggle, order)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 28)
+    row.BackgroundColor3 = Color3.fromRGB(18, 10, 30)
+    row.BackgroundTransparency = 0.3
+    row.BorderSizePixel = 0
+    row.LayoutOrder = order
+    row.Parent = settingsScroll
+    corner(row, 6)
+    stroke(row, Color3.fromRGB(60, 30, 100), 1)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.6, 0, 1, 0)
+    lbl.Position = UDim2.new(0, 8, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = name
+    lbl.TextColor3 = Color3.fromRGB(160, 130, 200)
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 10
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = row
+
+    local toggleB = Instance.new("TextButton")
+    toggleB.Name = "Toggle"
+    toggleB.Size = UDim2.new(0, 40, 0, 18)
+    toggleB.Position = UDim2.new(1, -48, 0.5, -9)
+    toggleB.BorderSizePixel = 0
+    toggleB.Font = Enum.Font.GothamBold
+    toggleB.TextSize = 9
+    toggleB.Parent = row
+    corner(toggleB, 5)
+
+    local function updateVis()
+        if getValue() then
+            toggleB.BackgroundColor3 = Color3.fromRGB(40, 110, 60)
+            toggleB.TextColor3 = Color3.fromRGB(150, 255, 170)
+            toggleB.Text = "ON"
+        else
+            toggleB.BackgroundColor3 = Color3.fromRGB(100, 30, 30)
+            toggleB.TextColor3 = Color3.fromRGB(255, 140, 140)
+            toggleB.Text = "OFF"
+        end
+    end
+    updateVis()
+    toggleB.MouseButton1Click:Connect(function()
+        onToggle()
+        updateVis()
+        applySettingsIfPlatformExists()
+        addLog(name .. " = " .. (getValue() and "ON" or "OFF"), Color3.fromRGB(180,180,255))
+    end)
+    return toggleB
+end
+
+local function makeMaterialRow(order)
+    local materials = {"SmoothPlastic","Neon","Glass","ForceField","Marble","Ice","DiamondPlate","Concrete"}
+    local idx = 1
+    for i, m in ipairs(materials) do if m == cfg.Material then idx = i end end
+
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 28)
+    row.BackgroundColor3 = Color3.fromRGB(18, 10, 30)
+    row.BackgroundTransparency = 0.3
+    row.BorderSizePixel = 0
+    row.LayoutOrder = order
+    row.Parent = settingsScroll
+    corner(row, 6)
+    stroke(row, Color3.fromRGB(60, 30, 100), 1)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.35, 0, 1, 0)
+    lbl.Position = UDim2.new(0, 8, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = "Материал"
+    lbl.TextColor3 = Color3.fromRGB(160, 130, 200)
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 10
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = row
+
+    local valLbl = Instance.new("TextLabel")
+    valLbl.Size = UDim2.new(0.35, 0, 1, 0)
+    valLbl.Position = UDim2.new(0.3, 0, 0, 0)
+    valLbl.BackgroundTransparency = 1
+    valLbl.Text = cfg.Material
+    valLbl.TextColor3 = Color3.fromRGB(200, 170, 255)
+    valLbl.Font = Enum.Font.Code
+    valLbl.TextSize = 9
+    valLbl.Parent = row
+
+    local leftB = Instance.new("TextButton")
+    leftB.Size = UDim2.new(0, 22, 0, 20)
+    leftB.Position = UDim2.new(1, -52, 0.5, -10)
+    leftB.BackgroundColor3 = Color3.fromRGB(60, 30, 90)
+    leftB.BorderSizePixel = 0
+    leftB.Text = "<"
+    leftB.TextColor3 = Color3.new(1,1,1)
+    leftB.Font = Enum.Font.GothamBold
+    leftB.TextSize = 12
+    leftB.Parent = row
+    corner(leftB, 4)
+
+    local rightB = Instance.new("TextButton")
+    rightB.Size = UDim2.new(0, 22, 0, 20)
+    rightB.Position = UDim2.new(1, -26, 0.5, -10)
+    rightB.BackgroundColor3 = Color3.fromRGB(60, 30, 90)
+    rightB.BorderSizePixel = 0
+    rightB.Text = ">"
+    rightB.TextColor3 = Color3.new(1,1,1)
+    rightB.Font = Enum.Font.GothamBold
+    rightB.TextSize = 12
+    rightB.Parent = row
+    corner(rightB, 4)
+
+    local function onMaterialChange()
+        cfg.Material = materials[idx]
+        valLbl.Text = cfg.Material
+        applySettingsIfPlatformExists()
+        addLog("Материал = " .. cfg.Material, Color3.fromRGB(180,180,255))
+    end
+
+    leftB.MouseButton1Click:Connect(function()
+        idx = idx - 1; if idx < 1 then idx = #materials end
+        onMaterialChange()
+    end)
+    rightB.MouseButton1Click:Connect(function()
+        idx = idx + 1; if idx > #materials then idx = 1 end
+        onMaterialChange()
+    end)
+
+    return { row = row, update = function() valLbl.Text = cfg.Material end }
+end
+
+local function rebuildSettings()
+    for _, child in ipairs(settingsScroll:GetChildren()) do
+        if child:IsA("Frame") or child:IsA("TextButton") then
+            child:Destroy()
+        end
+    end
+    makeSettingRow("Прозрачн.", function() return cfg.Transparency end,
+        function() cfg.Transparency = math.max(0, cfg.Transparency - 0.1) end,
+        function() cfg.Transparency = math.min(1, cfg.Transparency + 0.1) end, 1)
+    makeSettingRow("Толщина", function() return cfg.Thickness end,
+        function() cfg.Thickness = math.max(10, cfg.Thickness - 10) end,
+        function() cfg.Thickness = math.min(500, cfg.Thickness + 10) end, 2)
+    makeSettingRow("Размер XZ", function() return cfg.SizeXZ end,
+        function() cfg.SizeXZ = math.max(1000, cfg.SizeXZ - 1000) end,
+        function() cfg.SizeXZ = math.min(100000, cfg.SizeXZ + 1000) end, 3)
+    makeSettingRow("Позиция Y", function() return cfg.Y end,
+        function() cfg.Y = math.max(-50000, cfg.Y - 100) end,
+        function() cfg.Y = math.min(50000, cfg.Y + 100) end, 4)
+    makeMaterialRow(5)
+    makeToggleRow("CanCollide", function() return cfg.CanCollide end,
+        function() cfg.CanCollide = not cfg.CanCollide end, 6)
+
+    local resetBtn = Instance.new("TextButton")
+    resetBtn.Size = UDim2.new(1, 0, 0, 26)
+    resetBtn.BackgroundColor3 = Color3.fromRGB(30, 15, 50)
+    resetBtn.BorderSizePixel = 0
+    resetBtn.Text = "Сбросить настройки"
+    resetBtn.TextColor3 = Color3.fromRGB(150, 110, 200)
+    resetBtn.Font = Enum.Font.GothamBold
+    resetBtn.TextSize = 10
+    resetBtn.LayoutOrder = 7
+    resetBtn.Parent = settingsScroll
+    corner(resetBtn, 6)
+    stroke(resetBtn, Color3.fromRGB(70, 35, 120), 1)
+
+    resetBtn.MouseButton1Click:Connect(function()
+        cfg.Y = -12438
+        cfg.Thickness = 100
+        cfg.SizeXZ = 50000
+        cfg.Transparency = 0.5
+        cfg.Material = "SmoothPlastic"
+        cfg.CanCollide = true
+        addLog("Настройки сброшены", Color3.fromRGB(200, 170, 255))
+        rebuildSettings()
+        applySettingsIfPlatformExists()
+        switchTab("settings")
+    end)
+end
+
+rebuildSettings()
+
+-- === КРЕДИТ ===
+local credit = Instance.new("TextLabel")
+credit.Size = UDim2.new(1, 0, 0, 16)
+credit.Position = UDim2.new(0, 0, 1, -18)
+credit.BackgroundTransparency = 1
+credit.Text = "By: Probothotspot"
+credit.TextColor3 = Color3.fromRGB(100, 60, 160)
+credit.TextTransparency = 0.3
+credit.Font = Enum.Font.Gotham
+credit.TextSize = 9
+credit.Parent = main
+
+-- ============ ЛОГИ ============
+local function addLog(msg, color)
+    if not logsEnabled or not guiActive then return end
+    local entry = Instance.new("TextLabel")
+    entry.Size = UDim2.new(1, 0, 0, 13)
+    entry.BackgroundTransparency = 1
+    entry.Text = os.date("%H:%M:%S") .. " " .. msg
+    entry.TextColor3 = color or Color3.fromRGB(200, 200, 200)
+    entry.Font = Enum.Font.Code
+    entry.TextSize = 8
+    entry.TextXAlignment = Enum.TextXAlignment.Left
+    entry.TextTruncate = Enum.TextTruncate.AtEnd
+    entry.Parent = consoleScroll
+    table.insert(logEntries, entry)
+    if #logEntries > 30 then
+        logEntries[1]:Destroy()
+        table.remove(logEntries, 1)
+    end
+    spawn(function()
+        consoleScroll.CanvasPosition = Vector2.new(0, consoleScroll.AbsoluteCanvasSize.Y)
+    end)
+end
+
+local function updateStatus()
+    if platform and platform.Parent then
+        statusText.Text = "Статус: АКТИВНА"
+        statusText.TextColor3 = Color3.fromRGB(80, 210, 120)
+        infoText.Text = "Y:" .. cfg.Y .. " | Size:" .. cfg.SizeXZ .. " | " .. cfg.Material
+    else
+        statusText.Text = "Статус: не создана"
+        statusText.TextColor3 = Color3.fromRGB(180, 80, 80)
+        infoText.Text = "Y: -- | Size: -- | Mat: --"
+    end
+end
+
+-- ============ ДЕЙСТВИЯ ============
+btnCreate.MouseButton1Click:Connect(function()
+    createPlatform()
+    addLog("Платформа создана", Color3.fromRGB(80, 220, 120))
+    addLog("Y:" .. cfg.Y .. " | " .. cfg.Material, Color3.fromRGB(170, 150, 220))
+    updateStatus()
+end)
+
+btnTP.MouseButton1Click:Connect(function()
+    if not platform or not platform.Parent then
+        addLog("Сначала создайте!", Color3.fromRGB(255, 200, 80))
+        return
+    end
+    teleportToPlatform()
+    addLog("Телепорт: Y=" .. getTargetY(), Color3.fromRGB(80, 220, 120))
+end)
+
+btnDelete.MouseButton1Click:Connect(function()
+    if not platform or not platform.Parent then
+        addLog("Нет платформы!", Color3.fromRGB(255, 200, 80))
+        return
+    end
+    deletePlatform()
+    addLog("Платформа удалена", Color3.fromRGB(255, 100, 100))
+    updateStatus()
+end)
+
+-- Тогл консоли
+logToggle.MouseButton1Click:Connect(function()
+    logsEnabled = not logsEnabled
+    if logsEnabled then
+        logToggle.Text = "ON"
+        logToggle.BackgroundColor3 = Color3.fromRGB(50, 100, 60)
+        consoleScroll.Visible = true
+    else
+        logToggle.Text = "OFF"
+        logToggle.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
+        consoleScroll.Visible = false
+    end
+end)
+
+-- Табы
+local function switchTab(tab)
+    currentTab = tab
+    if tab == "control" then
+        controlPage.Visible = true
+        settingsPage.Visible = false
+        tabControl.TextColor3 = Color3.fromRGB(200, 160, 255)
+        tabSettings.TextColor3 = Color3.fromRGB(120, 100, 140)
+        TweenService:Create(tabIndicator, TweenInfo.new(0.2), {
+            Position = UDim2.new(0.1, 0, 1, -2)
+        }):Play()
+    else
+        controlPage.Visible = false
+        settingsPage.Visible = true
+        tabSettings.TextColor3 = Color3.fromRGB(200, 160, 255)
+        tabControl.TextColor3 = Color3.fromRGB(120, 100, 140)
+        TweenService:Create(tabIndicator, TweenInfo.new(0.2), {
+            Position = UDim2.new(0.6, 0, 1, -2)
+        }):Play()
+    end
+end
+
+tabControl.MouseButton1Click:Connect(function() switchTab("control") end)
+tabSettings.MouseButton1Click:Connect(function() switchTab("settings") end)
+
+-- Сворачивание
+minBtn.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    if isMinimized then
+        minBtn.Text = "+"
+        TweenService:Create(main, TweenInfo.new(0.2, Enum.EasingStyle.Quart), {
+            Size = UDim2.new(0, 270, 0, 34)
+        }):Play()
+    else
+        minBtn.Text = "-"
+        TweenService:Create(main, TweenInfo.new(0.2, Enum.EasingStyle.Quart), {
+            Size = UDim2.new(0, 270, 0, 310)
+        }):Play()
+    end
+end)
+
+-- === ПОЛНОЕ ЗАКРЫТИЕ И ОСТАНОВКА СКРИПТА ===
+local function fullShutdown()
+    if not guiActive then return end -- защита от двойного вызова
+    guiActive = false
+
+    -- Отключаем слушатель клавиш
+    if inputConnection then
+        inputConnection:Disconnect()
+        inputConnection = nil
+    end
+
+    -- Останавливаем анимационный поток
+    if gradientLoopThread then
+        task.cancel(gradientLoopThread)
+        gradientLoopThread = nil
+    end
+
+    -- Удаляем GUI
+    if gui and gui.Parent then
+        gui:Destroy()
+    end
+end
+
+-- Крестик
+closeBtn.MouseButton1Click:Connect(fullShutdown)
+
+-- Клавиша P
+inputConnection = UIS.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.P then
+        fullShutdown()
+    end
+end)
+
+-- Hover кнопок заголовка
+for _, b in ipairs({minBtn, closeBtn}) do
+    b.MouseEnter:Connect(function()
+        TweenService:Create(b, TweenInfo.new(0.1), {BackgroundTransparency = 0.2}):Play()
+    end)
+    b.MouseLeave:Connect(function()
+        TweenService:Create(b, TweenInfo.new(0.1), {BackgroundTransparency = 0}):Play()
+    end)
+end
+
+-- ============ АНИМАЦИЯ ГРАДИЕНТА ============
+gradientLoopThread = task.spawn(function()
+    local h = 0
+    while guiActive do
+        h = (h + 1) % 360
+        local c1 = Color3.fromHSV(h/360, 0.6, 0.2)
+        local c2 = Color3.fromHSV(((h+60)%360)/360, 0.7, 0.12)
+        mainGrad.Color = ColorSequence.new(c1, c2)
+        mainStroke.Color = Color3.fromHSV(((h+30)%360)/360, 0.7, 0.85)
+        title.TextColor3 = Color3.fromHSV(((h+20)%360)/360, 0.5, 0.9)
+        dot.BackgroundColor3 = Color3.fromHSV(((h+50)%360)/360, 0.8, 1)
+        hLine.BackgroundColor3 = Color3.fromHSV(((h+40)%360)/360, 0.6, 0.7)
+        tLine.BackgroundColor3 = Color3.fromHSV(((h+40)%360)/360, 0.5, 0.5)
+        credit.TextColor3 = Color3.fromHSV(((h+70)%360)/360, 0.5, 0.65)
+        tabIndicator.BackgroundColor3 = Color3.fromHSV(((h+15)%360)/360, 0.7, 0.9)
+        task.wait(0.03) -- не нагружаем цикл
+    end
+end)
+
+updateStatus()
+addLog("GUI загружен!", Color3.fromRGB(180, 140, 255))
