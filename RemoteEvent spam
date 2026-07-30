@@ -1,0 +1,726 @@
+-- ╔═══════════════════════════════════════════════════════════════╗
+-- ║   FlashTP Pro v5.2 — Slap Battles Multi-Remote Spammer      ║
+-- ║   Compatible: Xeno / Delta Executor                          ║
+-- ║   Remotes: Flash, Replica, Redacted (Dropdown)               ║
+-- ║   Features: Pages GUI, Dropdown, Slider, Input, Settings     ║
+-- ║   Author: Probothotspot                                      ║
+-- ╚═══════════════════════════════════════════════════════════════╝
+
+-- ═══ SERVICES ═══
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- ═══ CONFIG ═══
+local REMOTES = {
+    { name = "FlashTeleport", displayName = "Flash", icon = "⚡" },
+    { name = "Duplicate", displayName = "Replica", icon = "📋" },
+    { name = "Well", displayName = "Redacted", icon = "🔒" },
+}
+
+local MIN_COUNT = 1
+local MAX_COUNT = 1500
+local DEFAULT_COUNT = 1500
+
+-- ═══ STATE ═══
+local selectedRemoteIndex = 1
+local FIRE_COUNT = DEFAULT_COUNT
+local isFiring = false
+local isCollapsed = false
+local dropdownOpen = false
+
+local settings = {
+    autoRepeat = false,
+    consoleLogs = true,
+    cooldown = 2,
+    soundEnabled = false,
+    hideOnFire = false,
+}
+
+-- ═══ GET REMOTES ═══
+local remoteObjects = {}
+for i, rd in ipairs(REMOTES) do
+    local r = ReplicatedStorage:FindFirstChild(rd.name)
+    remoteObjects[i] = r
+    if r then
+        print("[FlashTP] ✅ " .. rd.displayName .. " (" .. rd.name .. ")")
+    else
+        warn("[FlashTP] ❌ " .. rd.displayName .. " (" .. rd.name .. ")")
+    end
+end
+
+-- ═══ CLEANUP ═══
+if playerGui:FindFirstChild("FlashTPGui") then
+    playerGui.FlashTPGui:Destroy()
+end
+
+-- ═══ DIMENSIONS ═══
+local W = 260
+local H = 340
+local COLLAPSED_H = 35
+local DROPDOWN_ITEM_H = 42
+
+-- ═══ GUI SETUP ═══
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "FlashTPGui"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, W, 0, H)
+mainFrame.Position = UDim2.new(0.5, -W/2, 0.5, -H/2)
+mainFrame.BackgroundColor3 = Color3.fromRGB(12, 8, 24)
+mainFrame.BackgroundTransparency = 0.05
+mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 12)
+local mainStroke = Instance.new("UIStroke", mainFrame)
+mainStroke.Color = Color3.fromRGB(139, 92, 246)
+mainStroke.Thickness = 2
+mainStroke.Transparency = 0.2
+
+-- ═══ HEADER ═══
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 35)
+header.BackgroundColor3 = Color3.fromRGB(18, 12, 35)
+header.BackgroundTransparency = 0.3
+header.BorderSizePixel = 0
+header.Parent = mainFrame
+Instance.new("UICorner", header).CornerRadius = UDim.new(0, 12)
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -90, 1, 0)
+titleLabel.Position = UDim2.new(0, 12, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "⚡ FlashTP Pro"
+titleLabel.TextColor3 = Color3.fromRGB(192, 132, 252)
+titleLabel.TextSize = 12
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = header
+
+local settingsBtn = Instance.new("TextButton")
+settingsBtn.Size = UDim2.new(0, 24, 0, 24)
+settingsBtn.Position = UDim2.new(1, -78, 0.5, -12)
+settingsBtn.BackgroundTransparency = 1
+settingsBtn.Text = "⚙️"
+settingsBtn.TextSize = 12
+settingsBtn.Parent = header
+
+local collapseBtn = Instance.new("TextButton")
+collapseBtn.Size = UDim2.new(0, 24, 0, 24)
+collapseBtn.Position = UDim2.new(1, -52, 0.5, -12)
+collapseBtn.BackgroundColor3 = Color3.fromRGB(40, 30, 70)
+collapseBtn.BackgroundTransparency = 0.5
+collapseBtn.Text = "−"
+collapseBtn.TextColor3 = Color3.fromRGB(167, 139, 250)
+collapseBtn.TextSize = 16
+collapseBtn.Font = Enum.Font.GothamBold
+collapseBtn.BorderSizePixel = 0
+collapseBtn.Parent = header
+Instance.new("UICorner", collapseBtn).CornerRadius = UDim.new(0, 6)
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 24, 0, 24)
+closeBtn.Position = UDim2.new(1, -26, 0.5, -12)
+closeBtn.BackgroundTransparency = 1
+closeBtn.Text = "❌"
+closeBtn.TextSize = 11
+closeBtn.Parent = header
+
+-- ═══ BODY CONTAINER ═══
+local body = Instance.new("Frame")
+body.Size = UDim2.new(1, 0, 1, -35)
+body.Position = UDim2.new(0, 0, 0, 35)
+body.BackgroundTransparency = 1
+body.ClipsDescendants = true
+body.Parent = mainFrame
+
+-- ═══════════════════════════════════════
+--  PAGE 1: MAIN
+-- ═══════════════════════════════════════
+local pageMain = Instance.new("Frame")
+pageMain.Name = "PageMain"
+pageMain.Size = UDim2.new(1, 0, 1, 0)
+pageMain.BackgroundTransparency = 1
+pageMain.Parent = body
+
+local status = Instance.new("TextLabel")
+status.Size = UDim2.new(1, -20, 0, 16)
+status.Position = UDim2.new(0, 10, 0, 5)
+status.BackgroundTransparency = 1
+status.Text = "⏳ Готов к запуску"
+status.TextColor3 = Color3.fromRGB(167, 139, 250)
+status.TextSize = 11
+status.Font = Enum.Font.GothamMedium
+status.Parent = pageMain
+
+-- Dropdown Label
+local ddLabel = Instance.new("TextLabel")
+ddLabel.Size = UDim2.new(1, -20, 0, 12)
+ddLabel.Position = UDim2.new(0, 10, 0, 24)
+ddLabel.BackgroundTransparency = 1
+ddLabel.Text = "ВЫБОР REMOTE"
+ddLabel.TextColor3 = Color3.fromRGB(100, 80, 160)
+ddLabel.TextSize = 8
+ddLabel.Font = Enum.Font.GothamBold
+ddLabel.TextXAlignment = Enum.TextXAlignment.Left
+ddLabel.Parent = pageMain
+
+-- Dropdown Button
+local ddBtn = Instance.new("TextButton")
+ddBtn.Size = UDim2.new(1, -20, 0, 34)
+ddBtn.Position = UDim2.new(0, 10, 0, 38)
+ddBtn.BackgroundColor3 = Color3.fromRGB(30, 22, 55)
+ddBtn.Text = ""
+ddBtn.BorderSizePixel = 0
+ddBtn.Parent = pageMain
+Instance.new("UICorner", ddBtn).CornerRadius = UDim.new(0, 8)
+local ddStroke = Instance.new("UIStroke", ddBtn)
+ddStroke.Color = Color3.fromRGB(100, 70, 160)
+
+local ddIcon = Instance.new("TextLabel")
+ddIcon.Size = UDim2.new(0, 24, 1, 0)
+ddIcon.Position = UDim2.new(0, 10, 0, 0)
+ddIcon.BackgroundTransparency = 1
+ddIcon.Text = REMOTES[1].icon
+ddIcon.TextSize = 14
+ddIcon.Parent = ddBtn
+
+local ddName = Instance.new("TextLabel")
+ddName.Size = UDim2.new(1, -70, 1, 0)
+ddName.Position = UDim2.new(0, 38, 0, 0)
+ddName.BackgroundTransparency = 1
+ddName.Text = REMOTES[1].displayName
+ddName.TextColor3 = Color3.fromRGB(220, 200, 255)
+ddName.TextSize = 12
+ddName.Font = Enum.Font.GothamBold
+ddName.TextXAlignment = Enum.TextXAlignment.Left
+ddName.Parent = ddBtn
+
+local ddArrow = Instance.new("TextLabel")
+ddArrow.Size = UDim2.new(0, 20, 1, 0)
+ddArrow.Position = UDim2.new(1, -28, 0, 0)
+ddArrow.BackgroundTransparency = 1
+ddArrow.Text = "▼"
+ddArrow.TextColor3 = Color3.fromRGB(139, 92, 246)
+ddArrow.TextSize = 10
+ddArrow.Parent = ddBtn
+
+-- Dropdown Menu
+local ddMenu = Instance.new("Frame")
+ddMenu.Size = UDim2.new(1, -20, 0, 0)
+ddMenu.Position = UDim2.new(0, 10, 0, 74)
+ddMenu.BackgroundColor3 = Color3.fromRGB(18, 12, 35)
+ddMenu.BorderSizePixel = 0
+ddMenu.ClipsDescendants = true
+ddMenu.ZIndex = 10
+ddMenu.Visible = false
+ddMenu.Parent = pageMain
+Instance.new("UICorner", ddMenu).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", ddMenu).Color = Color3.fromRGB(100, 70, 160)
+
+local ddItems = {}
+for i, rd in ipairs(REMOTES) do
+    local item = Instance.new("TextButton")
+    item.Size = UDim2.new(1, 0, 0, DROPDOWN_ITEM_H)
+    item.Position = UDim2.new(0, 0, 0, (i-1) * DROPDOWN_ITEM_H)
+    item.BackgroundColor3 = i == 1 and Color3.fromRGB(40, 28, 70) or Color3.fromRGB(18, 12, 35)
+    item.Text = ""
+    item.BorderSizePixel = 0
+    item.ZIndex = 11
+    item.Parent = ddMenu
+
+    local ic = Instance.new("TextLabel", item)
+    ic.Size = UDim2.new(0, 30, 1, 0)
+    ic.Position = UDim2.new(0, 8, 0, 0)
+    ic.BackgroundTransparency = 1
+    ic.Text = rd.icon
+    ic.TextSize = 16
+    ic.ZIndex = 12
+
+    local nm = Instance.new("TextLabel", item)
+    nm.Size = UDim2.new(1, -80, 0, 16)
+    nm.Position = UDim2.new(0, 40, 0, 4)
+    nm.BackgroundTransparency = 1
+    nm.Text = rd.displayName
+    nm.TextColor3 = Color3.fromRGB(220, 200, 255)
+    nm.TextSize = 11
+    nm.Font = Enum.Font.GothamBold
+    nm.TextXAlignment = Enum.TextXAlignment.Left
+    nm.ZIndex = 12
+
+    local sub = Instance.new("TextLabel", item)
+    sub.Size = UDim2.new(1, -80, 0, 12)
+    sub.Position = UDim2.new(0, 40, 0, 22)
+    sub.BackgroundTransparency = 1
+    sub.Text = rd.name
+    sub.TextColor3 = Color3.fromRGB(100, 80, 150)
+    sub.TextSize = 9
+    sub.Font = Enum.Font.Gotham
+    sub.TextXAlignment = Enum.TextXAlignment.Left
+    sub.ZIndex = 12
+
+    local chk = Instance.new("TextLabel", item)
+    chk.Name = "Check"
+    chk.Size = UDim2.new(0, 20, 1, 0)
+    chk.Position = UDim2.new(1, -25, 0, 0)
+    chk.BackgroundTransparency = 1
+    chk.Text = i == 1 and "✓" or ""
+    chk.TextColor3 = Color3.fromRGB(52, 211, 153)
+    chk.TextSize = 12
+    chk.ZIndex = 12
+
+    ddItems[i] = { button = item, check = chk }
+
+    item.MouseButton1Click:Connect(function()
+        selectedRemoteIndex = i
+        ddIcon.Text = rd.icon
+        ddName.Text = rd.displayName
+        status.Text = "📡 " .. rd.displayName
+        for j, d in ipairs(ddItems) do
+            d.button.BackgroundColor3 = j == i and Color3.fromRGB(40, 28, 70) or Color3.fromRGB(18, 12, 35)
+            d.check.Text = j == i and "✓" or ""
+        end
+        dropdownOpen = false
+        ddArrow.Text = "▼"
+        TweenService:Create(ddMenu, TweenInfo.new(0.2, Enum.EasingStyle.Quart), {Size = UDim2.new(1, -20, 0, 0)}):Play()
+        task.wait(0.2)
+        ddMenu.Visible = false
+    end)
+
+    item.MouseEnter:Connect(function()
+        if i ~= selectedRemoteIndex then
+            TweenService:Create(item, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(50, 35, 85)}):Play()
+        end
+    end)
+    item.MouseLeave:Connect(function()
+        if i ~= selectedRemoteIndex then
+            TweenService:Create(item, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(18, 12, 35)}):Play()
+        end
+    end)
+end
+
+ddBtn.MouseButton1Click:Connect(function()
+    dropdownOpen = not dropdownOpen
+    if dropdownOpen then
+        ddMenu.Visible = true
+        ddArrow.Text = "▲"
+        TweenService:Create(ddMenu, TweenInfo.new(0.25, Enum.EasingStyle.Quart), {Size = UDim2.new(1, -20, 0, #REMOTES * DROPDOWN_ITEM_H)}):Play()
+    else
+        ddArrow.Text = "▼"
+        TweenService:Create(ddMenu, TweenInfo.new(0.2, Enum.EasingStyle.Quart), {Size = UDim2.new(1, -20, 0, 0)}):Play()
+        task.wait(0.2)
+        ddMenu.Visible = false
+    end
+end)
+
+-- Amount Label + Input
+local amtLabel = Instance.new("TextLabel")
+amtLabel.Size = UDim2.new(0.5, 0, 0, 12)
+amtLabel.Position = UDim2.new(0, 10, 0, 80)
+amtLabel.BackgroundTransparency = 1
+amtLabel.Text = "КОЛИЧЕСТВО"
+amtLabel.TextColor3 = Color3.fromRGB(100, 80, 160)
+amtLabel.TextSize = 8
+amtLabel.Font = Enum.Font.GothamBold
+amtLabel.TextXAlignment = Enum.TextXAlignment.Left
+amtLabel.Parent = pageMain
+
+local amtInputFrame = Instance.new("Frame")
+amtInputFrame.Size = UDim2.new(0, 70, 0, 20)
+amtInputFrame.Position = UDim2.new(1, -80, 0, 77)
+amtInputFrame.BackgroundColor3 = Color3.fromRGB(25, 18, 45)
+amtInputFrame.BorderSizePixel = 0
+amtInputFrame.Parent = pageMain
+Instance.new("UICorner", amtInputFrame).CornerRadius = UDim.new(0, 6)
+Instance.new("UIStroke", amtInputFrame).Color = Color3.fromRGB(80, 60, 130)
+
+local amtInput = Instance.new("TextBox")
+amtInput.Size = UDim2.new(1, -8, 1, 0)
+amtInput.Position = UDim2.new(0, 4, 0, 0)
+amtInput.BackgroundTransparency = 1
+amtInput.Text = tostring(DEFAULT_COUNT)
+amtInput.PlaceholderText = "1-1500"
+amtInput.TextColor3 = Color3.fromRGB(232, 121, 249)
+amtInput.TextSize = 11
+amtInput.Font = Enum.Font.GothamBold
+amtInput.ClearTextOnFocus = false
+amtInput.Parent = amtInputFrame
+
+-- Slider
+local sTrack = Instance.new("Frame")
+sTrack.Size = UDim2.new(1, -20, 0, 8)
+sTrack.Position = UDim2.new(0, 10, 0, 101)
+sTrack.BackgroundColor3 = Color3.fromRGB(30, 20, 50)
+sTrack.BorderSizePixel = 0
+sTrack.Parent = pageMain
+Instance.new("UICorner", sTrack).CornerRadius = UDim.new(0, 4)
+
+local sFill = Instance.new("Frame")
+sFill.Size = UDim2.new(1, 0, 1, 0)
+sFill.BackgroundColor3 = Color3.fromRGB(139, 92, 246)
+sFill.BorderSizePixel = 0
+sFill.Parent = sTrack
+Instance.new("UICorner", sFill).CornerRadius = UDim.new(0, 4)
+
+local sThumb = Instance.new("TextButton")
+sThumb.Size = UDim2.new(0, 18, 0, 18)
+sThumb.Position = UDim2.new(1, -9, 0.5, -9)
+sThumb.BackgroundColor3 = Color3.fromRGB(168, 85, 247)
+sThumb.Text = ""
+sThumb.BorderSizePixel = 0
+sThumb.ZIndex = 3
+sThumb.Parent = sTrack
+Instance.new("UICorner", sThumb).CornerRadius = UDim.new(1, 0)
+Instance.new("UIStroke", sThumb).Color = Color3.fromRGB(192, 132, 252)
+
+-- USE Button
+local useBtn = Instance.new("TextButton")
+useBtn.Size = UDim2.new(1, -20, 0, 40)
+useBtn.Position = UDim2.new(0, 10, 0, 118)
+useBtn.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+useBtn.Text = "⚡ USE"
+useBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+useBtn.TextSize = 16
+useBtn.Font = Enum.Font.GothamBlack
+useBtn.BorderSizePixel = 0
+useBtn.Parent = pageMain
+Instance.new("UICorner", useBtn).CornerRadius = UDim.new(0, 8)
+local useBtnStroke = Instance.new("UIStroke", useBtn)
+useBtnStroke.Color = Color3.fromRGB(192, 132, 252)
+useBtnStroke.Thickness = 2
+
+-- Counter + Progress
+local counter = Instance.new("TextLabel")
+counter.Size = UDim2.new(1, -20, 0, 14)
+counter.Position = UDim2.new(0, 10, 0, 166)
+counter.BackgroundTransparency = 1
+counter.Text = "0 / " .. FIRE_COUNT
+counter.TextColor3 = Color3.fromRGB(232, 121, 249)
+counter.TextSize = 11
+counter.Font = Enum.Font.GothamBold
+counter.Parent = pageMain
+
+local progBg = Instance.new("Frame")
+progBg.Size = UDim2.new(1, -20, 0, 5)
+progBg.Position = UDim2.new(0, 10, 0, 184)
+progBg.BackgroundColor3 = Color3.fromRGB(30, 20, 50)
+progBg.BorderSizePixel = 0
+progBg.Parent = pageMain
+Instance.new("UICorner", progBg).CornerRadius = UDim.new(0, 3)
+
+local progFill = Instance.new("Frame")
+progFill.Size = UDim2.new(0, 0, 1, 0)
+progFill.BackgroundColor3 = Color3.fromRGB(139, 92, 246)
+progFill.BorderSizePixel = 0
+progFill.Parent = progBg
+Instance.new("UICorner", progFill).CornerRadius = UDim.new(0, 3)
+
+-- Author watermark (Page 1)
+local authorMain = Instance.new("TextLabel")
+authorMain.Size = UDim2.new(1, -20, 0, 14)
+authorMain.Position = UDim2.new(0, 10, 1, -18)
+authorMain.BackgroundTransparency = 1
+authorMain.Text = "By: Probothotspot"
+authorMain.TextColor3 = Color3.fromRGB(60, 45, 100)
+authorMain.TextSize = 8
+authorMain.Font = Enum.Font.Gotham
+authorMain.TextTransparency = 0.4
+authorMain.Parent = pageMain
+
+-- ═══════════════════════════════════════
+--  PAGE 2: SETTINGS
+-- ═══════════════════════════════════════
+local pageSettings = Instance.new("Frame")
+pageSettings.Name = "PageSettings"
+pageSettings.Size = UDim2.new(1, 0, 1, 0)
+pageSettings.BackgroundTransparency = 1
+pageSettings.Visible = false
+pageSettings.Parent = body
+
+-- Back Button
+local backBtn = Instance.new("TextButton")
+backBtn.Size = UDim2.new(0, 80, 0, 20)
+backBtn.Position = UDim2.new(0, 10, 0, 8)
+backBtn.BackgroundTransparency = 1
+backBtn.Text = "← Назад"
+backBtn.TextColor3 = Color3.fromRGB(167, 139, 250)
+backBtn.TextSize = 11
+backBtn.Font = Enum.Font.GothamBold
+backBtn.TextXAlignment = Enum.TextXAlignment.Left
+backBtn.Parent = pageSettings
+
+local settingsTitle = Instance.new("TextLabel")
+settingsTitle.Size = UDim2.new(0.5, -10, 0, 20)
+settingsTitle.Position = UDim2.new(0.5, 0, 0, 8)
+settingsTitle.BackgroundTransparency = 1
+settingsTitle.Text = "⚙️ Настройки"
+settingsTitle.TextColor3 = Color3.fromRGB(100, 80, 160)
+settingsTitle.TextSize = 10
+settingsTitle.Font = Enum.Font.GothamBold
+settingsTitle.TextXAlignment = Enum.TextXAlignment.Right
+settingsTitle.Parent = pageSettings
+
+local function createToggle(label, yPos, defaultOn, settingKey)
+    local f = Instance.new("Frame")
+    f.Size = UDim2.new(1, -20, 0, 30)
+    f.Position = UDim2.new(0, 10, 0, yPos)
+    f.BackgroundTransparency = 1
+    f.Parent = pageSettings
+    
+    local l = Instance.new("TextLabel", f)
+    l.Size = UDim2.new(0.7, 0, 1, 0)
+    l.BackgroundTransparency = 1
+    l.Text = label
+    l.TextColor3 = Color3.fromRGB(190, 170, 230)
+    l.TextSize = 10
+    l.Font = Enum.Font.GothamMedium
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local bg = Instance.new("TextButton", f)
+    bg.Size = UDim2.new(0, 36, 0, 18)
+    bg.Position = UDim2.new(1, -36, 0.5, -9)
+    bg.BackgroundColor3 = defaultOn and Color3.fromRGB(124, 58, 237) or Color3.fromRGB(40, 30, 60)
+    bg.Text = ""
+    bg.BorderSizePixel = 0
+    Instance.new("UICorner", bg).CornerRadius = UDim.new(1, 0)
+    
+    local dot = Instance.new("Frame", bg)
+    dot.Size = UDim2.new(0, 14, 0, 14)
+    dot.Position = defaultOn and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
+    dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+    
+    bg.MouseButton1Click:Connect(function()
+        settings[settingKey] = not settings[settingKey]
+        local on = settings[settingKey]
+        TweenService:Create(bg, TweenInfo.new(0.2), {BackgroundColor3 = on and Color3.fromRGB(124, 58, 237) or Color3.fromRGB(40, 30, 60)}):Play()
+        TweenService:Create(dot, TweenInfo.new(0.2), {Position = on and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)}):Play()
+    end)
+end
+
+createToggle("🔁 Авто-повтор", 38, false, "autoRepeat")
+createToggle("📝 Логи в консоль", 72, true, "consoleLogs")
+createToggle("🔔 Звук завершения", 106, false, "soundEnabled")
+createToggle("👻 Скрыть при спаме", 140, false, "hideOnFire")
+
+-- Cooldown
+local cdFrame = Instance.new("Frame")
+cdFrame.Size = UDim2.new(1, -20, 0, 30)
+cdFrame.Position = UDim2.new(0, 10, 0, 174)
+cdFrame.BackgroundTransparency = 1
+cdFrame.Parent = pageSettings
+
+local cdLabel = Instance.new("TextLabel", cdFrame)
+cdLabel.Size = UDim2.new(0.7, 0, 1, 0)
+cdLabel.BackgroundTransparency = 1
+cdLabel.Text = "⏱️ Кулдаун (сек)"
+cdLabel.TextColor3 = Color3.fromRGB(190, 170, 230)
+cdLabel.TextSize = 10
+cdLabel.Font = Enum.Font.GothamMedium
+cdLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local cdInputBg = Instance.new("Frame", cdFrame)
+cdInputBg.Size = UDim2.new(0, 40, 0, 18)
+cdInputBg.Position = UDim2.new(1, -40, 0.5, -9)
+cdInputBg.BackgroundColor3 = Color3.fromRGB(25, 18, 45)
+Instance.new("UICorner", cdInputBg).CornerRadius = UDim.new(0, 4)
+Instance.new("UIStroke", cdInputBg).Color = Color3.fromRGB(60, 45, 100)
+
+local cdInput = Instance.new("TextBox", cdInputBg)
+cdInput.Size = UDim2.new(1, -4, 1, 0)
+cdInput.Position = UDim2.new(0, 2, 0, 0)
+cdInput.BackgroundTransparency = 1
+cdInput.Text = "2"
+cdInput.TextColor3 = Color3.fromRGB(232, 121, 249)
+cdInput.TextSize = 9
+cdInput.Font = Enum.Font.GothamBold
+
+cdInput.FocusLost:Connect(function()
+    local n = tonumber(cdInput.Text)
+    settings.cooldown = n and math.clamp(n, 0, 30) or 2
+    cdInput.Text = tostring(settings.cooldown)
+end)
+
+-- Author watermark (Page 2)
+local authorSettings = Instance.new("TextLabel")
+authorSettings.Size = UDim2.new(1, -20, 0, 14)
+authorSettings.Position = UDim2.new(0, 10, 1, -18)
+authorSettings.BackgroundTransparency = 1
+authorSettings.Text = "By: Probothotspot"
+authorSettings.TextColor3 = Color3.fromRGB(60, 45, 100)
+authorSettings.TextSize = 8
+authorSettings.Font = Enum.Font.Gotham
+authorSettings.TextTransparency = 0.4
+authorSettings.Parent = pageSettings
+
+-- ═══ PAGE SWITCHING ═══
+settingsBtn.MouseButton1Click:Connect(function()
+    pageMain.Visible = false
+    pageSettings.Visible = true
+    titleLabel.Text = "⚙️ Настройки"
+end)
+
+backBtn.MouseButton1Click:Connect(function()
+    pageSettings.Visible = false
+    pageMain.Visible = true
+    titleLabel.Text = "⚡ FlashTP Pro"
+end)
+
+-- ═══ SLIDER LOGIC ═══
+local dragging = false
+
+local function updateSlider(ratio)
+    ratio = math.clamp(ratio, 0, 1)
+    FIRE_COUNT = math.clamp(math.floor(MIN_COUNT + ratio * (MAX_COUNT - MIN_COUNT)), MIN_COUNT, MAX_COUNT)
+    sFill.Size = UDim2.new(ratio, 0, 1, 0)
+    sThumb.Position = UDim2.new(ratio, -9, 0.5, -9)
+    amtInput.Text = tostring(FIRE_COUNT)
+    counter.Text = "0 / " .. FIRE_COUNT
+end
+
+amtInput.FocusLost:Connect(function()
+    local n = tonumber(amtInput.Text)
+    if n then
+        n = math.clamp(math.floor(n), MIN_COUNT, MAX_COUNT)
+        FIRE_COUNT = n
+        local r = (n - MIN_COUNT) / (MAX_COUNT - MIN_COUNT)
+        sFill.Size = UDim2.new(r, 0, 1, 0)
+        sThumb.Position = UDim2.new(r, -9, 0.5, -9)
+        counter.Text = "0 / " .. FIRE_COUNT
+    end
+    amtInput.Text = tostring(FIRE_COUNT)
+end)
+
+sThumb.MouseButton1Down:Connect(function() dragging = true end)
+UserInputService.InputEnded:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then dragging = false end
+end)
+UserInputService.InputChanged:Connect(function(inp)
+    if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+        updateSlider((inp.Position.X - sTrack.AbsolutePosition.X) / sTrack.AbsoluteSize.X)
+    end
+end)
+sTrack.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        updateSlider((inp.Position.X - sTrack.AbsolutePosition.X) / sTrack.AbsoluteSize.X)
+        dragging = true
+    end
+end)
+
+-- ═══ COLLAPSE / CLOSE ═══
+collapseBtn.MouseButton1Click:Connect(function()
+    isCollapsed = not isCollapsed
+    collapseBtn.Text = isCollapsed and "+" or "−"
+    TweenService:Create(mainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quart), {
+        Size = UDim2.new(0, W, 0, isCollapsed and COLLAPSED_H or H)
+    }):Play()
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+    TweenService:Create(mainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+        Size = UDim2.new(0, 0, 0, 0),
+        Position = UDim2.new(mainFrame.Position.X.Scale, mainFrame.Position.X.Offset + W/2, mainFrame.Position.Y.Scale, mainFrame.Position.Y.Offset + H/2)
+    }):Play()
+    task.wait(0.3)
+    screenGui:Destroy()
+end)
+
+-- ═══ INSTANT SPAM ═══
+local function instantSpam()
+    if isFiring then return end
+    local currentRemote = remoteObjects[selectedRemoteIndex]
+    local rd = REMOTES[selectedRemoteIndex]
+    if not currentRemote then
+        status.Text = "❌ " .. rd.displayName .. " не найден!"
+        status.TextColor3 = Color3.fromRGB(239, 68, 68)
+        return
+    end
+    isFiring = true
+    local cnt = FIRE_COUNT
+
+    if settings.hideOnFire then
+        TweenService:Create(mainFrame, TweenInfo.new(0.2), {BackgroundTransparency = 0.8}):Play()
+    end
+
+    useBtn.Text = "🔥 FIRING..."
+    useBtn.BackgroundColor3 = Color3.fromRGB(220, 38, 38)
+    useBtnStroke.Color = Color3.fromRGB(251, 146, 60)
+    status.Text = "🔥 " .. rd.displayName .. " x" .. cnt
+    status.TextColor3 = Color3.fromRGB(239, 68, 68)
+
+    if settings.consoleLogs then
+        print("═══════════════════════════════════════")
+        print("  ⚡ " .. rd.displayName .. " (" .. rd.name .. ")")
+        print("  🎮 " .. player.Name .. " | x" .. cnt)
+        print("═══════════════════════════════════════")
+    end
+
+    local fired = 0
+    for i = 1, cnt do
+        coroutine.wrap(function()
+            pcall(function() currentRemote:FireServer() end)
+            fired = fired + 1
+        end)()
+    end
+
+    task.defer(function()
+        task.wait(0.1)
+        counter.Text = fired .. " / " .. cnt
+        TweenService:Create(progFill, TweenInfo.new(0.4, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 1, 0)}):Play()
+        status.Text = "✅ " .. rd.displayName .. ": " .. fired
+        status.TextColor3 = Color3.fromRGB(52, 211, 153)
+        useBtn.Text = "✅ DONE"
+        useBtn.BackgroundColor3 = Color3.fromRGB(16, 185, 129)
+        useBtnStroke.Color = Color3.fromRGB(52, 211, 153)
+        if settings.consoleLogs then print("  ✅ Отправлено: " .. fired) end
+
+        if settings.hideOnFire then
+            TweenService:Create(mainFrame, TweenInfo.new(0.3), {BackgroundTransparency = 0.05}):Play()
+        end
+
+        task.wait(settings.cooldown)
+        useBtn.Text = "⚡ USE"
+        useBtn.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+        useBtnStroke.Color = Color3.fromRGB(192, 132, 252)
+        status.Text = "⏳ Готов"
+        status.TextColor3 = Color3.fromRGB(167, 139, 250)
+        counter.Text = "0 / " .. FIRE_COUNT
+        TweenService:Create(progFill, TweenInfo.new(0.3), {Size = UDim2.new(0, 0, 1, 0)}):Play()
+        isFiring = false
+        if settings.autoRepeat then task.wait(0.5); instantSpam() end
+    end)
+end
+
+useBtn.MouseButton1Click:Connect(instantSpam)
+
+-- ═══ BORDER ANIMATION ═══
+task.spawn(function()
+    local c = {Color3.fromRGB(124,58,237), Color3.fromRGB(167,139,250), Color3.fromRGB(192,132,252), Color3.fromRGB(232,121,249)}
+    local i = 1
+    while screenGui.Parent do
+        i = (i % #c) + 1
+        TweenService:Create(mainStroke, TweenInfo.new(1), {Color = c[i]}):Play()
+        task.wait(1)
+    end
+end)
+
+-- Appear
+mainFrame.Size = UDim2.new(0, 0, 0, 0)
+mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back), {
+    Size = UDim2.new(0, W, 0, H),
+    Position = UDim2.new(0.5, -W/2, 0.5, -H/2)
+}):Play()
+
+print("[FlashTP Pro v5.2] Loaded! By: Probothotspot")
+print("[FlashTP Pro v5.2] Remotes: Flash, Replica, Redacted")
