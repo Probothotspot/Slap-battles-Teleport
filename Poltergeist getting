@@ -1,0 +1,278 @@
+-- Auto Hit + Teleport GUI | By Probothotspot
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+-- ========== НАСТРОЙКИ ==========
+local autoHitEnabled = false
+local hitRemotes = {}
+local HIT_INTERVAL = 0.2              -- интервал по умолчанию 0.2
+local lastHit = 0
+local guiMinimized = false
+
+-- ========== GUI ==========
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AutoHitTeleport"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = game:GetService("CoreGui")
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 320, 0, 220)
+mainFrame.Position = UDim2.new(0.5, -160, 0.5, -110)
+mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+mainFrame.BackgroundTransparency = 0.1
+mainFrame.BorderSizePixel = 2
+mainFrame.BorderColor3 = Color3.fromRGB(200, 100, 100)
+mainFrame.Active = true
+mainFrame.Draggable = true
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 12)
+corner.Parent = mainFrame
+mainFrame.Parent = screenGui
+
+-- Заголовок с кнопками управления
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 35)
+titleBar.BackgroundColor3 = Color3.fromRGB(45, 45, 65)
+titleBar.BorderSizePixel = 0
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 12)
+titleCorner.Parent = titleBar
+titleBar.Parent = mainFrame
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(0.6, 0, 1, 0)
+title.Position = UDim2.new(0, 10, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "⚔️ AUTO HIT + TELEPORT"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.TextSize = 16
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = titleBar
+
+-- Кнопка свернуть/развернуть (–)
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 24, 0, 24)
+minimizeBtn.Position = UDim2.new(1, -60, 0.5, -12)
+minimizeBtn.Text = "–"
+minimizeBtn.TextColor3 = Color3.new(1,1,1)
+minimizeBtn.TextSize = 18
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 120)
+minimizeBtn.BorderSizePixel = 0
+local minCorner = Instance.new("UICorner")
+minCorner.CornerRadius = UDim.new(0, 4)
+minCorner.Parent = minimizeBtn
+minimizeBtn.Parent = titleBar
+
+-- Кнопка закрыть (✕) – сворачивает в плавающую иконку
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 24, 0, 24)
+closeBtn.Position = UDim2.new(1, -30, 0.5, -12)
+closeBtn.Text = "✕"
+closeBtn.TextColor3 = Color3.new(1,1,1)
+closeBtn.TextSize = 16
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 80, 80)
+closeBtn.BorderSizePixel = 0
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 4)
+closeCorner.Parent = closeBtn
+closeBtn.Parent = titleBar
+
+-- Контейнер контента
+local contentFrame = Instance.new("Frame")
+contentFrame.Name = "ContentFrame"
+contentFrame.Size = UDim2.new(1, 0, 1, -35)
+contentFrame.Position = UDim2.new(0, 0, 0, 35)
+contentFrame.BackgroundTransparency = 1
+contentFrame.Parent = mainFrame
+
+-- Кнопка Auto Hit
+local autoHitBtn = Instance.new("TextButton")
+autoHitBtn.Size = UDim2.new(0.85, 0, 0, 40)
+autoHitBtn.Position = UDim2.new(0.075, 0, 0.1, 0)
+autoHitBtn.Text = "🔴 AUTO HIT: OFF"
+autoHitBtn.TextColor3 = Color3.new(1, 1, 1)
+autoHitBtn.TextSize = 14
+autoHitBtn.Font = Enum.Font.GothamBold
+autoHitBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 120)
+autoHitBtn.BorderSizePixel = 0
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 8)
+btnCorner.Parent = autoHitBtn
+autoHitBtn.Parent = contentFrame
+
+-- Интервал
+local intervalLabel = Instance.new("TextLabel")
+intervalLabel.Size = UDim2.new(0.55, 0, 0, 20)
+intervalLabel.Position = UDim2.new(0.075, 0, 0.45, 0)
+intervalLabel.BackgroundTransparency = 1
+intervalLabel.Text = "Interval: " .. HIT_INTERVAL .. "s"
+intervalLabel.TextColor3 = Color3.fromRGB(200, 200, 255)
+intervalLabel.TextSize = 12
+intervalLabel.Font = Enum.Font.Gotham
+intervalLabel.Parent = contentFrame
+
+local intervalBox = Instance.new("TextBox")
+intervalBox.Size = UDim2.new(0.25, 0, 0, 25)
+intervalBox.Position = UDim2.new(0.65, 0, 0.44, 0)
+intervalBox.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+intervalBox.Text = tostring(HIT_INTERVAL)
+intervalBox.TextColor3 = Color3.new(1, 1, 1)
+intervalBox.TextSize = 12
+intervalBox.Parent = contentFrame
+
+-- Обработка ввода интервала (только по завершению редактирования)
+local function applyInterval()
+    local val = tonumber(intervalBox.Text)
+    if val and val > 0 then
+        HIT_INTERVAL = val
+        intervalLabel.Text = "Interval: " .. HIT_INTERVAL .. "s"
+    else
+        intervalBox.Text = tostring(HIT_INTERVAL)  -- возвращаем текущее значение
+    end
+end
+
+intervalBox.FocusLost:Connect(applyInterval)
+
+-- Кнопка Телепорт
+local teleportBtn = Instance.new("TextButton")
+teleportBtn.Size = UDim2.new(0.85, 0, 0, 35)
+teleportBtn.Position = UDim2.new(0.075, 0, 0.65, 0)
+teleportBtn.Text = "🚀 TELEPORT"
+teleportBtn.TextColor3 = Color3.new(1, 1, 1)
+teleportBtn.TextSize = 14
+teleportBtn.Font = Enum.Font.GothamBold
+teleportBtn.BackgroundColor3 = Color3.fromRGB(100, 180, 100)
+teleportBtn.BorderSizePixel = 0
+local teleCorner = Instance.new("UICorner")
+teleCorner.CornerRadius = UDim.new(0, 8)
+teleCorner.Parent = teleportBtn
+teleportBtn.Parent = contentFrame
+
+-- Подсказка
+local hint = Instance.new("TextLabel")
+hint.Size = UDim2.new(1, 0, 0, 18)
+hint.Position = UDim2.new(0, 0, 1, -36)
+hint.BackgroundTransparency = 1
+hint.Text = "P – удалить GUI"
+hint.TextColor3 = Color3.fromRGB(180, 180, 220)
+hint.TextSize = 10
+hint.Parent = contentFrame
+
+-- Подпись "By Probothotspot"
+local credit = Instance.new("TextLabel")
+credit.Size = UDim2.new(1, 0, 0, 18)
+credit.Position = UDim2.new(0, 0, 1, -18)
+credit.BackgroundTransparency = 1
+credit.Text = "By Probothotspot"
+credit.TextColor3 = Color3.fromRGB(255, 255, 100)
+credit.TextSize = 12
+credit.Font = Enum.Font.GothamBold
+credit.Parent = contentFrame
+
+-- ========== ФУНКЦИИ ==========
+local function updateHitRemotes()
+    table.clear(hitRemotes)
+    for _, obj in ipairs(game:GetDescendants()) do
+        if obj:IsA("RemoteEvent") and string.find(obj.Name:lower(), "hit") then
+            table.insert(hitRemotes, obj)
+        end
+    end
+end
+
+local function isAboveGround(part)
+    local params = RaycastParams.new()
+    params.FilterDescendantsInstances = {part.Parent}
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    local result = workspace:Raycast(part.Position, Vector3.new(0, -50, 0), params)
+    return result ~= nil
+end
+
+RunService.Heartbeat:Connect(function()
+    if not autoHitEnabled then return end
+    local now = tick()
+    if now - lastHit < HIT_INTERVAL then return end
+    lastHit = now
+    updateHitRemotes()
+    local enemiesFolder = workspace:FindFirstChild("Enemies")
+    if not enemiesFolder then return end
+    for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+        local head = enemy:FindFirstChild("Head")
+        if head and head:IsA("BasePart") and isAboveGround(head) then
+            for _, remote in ipairs(hitRemotes) do
+                pcall(function()
+                    remote:FireServer(head)
+                end)
+            end
+        end
+    end
+end)
+
+-- ========== ОБРАБОТЧИКИ ==========
+autoHitBtn.MouseButton1Click:Connect(function()
+    autoHitEnabled = not autoHitEnabled
+    autoHitBtn.Text = autoHitEnabled and "🟢 AUTO HIT: ON" or "🔴 AUTO HIT: OFF"
+    autoHitBtn.BackgroundColor3 = autoHitEnabled and Color3.fromRGB(70, 180, 70) or Color3.fromRGB(80, 80, 120)
+end)
+
+-- Телепорт
+teleportBtn.MouseButton1Click:Connect(function()
+    pcall(function()
+        game:GetService("TeleportService"):Teleport(103505724406848) -- "Poltergeist"
+    end)
+end)
+
+-- Сворачивание / разворачивание
+minimizeBtn.MouseButton1Click:Connect(function()
+    guiMinimized = not guiMinimized
+    contentFrame.Visible = not guiMinimized
+    if guiMinimized then
+        mainFrame.Size = UDim2.new(0, 320, 0, 35)
+        minimizeBtn.Text = "+"
+    else
+        mainFrame.Size = UDim2.new(0, 320, 0, 220)
+        minimizeBtn.Text = "–"
+    end
+end)
+
+-- Закрытие – скрытие GUI с возможностью вернуть (плавающая кнопка)
+closeBtn.MouseButton1Click:Connect(function()
+    screenGui.Enabled = false
+    local floatBtn = Instance.new("TextButton")
+    floatBtn.Size = UDim2.new(0, 50, 0, 50)
+    floatBtn.Position = UDim2.new(0.9, -25, 0.05, 0)
+    floatBtn.Text = "⚔️"
+    floatBtn.TextColor3 = Color3.new(1,1,1)
+    floatBtn.TextSize = 24
+    floatBtn.Font = Enum.Font.GothamBold
+    floatBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 180)
+    floatBtn.BackgroundTransparency = 0.2
+    floatBtn.BorderSizePixel = 0
+    local floatCorner = Instance.new("UICorner")
+    floatCorner.CornerRadius = UDim.new(1, 0)
+    floatCorner.Parent = floatBtn
+    floatBtn.Parent = screenGui
+    floatBtn.MouseButton1Click:Connect(function()
+        screenGui.Enabled = true
+        floatBtn:Destroy()
+    end)
+end)
+
+-- P – полное удаление GUI и остановка авто-хита
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.P then
+        screenGui:Destroy()
+        autoHitEnabled = false
+        LP:Chat("GUI удалён, авто-хит выключен.")
+    end
+end)
+
+LP:Chat("⚔️ Auto Hit + Teleport GUI загружен. By Probothotspot")
