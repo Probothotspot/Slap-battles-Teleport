@@ -1,0 +1,343 @@
+-- =============================================================
+-- AUTO LBRICK v3.0 – Видимый интервал 1с, реальный 0.1с, счётчик +1/с
+-- =============================================================
+if _G.AutoLbrickRunning then return end
+_G.AutoLbrickRunning = true
+
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- ==================== НАСТРОЙКИ ====================
+local Settings = {
+    Enabled = false,
+    RealInterval = 0.1,     -- реальный интервал вызова RemoteEvent (не виден)
+    Count = 0,
+    RemoteName = "lbrick",
+}
+
+-- ==================== ПЕРЕМЕННЫЕ ====================
+local lastFireTime = 0
+local loopRunning = false
+local renderConnection = nil
+local countThread = nil      -- поток для увеличения счётчика раз в секунду
+
+-- Ссылки на GUI
+local statsLabel = nil
+
+-- ==================== ЛОГ ====================
+local LogLines = {}
+local function AddLog(msg)
+    local fullMsg = os.date("%X") .. " - " .. msg
+    table.insert(LogLines, fullMsg)
+    if #LogLines > 20 then table.remove(LogLines, 1) end
+    if _G.LogLabel then
+        pcall(function() _G.LogLabel.Text = table.concat(LogLines, "\n") end)
+    end
+    print("[AutoLbrick] " .. msg)
+end
+
+-- ==================== ТОЧНЫЙ ЦИКЛ ВЫЗОВА RemoteEvent ====================
+local function StartFireLoop()
+    if loopRunning then return end
+    loopRunning = true
+
+    lastFireTime = tick()
+    renderConnection = RunService.RenderStepped:Connect(function()
+        if not Settings.Enabled then
+            if renderConnection then
+                renderConnection:Disconnect()
+                renderConnection = nil
+            end
+            loopRunning = false
+            return
+        end
+
+        local now = tick()
+        if now - lastFireTime >= Settings.RealInterval then
+            pcall(function()
+                local remote = ReplicatedStorage:FindFirstChild(Settings.RemoteName)
+                if remote and remote:IsA("RemoteEvent") then
+                    remote:FireServer()
+                    -- Счётчик НЕ увеличиваем здесь
+                else
+                    AddLog("RemoteEvent '" .. Settings.RemoteName .. "' не найден!")
+                end
+            end)
+
+            lastFireTime = lastFireTime + Settings.RealInterval
+            if lastFireTime < now - Settings.RealInterval then
+                lastFireTime = now
+            end
+        end
+    end)
+end
+
+local function StopFireLoop()
+    Settings.Enabled = false
+    if renderConnection then
+        renderConnection:Disconnect()
+        renderConnection = nil
+    end
+    loopRunning = false
+end
+
+-- ==================== ТАЙМЕР СЧЁТЧИКА (раз в 1 секунду) ====================
+local function StartCountTimer()
+    if countThread then return end
+    countThread = task.spawn(function()
+        while Settings.Enabled do
+            task.wait(1)   -- ждём ровно 1 секунду
+            if not Settings.Enabled then break end
+
+            Settings.Count = Settings.Count + 1
+
+            -- Мгновенное обновление GUI
+            if statsLabel then
+                statsLabel.Text = "Использований: " .. Settings.Count
+            end
+            AddLog("Использований: " .. Settings.Count)
+        end
+        countThread = nil
+    end)
+end
+
+-- ==================== СОЗДАНИЕ GUI ====================
+local function CreateGUI()
+    local playerGui = LP:WaitForChild("PlayerGui")
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "AutoLbrickGUI"
+    sg.ResetOnSpawn = false
+    sg.DisplayOrder = 999
+    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    sg.Parent = playerGui
+
+    -- Основная рамка
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 300, 0, 300)
+    frame.Position = UDim2.new(1, -310, 0, 10)
+    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    frame.BackgroundTransparency = 0.1
+    frame.BorderSizePixel = 0
+    frame.Active = true
+    frame.Draggable = true
+    frame.Parent = sg
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 16)
+
+    -- Тень
+    local shadow = Instance.new("ImageLabel", frame)
+    shadow.Size = UDim2.new(1, 20, 1, 20)
+    shadow.Position = UDim2.new(0, -10, 0, -10)
+    shadow.BackgroundTransparency = 1
+    shadow.Image = "rbxasset://textures/ui/gui_3x3.png"
+    shadow.ImageColor3 = Color3.new(0, 0, 0)
+    shadow.ImageTransparency = 0.7
+    shadow.ScaleType = Enum.ScaleType.Slice
+    shadow.SliceCenter = Rect.new(4, 4, 8, 8)
+    shadow.ZIndex = 0
+
+    -- Радужная рамка
+    local stroke = Instance.new("UIStroke", frame)
+    stroke.Thickness = 2
+    stroke.Transparency = 0.3
+    task.spawn(function()
+        local hue = 0
+        while sg and sg.Parent do
+            hue = (hue + 0.01) % 1
+            local r, g, b = Color3.fromHSV(hue, 0.8, 1).R, Color3.fromHSV(hue, 0.8, 1).G, Color3.fromHSV(hue, 0.8, 1).B
+            stroke.Color = Color3.fromRGB(r * 255, g * 255, b * 255)
+            task.wait(0.02)
+        end
+    end)
+
+    -- Заголовок
+    local header = Instance.new("Frame", frame)
+    header.Size = UDim2.new(1, 0, 0, 42)
+    header.BackgroundColor3 = Color3.fromRGB(80, 0, 150)
+    header.BorderSizePixel = 0
+    Instance.new("UICorner", header).CornerRadius = UDim.new(0, 16)
+
+    local headerGradient = Instance.new("UIGradient", header)
+    headerGradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 0, 200)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 0, 130))
+    }
+    headerGradient.Rotation = 90
+
+    local title = Instance.new("TextLabel", header)
+    title.Size = UDim2.new(1, -100, 1, 0)
+    title.Position = UDim2.new(0, 16, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "Auto Lbrick"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.Font = Enum.Font.GothamBlack
+    title.TextSize = 18
+    title.TextXAlignment = Enum.TextXAlignment.Left
+
+    -- Кнопка сворачивания
+    local minimized = false
+    local normalHeight = 300
+    local minimizeBtn = Instance.new("TextButton", header)
+    minimizeBtn.Size = UDim2.new(0, 26, 0, 26)
+    minimizeBtn.Position = UDim2.new(1, -64, 0.5, -13)
+    minimizeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
+    minimizeBtn.TextColor3 = Color3.new(1, 1, 1)
+    minimizeBtn.Text = "▼"
+    minimizeBtn.Font = Enum.Font.GothamBold
+    minimizeBtn.TextSize = 14
+    minimizeBtn.AutoButtonColor = false
+    Instance.new("UICorner", minimizeBtn).CornerRadius = UDim.new(0, 6)
+
+    -- Кнопка закрытия
+    local closeBtn = Instance.new("TextButton", header)
+    closeBtn.Size = UDim2.new(0, 28, 0, 28)
+    closeBtn.Position = UDim2.new(1, -34, 0.5, -14)
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 18
+    closeBtn.BackgroundColor3 = Color3.new(1, 0.2, 0.2)
+    closeBtn.BackgroundTransparency = 0.3
+    closeBtn.BorderSizePixel = 0
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 8)
+    closeBtn.MouseButton1Click:Connect(function()
+        StopFireLoop()
+        sg:Destroy()
+        _G.AutoLbrickRunning = false
+    end)
+
+    -- Контейнер контента
+    local content = Instance.new("Frame", frame)
+    content.Size = UDim2.new(1, -20, 1, -52)
+    content.Position = UDim2.new(0, 10, 0, 46)
+    content.BackgroundTransparency = 1
+    content.Name = "Content"
+
+    -- Кнопка включения
+    local toggleBtn = Instance.new("TextButton", content)
+    toggleBtn.Size = UDim2.new(1, 0, 0, 42)
+    toggleBtn.Position = UDim2.new(0, 0, 0, 0)
+    toggleBtn.Text = "ВКЛЮЧИТЬ"
+    toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 180, 30)
+    toggleBtn.TextColor3 = Color3.new(1, 1, 1)
+    toggleBtn.Font = Enum.Font.GothamBold
+    toggleBtn.TextSize = 16
+    toggleBtn.BorderSizePixel = 0
+    Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 10)
+
+    -- Панель интервала (статичный текст)
+    local intervalPanel = Instance.new("Frame", content)
+    intervalPanel.Size = UDim2.new(1, 0, 0, 48)
+    intervalPanel.Position = UDim2.new(0, 0, 0, 52)
+    intervalPanel.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+    intervalPanel.BorderSizePixel = 0
+    Instance.new("UICorner", intervalPanel).CornerRadius = UDim.new(0, 10)
+
+    local intervalLabel = Instance.new("TextLabel", intervalPanel)
+    intervalLabel.Size = UDim2.new(0, 150, 1, 0)
+    intervalLabel.Position = UDim2.new(0, 8, 0, 0)
+    intervalLabel.BackgroundTransparency = 1
+    intervalLabel.Text = "Интервал: 1 сек"
+    intervalLabel.TextColor3 = Color3.new(1, 1, 1)
+    intervalLabel.Font = Enum.Font.GothamSemibold
+    intervalLabel.TextSize = 13
+
+    -- Статистика
+    local statsPanel = Instance.new("Frame", content)
+    statsPanel.Size = UDim2.new(1, 0, 0, 30)
+    statsPanel.Position = UDim2.new(0, 0, 0, 112)
+    statsPanel.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+    statsPanel.BorderSizePixel = 0
+    Instance.new("UICorner", statsPanel).CornerRadius = UDim.new(0, 8)
+
+    statsLabel = Instance.new("TextLabel", statsPanel)
+    statsLabel.Size = UDim2.new(1, -16, 1, 0)
+    statsLabel.Position = UDim2.new(0, 8, 0, 0)
+    statsLabel.BackgroundTransparency = 1
+    statsLabel.Text = "Использований: 0"
+    statsLabel.TextColor3 = Color3.new(0.8, 1, 0.8)
+    statsLabel.Font = Enum.Font.GothamBold
+    statsLabel.TextSize = 14
+
+    -- Лог
+    local logFrame = Instance.new("ScrollingFrame", content)
+    logFrame.Size = UDim2.new(1, 0, 0, 70)
+    logFrame.Position = UDim2.new(0, 0, 0, 152)
+    logFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    logFrame.BorderSizePixel = 0
+    logFrame.CanvasSize = UDim2.new(0, 0, 0, 200)
+    logFrame.ScrollBarThickness = 2
+    Instance.new("UICorner", logFrame).CornerRadius = UDim.new(0, 8)
+
+    local logLabel = Instance.new("TextLabel", logFrame)
+    logLabel.Size = UDim2.new(1, 0, 0, 200)
+    logLabel.BackgroundTransparency = 1
+    logLabel.TextColor3 = Color3.new(1, 1, 1)
+    logLabel.Font = Enum.Font.Gotham
+    logLabel.TextSize = 11
+    logLabel.TextWrapped = true
+    logLabel.TextXAlignment = Enum.TextXAlignment.Left
+    logLabel.TextYAlignment = Enum.TextYAlignment.Top
+    logLabel.Text = ""
+    _G.LogLabel = logLabel
+
+    -- Надпись автора
+    local authorLabel = Instance.new("TextLabel", content)
+    authorLabel.Size = UDim2.new(1, 0, 0, 18)
+    authorLabel.Position = UDim2.new(0, 0, 0, 230)
+    authorLabel.BackgroundTransparency = 1
+    authorLabel.Text = "By Probothotspot"
+    authorLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+    authorLabel.Font = Enum.Font.GothamSemibold
+    authorLabel.TextSize = 12
+    authorLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+    -- Логика кнопки включения/выключения
+    toggleBtn.MouseButton1Click:Connect(function()
+        Settings.Enabled = not Settings.Enabled
+        if Settings.Enabled then
+            toggleBtn.Text = "ОСТАНОВИТЬ"
+            toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+            AddLog("Авто‑использование lbrick ЗАПУЩЕНО")
+            StartFireLoop()
+            StartCountTimer()
+        else
+            toggleBtn.Text = "ВКЛЮЧИТЬ"
+            toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 180, 30)
+            AddLog("Авто‑использование lbrick ОСТАНОВЛЕНО")
+            StopFireLoop()
+            -- Поток счётчика сам завершится
+        end
+    end)
+
+    -- Сворачивание
+    minimizeBtn.MouseButton1Click:Connect(function()
+        minimized = not minimized
+        if minimized then
+            frame.Size = UDim2.new(0, 300, 0, 42)
+            content.Visible = false
+            minimizeBtn.Text = "▲"
+        else
+            frame.Size = UDim2.new(0, 300, 0, normalHeight)
+            content.Visible = true
+            minimizeBtn.Text = "▼"
+        end
+    end)
+
+    -- Горячая клавиша P
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode == Enum.KeyCode.P then
+            StopFireLoop()
+            if sg then sg:Destroy() end
+            _G.AutoLbrickRunning = false
+            AddLog("Скрипт остановлен (P)")
+        end
+    end)
+end
+
+-- ==================== ЗАПУСК ====================
+CreateGUI()
+AddLog("Auto Lbrick v3.0 – видимый интервал 1с, реальный 0.1с, счётчик +1 раз в 1с.")
