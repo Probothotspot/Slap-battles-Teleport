@@ -1,0 +1,393 @@
+-- Glove Customizer v1.2 – центральный GUI, индивидуальные стили для каждой перчатки, фиолетовый дизайн
+
+repeat task.wait() until game:IsLoaded()
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+local UserInput = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+
+local guiDestroyed = false
+local char = LP.Character or LP.CharacterAdded:Wait()
+local tool = nil
+
+-- Таблица для хранения стилей каждой перчатки (ключ – имя тула)
+local gloveStyles = {}
+
+-- Текущий отображаемый стиль (для GUI)
+local currentStyleId = 1
+local currentCustomColor = Color3.new(1,1,1)
+
+-- Цвета
+local mainBg = Color3.fromRGB(15, 10, 20)
+local headerBg = Color3.fromRGB(120, 0, 180)
+local accentStroke = Color3.fromRGB(180, 0, 255)
+
+-- ====== СОЗДАНИЕ GUI ======
+local sg = Instance.new("ScreenGui", game.CoreGui)
+sg.Name = "GloveCustomizer"
+
+local main = Instance.new("Frame", sg)
+main.Size = UDim2.new(0, 300, 0, 450)
+-- ЦЕНТР ЭКРАНА
+main.Position = UDim2.new(0.5, -150, 0.5, -225)
+main.BackgroundColor3 = mainBg
+main.BackgroundTransparency = 0.05
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
+
+-- Переливающаяся обводка
+local stroke = Instance.new("UIStroke", main)
+stroke.Color = accentStroke
+stroke.Thickness = 2
+stroke.Transparency = 0.3
+spawn(function()
+    local hue = 0
+    while main and main.Parent do
+        hue = (hue + 0.01) % 1
+        local r, g, b = Color3.fromHSV(hue, 0.8, 1).R, Color3.fromHSV(hue, 0.8, 1).G, Color3.fromHSV(hue, 0.8, 1).B
+        stroke.Color = Color3.fromRGB(r * 255, g * 255, b * 255)
+        task.wait(0.02)
+    end
+end)
+
+-- Заголовок
+local header = Instance.new("Frame", main)
+header.Size = UDim2.new(1, 0, 0, 42)
+header.BackgroundColor3 = headerBg
+header.BorderSizePixel = 0
+Instance.new("UICorner", header).CornerRadius = UDim.new(0, 12)
+
+local title = Instance.new("TextLabel", header)
+title.Size = UDim2.new(1, -50, 1, 0)
+title.Position = UDim2.new(0, 12, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "🎨 Glove Customizer"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 18
+title.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Кнопка сворачивания
+local collapseBtn = Instance.new("ImageButton", header)
+collapseBtn.Size = UDim2.new(0, 28, 0, 28)
+collapseBtn.Position = UDim2.new(1, -34, 0.5, -14)
+collapseBtn.BackgroundTransparency = 1
+collapseBtn.Image = "rbxassetid://3926305904"
+collapseBtn.ImageColor3 = Color3.new(1, 1, 1)
+
+local isCollapsed = false
+local originalSize = main.Size
+
+-- Контент
+local contentFrame = Instance.new("Frame", main)
+contentFrame.Size = UDim2.new(1, -10, 1, -50)
+contentFrame.Position = UDim2.new(0, 5, 0, 45)
+contentFrame.BackgroundTransparency = 1
+contentFrame.ClipsDescendants = true
+
+local scroll = Instance.new("ScrollingFrame", contentFrame)
+scroll.Size = UDim2.new(1, 0, 1, 0)
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.CanvasSize = UDim2.new(0, 0, 0, 360)
+scroll.ScrollBarThickness = 3
+
+local inner = Instance.new("Frame", scroll)
+inner.Size = UDim2.new(1, 0, 1, 0)
+inner.BackgroundTransparency = 1
+
+-- Стили
+local styles = {"Обычный", "Золотой", "Неон", "Радужный", "Свой цвет"}
+local styleBtns = {}
+for i, name in ipairs(styles) do
+    local btn = Instance.new("TextButton", inner)
+    btn.Size = UDim2.new(0.9, -10, 0, 32)
+    btn.Position = UDim2.new(0, 5, 0, 10 + (i-1)*38)
+    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+    btn.Text = name
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Font = Enum.Font.SourceSans
+    btn.TextSize = 14
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    btn.MouseButton1Click:Connect(function()
+        applyStyleToCurrentGlove(i)
+        updateStyleButtons(i)
+    end)
+    table.insert(styleBtns, btn)
+end
+
+-- RGB слайдеры
+local rLabel = Instance.new("TextLabel", inner)
+rLabel.Position = UDim2.new(0, 15, 0, 210)
+rLabel.Size = UDim2.new(1, 0, 0, 18)
+rLabel.Text = "Цвет: R 255 G 0 B 255"
+rLabel.TextColor3 = Color3.new(1, 1, 1)
+rLabel.BackgroundTransparency = 1
+rLabel.Font = Enum.Font.SourceSans
+rLabel.TextSize = 12
+
+-- Функция создания слайдера с возможностью программной установки
+local function makeSlider(min, max, default, posY, colorCallback)
+    local frame = Instance.new("Frame", inner)
+    frame.Size = UDim2.new(0.8, -40, 0, 16)
+    frame.Position = UDim2.new(0, 70, 0, posY)
+    frame.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+    frame.BorderSizePixel = 0
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4)
+
+    local fill = Instance.new("Frame", frame)
+    local knob = Instance.new("TextButton", frame)
+    knob.Size = UDim2.new(0, 16, 0, 16)
+    knob.BackgroundColor3 = Color3.new(1, 1, 1)
+    knob.Text = ""
+    knob.BorderSizePixel = 0
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(0, 8)
+
+    local val = default
+    local function setValue(newVal)
+        val = math.clamp(newVal, min, max)
+        local frac = (val - min) / (max - min)
+        fill.Size = UDim2.new(frac, 0, 1, 0)
+        knob.Position = UDim2.new(frac, -8, 0, 0)
+        colorCallback()
+    end
+
+    fill.Size = UDim2.new((default-min)/(max-min), 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(150, 100, 255)
+    fill.BorderSizePixel = 0
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 4)
+    knob.Position = UDim2.new((default-min)/(max-min), -8, 0, 0)
+
+    knob.MouseButton1Down:Connect(function()
+        local moveCon
+        moveCon = RunService.RenderStepped:Connect(function()
+            if not UserInput:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+                moveCon:Disconnect()
+                return
+            end
+            local relX = math.clamp(UserInput:GetMouseLocation().X - frame.AbsolutePosition.X, 0, frame.AbsoluteSize.X)
+            local frac = relX / frame.AbsoluteSize.X
+            val = min + frac * (max - min)
+            fill.Size = UDim2.new(frac, 0, 1, 0)
+            knob.Position = UDim2.new(frac, -8, 0, 0)
+            colorCallback()
+        end)
+    end)
+
+    return { frame = frame, fill = fill, knob = knob, setValue = setValue, getValue = function() return val end }
+end
+
+local function onRGBChanged()
+    local r = math.floor(customRSlider.getValue())
+    local g = math.floor(customGSlider.getValue())
+    local b = math.floor(customBSlider.getValue())
+    rLabel.Text = string.format("Цвет: R %d G %d B %d", r, g, b)
+    currentCustomColor = Color3.fromRGB(r, g, b)
+    applyStyleToCurrentGlove(5, currentCustomColor)
+end
+
+local customRSlider = makeSlider(0, 255, 255, 235, onRGBChanged)
+local customGSlider = makeSlider(0, 255, 0, 260, onRGBChanged)
+local customBSlider = makeSlider(0, 255, 255, 285, onRGBChanged)
+
+-- Галочка "Все части"
+local applyToAll = true
+local allCheck = Instance.new("TextButton", inner)
+allCheck.Size = UDim2.new(0, 20, 0, 20)
+allCheck.Position = UDim2.new(0, 15, 0, 320)
+allCheck.Text = "✔"
+allCheck.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+allCheck.TextColor3 = Color3.new(1, 1, 1)
+allCheck.Font = Enum.Font.SourceSans
+allCheck.TextSize = 14
+allCheck.BorderSizePixel = 0
+Instance.new("UICorner", allCheck).CornerRadius = UDim.new(0, 4)
+allCheck.MouseButton1Click:Connect(function()
+    applyToAll = not applyToAll
+    allCheck.Text = applyToAll and "✔" or ""
+    applyStyleToCurrentGlove(currentStyleId, currentCustomColor)
+end)
+
+local allLabel = Instance.new("TextLabel", inner)
+allLabel.Position = UDim2.new(0, 40, 0, 320)
+allLabel.Size = UDim2.new(1, 0, 0, 20)
+allLabel.Text = "Все части перчатки"
+allLabel.TextColor3 = Color3.new(1, 1, 1)
+allLabel.BackgroundTransparency = 1
+allLabel.Font = Enum.Font.SourceSans
+allLabel.TextSize = 12
+
+-- ================== ЛОГИКА СТИЛЕЙ ==================
+local function getCurrentGloveName()
+    tool = char and char:FindFirstChildOfClass("Tool")
+    return tool and tool.Name or nil
+end
+
+function applyStyleToCurrentGlove(styleId, color)
+    local gloveName = getCurrentGloveName()
+    if not gloveName then return end
+    if not tool then return end
+
+    -- Сохраняем в таблицу индивидуальный стиль для этой перчатки
+    gloveStyles[gloveName] = {
+        styleId = styleId,
+        color = (styleId == 5) and color or nil
+    }
+    currentStyleId = styleId
+    if styleId == 5 then currentCustomColor = color end
+
+    -- Применяем визуал к текущей перчатке
+    applyVisualStyle(tool, styleId, color)
+end
+
+function applyVisualStyle(targetTool, styleId, color)
+    local handle = targetTool:FindFirstChild("Handle")
+    if not handle then return end
+
+    local parts = applyToAll and targetTool:GetDescendants() or {handle}
+    for _, part in ipairs(parts) do
+        if part:IsA("BasePart") then
+            part.Material = Enum.Material.SmoothPlastic
+            if styleId == 1 then
+                part.Color = Color3.new(1, 1, 1)
+            elseif styleId == 2 then
+                part.Material = Enum.Material.Metal
+                part.Color = Color3.fromRGB(255, 215, 0)
+            elseif styleId == 3 then
+                part.Material = Enum.Material.Neon
+                part.Color = Color3.fromRGB(0, 255, 255)
+            elseif styleId == 4 then
+                part.Material = Enum.Material.Neon
+                local hue = tick() * 0.5 % 1
+                local r, g, b = Color3.fromHSV(hue, 1, 1).R, Color3.fromHSV(hue, 1, 1).G, Color3.fromHSV(hue, 1, 1).B
+                part.Color = Color3.fromRGB(r * 255, g * 255, b * 255)
+            elseif styleId == 5 and color then
+                part.Color = color
+            end
+        end
+    end
+end
+
+function updateStyleButtons(activeStyleId)
+    for i, btn in ipairs(styleBtns) do
+        btn.BackgroundColor3 = (i == activeStyleId) and Color3.fromRGB(120, 60, 200) or Color3.fromRGB(50, 50, 70)
+    end
+end
+
+-- Программная установка слайдеров (вызывается при переключении перчатки)
+function updateSlidersForColor(color)
+    if not color then return end
+    local r = math.floor(color.R * 255)
+    local g = math.floor(color.G * 255)
+    local b = math.floor(color.B * 255)
+    customRSlider.setValue(r)
+    customGSlider.setValue(g)
+    customBSlider.setValue(b)
+    rLabel.Text = string.format("Цвет: R %d G %d B %d", r, g, b)
+end
+
+-- При переключении перчатки загружаем её стиль или ставим обычный
+local function onGloveChanged(newTool)
+    tool = newTool
+    if not tool then return end
+    local gloveName = tool.Name
+    local saved = gloveStyles[gloveName]
+    local styleId, color
+    if saved then
+        styleId = saved.styleId
+        color = saved.color
+    else
+        -- По умолчанию обычный
+        styleId = 1
+        color = nil
+        gloveStyles[gloveName] = { styleId = 1, color = nil }
+    end
+
+    currentStyleId = styleId
+    if styleId == 5 then currentCustomColor = color or Color3.new(1,1,1)
+    else currentCustomColor = Color3.new(1,1,1) end
+
+    -- Обновляем GUI
+    updateStyleButtons(styleId)
+    if styleId == 5 then
+        updateSlidersForColor(color or Color3.new(1,1,1))
+    else
+        -- Сбрасываем слайдеры в стандартное положение (просто визуально не меняем, но они могут остаться от предыдущего цвета; можно установить дефолт)
+        updateSlidersForColor(Color3.new(1,1,1)) -- сброс на белый, чтобы не путать
+    end
+
+    -- Применяем визуал
+    applyVisualStyle(tool, styleId, color)
+end
+
+-- Обработчики событий
+LP.CharacterAdded:Connect(function(c)
+    char = c
+    task.wait(0.5)
+    -- Проверяем, есть ли уже тул
+    local existingTool = c:FindFirstChildOfClass("Tool")
+    if existingTool then
+        onGloveChanged(existingTool)
+    end
+    -- Следим за добавлением
+    c.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then
+            onGloveChanged(child)
+        end
+    end)
+end)
+
+-- Первоначальная инициализация
+if char then
+    local existingTool = char:FindFirstChildOfClass("Tool")
+    if existingTool then
+        onGloveChanged(existingTool)
+    end
+    char.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then
+            onGloveChanged(child)
+        end
+    end)
+end
+
+-- Радужное обновление (только для текущего стиля 4)
+spawn(function()
+    while true do
+        if tool and currentStyleId == 4 then
+            applyVisualStyle(tool, 4)
+        end
+        task.wait(0.1)
+    end
+end)
+
+-- Сворачивание
+collapseBtn.MouseButton1Click:Connect(function()
+    isCollapsed = not isCollapsed
+    if isCollapsed then
+        main:TweenSize(UDim2.new(0, 300, 0, 42), Enum.EasingDirection.InOut, Enum.EasingStyle.Quad, 0.3, true)
+        contentFrame.Visible = false
+        collapseBtn.Image = "rbxassetid://3926307971"
+    else
+        main:TweenSize(originalSize, Enum.EasingDirection.InOut, Enum.EasingStyle.Quad, 0.3, true)
+        contentFrame.Visible = true
+        collapseBtn.Image = "rbxassetid://3926305904"
+    end
+end)
+
+-- Полное удаление по P
+UserInput.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.P then
+        guiDestroyed = true
+        if sg then sg:Destroy() end
+        LP:Chat("🎨 Glove Customizer удалён. Перезапустите скрипт для возврата.")
+    end
+end)
+
+-- Стартовое применение стиля (если GUI не был удалён)
+if not guiDestroyed then
+    -- Уже обработано выше
+end
