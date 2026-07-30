@@ -1,0 +1,224 @@
+--[[
+    Redacted Spawn v1.0 (модифицировано)
+    Тёмно-фиолетовый интерфейс, скрытие по крестику (возврат по K),
+    сворачивание/разворачивание (‑ / +), полное удаление и остановка по P.
+    Автор: Women (Credit by Women)
+]]
+
+local plr = game.Players.LocalPlayer
+local uis = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Создание GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "RedactedSpawn"
+gui.ResetOnSpawn = false
+gui.Parent = plr:WaitForChild("PlayerGui")
+
+-- Главный фрейм
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 220, 0, 155)
+frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+frame.AnchorPoint = Vector2.new(0.5, 0.5)
+frame.BackgroundColor3 = Color3.fromRGB(30, 0, 60)
+frame.BorderSizePixel = 0
+frame.Parent = gui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = frame
+
+-- Заголовок
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -60, 0, 28)   -- освобождаем место для двух кнопок справа
+title.Position = UDim2.new(0, 15, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "Redacted Spawn"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 18
+title.Parent = frame
+
+-- Кнопка сворачивания/разворачивания (‑/+) 
+local collapseBtn = Instance.new("TextButton")
+collapseBtn.Size = UDim2.new(0, 24, 0, 24)
+collapseBtn.Position = UDim2.new(1, -56, 0, 4)   -- слева от крестика
+collapseBtn.BackgroundTransparency = 1
+collapseBtn.Text = "–"                             -- начальное состояние (развёрнуто)
+collapseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+collapseBtn.Font = Enum.Font.SourceSansBold
+collapseBtn.TextSize = 18
+collapseBtn.Parent = frame
+
+-- Крестик (скрыть GUI) с эмодзи ❌
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 24, 0, 24)
+closeBtn.Position = UDim2.new(1, -28, 0, 4)
+closeBtn.BackgroundTransparency = 1
+closeBtn.Text = "❌"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.Font = Enum.Font.SourceSansBold
+closeBtn.TextSize = 18
+closeBtn.Parent = frame
+closeBtn.MouseButton1Click:Connect(function()
+    gui.Visible = false
+end)
+
+-- Кнопка "Один раз"
+local btn1 = Instance.new("TextButton")
+btn1.Size = UDim2.new(0.9, 0, 0, 38)
+btn1.Position = UDim2.new(0.05, 0, 0, 35)
+btn1.BackgroundColor3 = Color3.fromRGB(100, 0, 180)
+btn1.Text = "Один раз"
+btn1.TextColor3 = Color3.fromRGB(255, 255, 255)
+btn1.Font = Enum.Font.SourceSansBold
+btn1.TextSize = 16
+btn1.BorderSizePixel = 0
+btn1.Parent = frame
+local corner1 = Instance.new("UICorner")
+corner1.CornerRadius = UDim.new(0, 8)
+corner1.Parent = btn1
+
+-- Кнопка "Авто: Выкл"
+local btn2 = Instance.new("TextButton")
+btn2.Size = UDim2.new(0.9, 0, 0, 38)
+btn2.Position = UDim2.new(0.05, 0, 0, 80)
+btn2.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+btn2.Text = "Авто: Выкл"
+btn2.TextColor3 = Color3.fromRGB(255, 255, 255)
+btn2.Font = Enum.Font.SourceSansBold
+btn2.TextSize = 16
+btn2.BorderSizePixel = 0
+btn2.Parent = frame
+local corner2 = Instance.new("UICorner")
+corner2.CornerRadius = UDim.new(0, 8)
+corner2.Parent = btn2
+
+-- Подпись "By Probothotspot"
+local creditLabel = Instance.new("TextLabel")
+creditLabel.Size = UDim2.new(0, 200, 0, 18)
+creditLabel.Position = UDim2.new(0.5, 0, 1, -4)
+creditLabel.AnchorPoint = Vector2.new(0.5, 1)
+creditLabel.BackgroundTransparency = 1
+creditLabel.Text = "By Probothotspot"
+creditLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+creditLabel.Font = Enum.Font.SourceSans
+creditLabel.TextSize = 14
+creditLabel.Parent = frame
+
+-- Логика сворачивания/разворачивания
+local collapsed = false
+local expandedHeight = 155
+local collapsedHeight = 30   -- только заголовок и две кнопки сверху
+
+collapseBtn.MouseButton1Click:Connect(function()
+    collapsed = not collapsed
+    if collapsed then
+        -- Сворачиваем: скрываем основное содержимое, уменьшаем высоту
+        btn1.Visible = false
+        btn2.Visible = false
+        creditLabel.Visible = false
+        frame.Size = UDim2.new(frame.Size.X.Scale, frame.Size.X.Offset, 0, collapsedHeight)
+        collapseBtn.Text = "+"
+    else
+        -- Разворачиваем: показываем содержимое, восстанавливаем высоту
+        btn1.Visible = true
+        btn2.Visible = true
+        creditLabel.Visible = true
+        frame.Size = UDim2.new(frame.Size.X.Scale, frame.Size.X.Offset, 0, expandedHeight)
+        collapseBtn.Text = "–"
+    end
+end)
+
+-- Перетаскивание (работает и в свёрнутом состоянии)
+local dragging = false
+local dragStart = nil
+local startPos = nil
+
+frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = frame.Position
+    end
+end)
+
+frame.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+uis.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+-- Логика телепорта
+local auto = false
+local autoThread = nil
+
+local function fireTeleport()
+    local success, err = pcall(function()
+        ReplicatedStorage.Well:FireServer(unpack({}))
+    end)
+    if not success then
+        warn("Ошибка телепортации: " .. tostring(err))
+    end
+end
+
+btn1.MouseButton1Click:Connect(function()
+    if btn1.Active == false then return end
+    btn1.Active = false
+    btn1.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+    fireTeleport()
+    task.wait(8)
+    btn1.Active = true
+    btn1.BackgroundColor3 = Color3.fromRGB(100, 0, 180)
+end)
+
+btn2.MouseButton1Click:Connect(function()
+    auto = not auto
+    if auto then
+        btn2.Text = "Авто: Вкл"
+        btn2.BackgroundColor3 = Color3.fromRGB(0, 170, 0)
+        autoThread = task.spawn(function()
+            while auto do
+                fireTeleport()
+                task.wait(8)
+            end
+        end)
+    else
+        btn2.Text = "Авто: Выкл"
+        btn2.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+        autoThread = nil
+    end
+end)
+
+-- Управление видимостью по клавишам
+uis.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.K then
+        if gui then
+            gui.Visible = not gui.Visible
+        end
+    elseif input.KeyCode == Enum.KeyCode.P then
+        if auto then
+            auto = false
+        end
+        if gui then
+            gui:Destroy()
+            gui = nil
+        end
+    end
+end)
+
+-- Сообщение о загрузке
+pcall(function()
+    plr:Chat("✨ Redacted Spawn загружен! K – показать/скрыть, P – полностью удалить, –/+ – свернуть/развернуть.")
+end)
