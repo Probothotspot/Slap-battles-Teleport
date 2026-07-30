@@ -1,0 +1,199 @@
+-- Fullbright (Always Day) v1 – Slap Battles (Xeno)
+-- Делает игру светлой и солнечной
+
+repeat task.wait() until game:IsLoaded()
+
+local Lighting = game:GetService("Lighting")
+local UserInput = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+-- Настройки
+local Settings = {
+    Enabled = true,  -- включено по умолчанию
+}
+
+-- Сохраняем исходные значения освещения, чтобы вернуть при выключении
+local defaultLighting = {
+    ClockTime = Lighting.ClockTime,
+    Brightness = Lighting.Brightness,
+    GlobalShadows = Lighting.GlobalShadows,
+    FogEnd = Lighting.FogEnd,
+    FogColor = Lighting.FogColor,
+    Ambient = Lighting.Ambient,
+    OutdoorAmbient = Lighting.OutdoorAmbient,
+    ShadowSoftness = Lighting.ShadowSoftness
+}
+
+-- Применяем яркий день
+local function enableFullbright()
+    Lighting.ClockTime = 14            -- солнечный полдень
+    Lighting.Brightness = 2            -- максимальная яркость
+    Lighting.GlobalShadows = false     -- убираем тени
+    Lighting.FogEnd = 10000            -- отодвигаем туман
+    Lighting.FogColor = Color3.new(1, 1, 1)
+    Lighting.Ambient = Color3.new(1, 1, 1)
+    Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+    Lighting.ShadowSoftness = 0
+end
+
+-- Возвращаем как было
+local function disableFullbright()
+    Lighting.ClockTime = defaultLighting.ClockTime
+    Lighting.Brightness = defaultLighting.Brightness
+    Lighting.GlobalShadows = defaultLighting.GlobalShadows
+    Lighting.FogEnd = defaultLighting.FogEnd
+    Lighting.FogColor = defaultLighting.FogColor
+    Lighting.Ambient = defaultLighting.Ambient
+    Lighting.OutdoorAmbient = defaultLighting.OutdoorAmbient
+    Lighting.ShadowSoftness = defaultLighting.ShadowSoftness
+end
+
+-- Включаем сразу
+enableFullbright()
+
+-- ====== GUI ======
+local sg = Instance.new("ScreenGui", game.CoreGui)
+sg.Name = "Fullbright"
+
+local main = Instance.new("Frame", sg)
+main.Size = UDim2.new(0, 200, 0, 100)
+main.Position = UDim2.new(0.5, -100, 0.5, -50)
+main.BackgroundColor3 = Color3.fromRGB(15, 10, 20)
+main.BackgroundTransparency = 0.05
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
+
+-- Радужная обводка
+local stroke = Instance.new("UIStroke", main)
+stroke.Color = Color3.fromRGB(180, 0, 255)
+stroke.Thickness = 2
+stroke.Transparency = 0.3
+task.spawn(function()
+    local hue = 0
+    while main and main.Parent do
+        hue = (hue + 0.01) % 1
+        local r, g, b = Color3.fromHSV(hue, 0.8, 1).R, Color3.fromHSV(hue, 0.8, 1).G, Color3.fromHSV(hue, 0.8, 1).B
+        stroke.Color = Color3.fromRGB(r * 255, g * 255, b * 255)
+        task.wait(0.02)
+    end
+end)
+
+-- Заголовок
+local header = Instance.new("Frame", main)
+header.Size = UDim2.new(1, 0, 0, 36)
+header.BackgroundColor3 = Color3.fromRGB(120, 0, 180)
+header.BorderSizePixel = 0
+Instance.new("UICorner", header).CornerRadius = UDim.new(0, 12)
+
+local title = Instance.new("TextLabel", header)
+title.Size = UDim2.new(1, -50, 1, 0)
+title.Position = UDim2.new(0, 12, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "☀️ Fullbright"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 18
+title.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Кнопка сворачивания
+local collapseBtn = Instance.new("ImageButton", header)
+collapseBtn.Size = UDim2.new(0, 28, 0, 28)
+collapseBtn.Position = UDim2.new(1, -34, 0.5, -14)
+collapseBtn.BackgroundTransparency = 1
+collapseBtn.Image = "rbxassetid://3926305904"
+collapseBtn.ImageColor3 = Color3.new(1, 1, 1)
+
+local isCollapsed = false
+local originalSize = main.Size
+
+-- Контент
+local contentFrame = Instance.new("Frame", main)
+contentFrame.Size = UDim2.new(1, -10, 1, -42)
+contentFrame.Position = UDim2.new(0, 5, 0, 40)
+contentFrame.BackgroundTransparency = 1
+contentFrame.ClipsDescendants = true
+
+local inner = Instance.new("Frame", contentFrame)
+inner.Size = UDim2.new(1, 0, 1, 0)
+inner.BackgroundTransparency = 1
+
+-- Переключатель
+local toggleFrame = Instance.new("Frame", inner)
+toggleFrame.Size = UDim2.new(1, -10, 0, 28)
+toggleFrame.Position = UDim2.new(0, 5, 0, 10)
+toggleFrame.BackgroundTransparency = 1
+
+local toggleLabel = Instance.new("TextLabel", toggleFrame)
+toggleLabel.Size = UDim2.new(0, 120, 1, 0)
+toggleLabel.BackgroundTransparency = 1
+toggleLabel.Text = "Всегда день"
+toggleLabel.TextColor3 = Color3.new(1, 1, 1)
+toggleLabel.Font = Enum.Font.SourceSans
+toggleLabel.TextSize = 14
+toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local toggleBtn = Instance.new("TextButton", toggleFrame)
+toggleBtn.Size = UDim2.new(0, 50, 0, 22)
+toggleBtn.Position = UDim2.new(1, -55, 0.5, -11)
+toggleBtn.Font = Enum.Font.SourceSansBold
+toggleBtn.TextSize = 12
+toggleBtn.BorderSizePixel = 0
+Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 6)
+
+local function updateToggle()
+    if Settings.Enabled then
+        toggleBtn.Text = "ON"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+    else
+        toggleBtn.Text = "OFF"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    end
+end
+updateToggle()
+
+toggleBtn.MouseButton1Click:Connect(function()
+    Settings.Enabled = not Settings.Enabled
+    updateToggle()
+    if Settings.Enabled then
+        enableFullbright()
+    else
+        disableFullbright()
+    end
+end)
+
+-- Подпись автора (снизу)
+local credit = Instance.new("TextLabel", inner)
+credit.Size = UDim2.new(1, 0, 0, 14)
+credit.Position = UDim2.new(0, 0, 1, -14)
+credit.BackgroundTransparency = 1
+credit.Text = "By Probothotspot"
+credit.TextColor3 = Color3.fromRGB(160, 160, 160)
+credit.Font = Enum.Font.SourceSansItalic
+credit.TextSize = 12
+credit.TextXAlignment = Enum.TextXAlignment.Center
+
+-- Сворачивание
+collapseBtn.MouseButton1Click:Connect(function()
+    isCollapsed = not isCollapsed
+    if isCollapsed then
+        main:TweenSize(UDim2.new(0, 200, 0, 36), Enum.EasingDirection.InOut, Enum.EasingStyle.Quad, 0.3, true)
+        contentFrame.Visible = false
+        collapseBtn.Image = "rbxassetid://3926307971"
+    else
+        main:TweenSize(originalSize, Enum.EasingDirection.InOut, Enum.EasingStyle.Quad, 0.3, true)
+        contentFrame.Visible = true
+        collapseBtn.Image = "rbxassetid://3926305904"
+    end
+end)
+
+-- Удаление по P
+UserInput.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.P then
+        disableFullbright()
+        if sg then sg:Destroy() end
+        game:GetService("Players").LocalPlayer:Chat("☀️ Fullbright удалён. Перезапустите скрипт для возврата.")
+    end
+end)
