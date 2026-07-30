@@ -1,0 +1,965 @@
+-- Simple Teleport Zones v6.7.4 for Slap Battles (Xeno)
+-- Lock After TP теперь работает сразу при входе на арену (не требует врага)
+-- Freeze на основе Heartbeat (как в проверенном скрипте)
+if _G.TeleportRunning then return end
+_G.TeleportRunning = true
+
+-- Сервисы
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+local UserInput = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local stopScript = false
+
+-- ==================== НАСТРОЙКИ ====================
+local Settings = {
+    Enabled = true,
+    AutoResetOnHit = true,
+    TargetPlayer = nil,
+    ArenaTeleportDistance = 15,
+    EnableLowZone = true,
+    LowZoneTarget = CFrame.new(-35, -100, -280),
+    LowZoneCooldown = 2,
+    ArenaTeleportContinuous = false,
+    ArenaTeleportCooldown = 5,
+    LockAfterArenaTeleport = false,
+    InstantDeathOnHPChange = false,
+    ResetOnDiceRoll = false,
+    DiceThreshold = 60,
+}
+
+-- Загрузка сохранённых настроек
+pcall(function()
+    if _G.TeleportSettings then
+        local saved = _G.TeleportSettings
+        if saved.ArenaTeleportDistance then Settings.ArenaTeleportDistance = saved.ArenaTeleportDistance end
+        if saved.EnableLowZone ~= nil then Settings.EnableLowZone = saved.EnableLowZone end
+        if saved.LowZoneCooldown then Settings.LowZoneCooldown = saved.LowZoneCooldown end
+        if saved.LowZoneTarget then
+            local t = saved.LowZoneTarget
+            if type(t) == "table" and t.x then
+                Settings.LowZoneTarget = CFrame.new(t.x, t.y, t.z)
+            elseif type(t) == "CFrame" then
+                Settings.LowZoneTarget = t
+            end
+        end
+        if saved.ArenaTeleportContinuous ~= nil then Settings.ArenaTeleportContinuous = saved.ArenaTeleportContinuous end
+        if saved.ArenaTeleportCooldown then Settings.ArenaTeleportCooldown = saved.ArenaTeleportCooldown end
+        if saved.LockAfterArenaTeleport ~= nil then Settings.LockAfterArenaTeleport = saved.LockAfterArenaTeleport end
+        if saved.InstantDeathOnHPChange ~= nil then Settings.InstantDeathOnHPChange = saved.InstantDeathOnHPChange end
+        if saved.ResetOnDiceRoll ~= nil then Settings.ResetOnDiceRoll = saved.ResetOnDiceRoll end
+        if saved.DiceThreshold then Settings.DiceThreshold = saved.DiceThreshold end
+    end
+end)
+
+-- ==================== СОСТОЯНИЯ ====================
+local arenaLastTeleport = 0
+local lowZoneLastTime = 0
+local lastHealth = nil
+local lastResetTime = 0
+local healthConnection = nil
+
+-- Freeze (удержание позиции)
+local freezeEnabled = false
+local freezeCFrame = nil
+local freezeConnection = nil
+
+-- Dice Reset
+local lastDiceHitTime = 0
+local diceSearchActive = false
+
+local LOBBY_PORTAL = CFrame.new(-1210, 330, 3)
+local RESET_POINT = CFrame.new(-1210, -80, 4)
+
+-- ==================== ФУНКЦИИ ====================
+local function GetNearestEnemyRoot()
+    if stopScript then return nil end
+    local myChar = LP.Character
+    if not myChar then return nil end
+    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+
+    local nearest, nearestDist = nil, math.huge
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP and plr.Character then
+            local root = plr.Character:FindFirstChild("HumanoidRootPart")
+            local hum = plr.Character:FindFirstChild("Humanoid")
+            if root and hum and hum.Health > 0 then
+                local dist = (myRoot.Position - root.Position).Magnitude
+                if dist < nearestDist then
+                    nearestDist = dist
+                    nearest = root
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+-- ==================== FREEZE (как в проверенном скрипте) ====================
+local function onFreezeHeartbeat()
+    local char = LP.Character
+    if char and char:FindFirstChild("HumanoidRootPart") and freezeCFrame then
+        char.HumanoidRootPart.CFrame = freezeCFrame
+    else
+        -- персонаж исчез – отключаем фриз
+        freezeEnabled = false
+        if freezeConnection then
+            freezeConnection:Disconnect()
+            freezeConnection = nil
+        end
+    end
+end
+
+local function StartFreeze(targetCF)
+    StopFreeze()
+    freezeEnabled = true
+    freezeCFrame = targetCF
+    freezeConnection = RunService.Heartbeat:Connect(onFreezeHeartbeat)
+    AddLog("🔒 Freeze активирован – позиция зафиксирована")
+end
+
+local function StopFreeze()
+    if freezeEnabled then
+        AddLog("🔓 Freeze деактивирован")
+    end
+    freezeEnabled = false
+    freezeCFrame = nil
+    if freezeConnection then
+        freezeConnection:Disconnect()
+        freezeConnection = nil
+    end
+end
+
+-- ==================== DICE RESET ====================
+local function extractNumber(text)
+    if not text then return nil end
+    local numStr = string.match(text, "%d+")
+    return numStr and tonumber(numStr)
+end
+
+local function findNumberInGui(obj)
+    if obj:IsA("TextLabel") then
+        local num = extractNumber(obj.Text)
+        if num then return num end
+    end
+    for _, child in ipairs(obj:GetChildren()) do
+        local num = findNumberInGui(child)
+        if num then return num end
+    end
+    return nil
+end
+
+local function findDiceNumber(char)
+    for _, child in ipairs(char:GetDescendants()) do
+        if child:IsA("BillboardGui") then
+            local num = findNumberInGui(child)
+            if num and num >= 5 and num <= 100 and num > Settings.DiceThreshold then
+                return num
+            end
+        end
+    end
+    return nil
+end
+
+local function DoDiceReset(char)
+    StopFreeze()
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if root then
+        root.CFrame = RESET_POINT
+    end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.Health = 0
+    else
+        char:BreakJoints()
+    end
+    AddLog("🎲 Dice reset (число > " .. Settings.DiceThreshold .. ")")
+    lastDiceHitTime = 0
+    diceSearchActive = false
+end
+
+local function StartDiceSearch(char)
+    if diceSearchActive then return end
+    diceSearchActive = true
+    local startTime = tick()
+    while diceSearchActive and tick() - startTime < 0.8 do
+        if not char or char ~= LP.Character then
+            diceSearchActive = false
+            return
+        end
+        local num = findDiceNumber(char)
+        if num then
+            DoDiceReset(char)
+            return
+        end
+        task.wait(0.05)
+    end
+    diceSearchActive = false
+end
+
+-- ==================== ОСНОВНАЯ ЛОГИКА ====================
+local function ProcessZones()
+    if stopScript or not Settings.Enabled then return end
+    local char = LP.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local y = root.Position.Y
+    local now = tick()
+
+    -- Лобби
+    if y >= 320 and y <= 330 then
+        arenaLastTeleport = 0
+        lowZoneLastTime = 0
+        root.CFrame = LOBBY_PORTAL
+        StopFreeze()
+        AddLog("Телепорт к порталу")
+        return
+    end
+
+    -- Низкая зона
+    if Settings.EnableLowZone and y >= -150 and y <= -110 then
+        if now - lowZoneLastTime >= math.max(Settings.LowZoneCooldown, 0) then
+            local target = Settings.LowZoneTarget
+            local dist = (root.Position - target.Position).Magnitude
+            if dist > 5 then
+                root.CFrame = target
+                lowZoneLastTime = now
+                AddLog("Телепорт в низкой зоне")
+            end
+        end
+        return
+    end
+
+    -- Арена
+    if y >= -50 and y <= 80 then
+        -- Если включен Lock и фриз ещё не активен – сразу замораживаем на текущем месте
+        if Settings.LockAfterArenaTeleport and not freezeEnabled and not Settings.InstantDeathOnHPChange then
+            StartFreeze(root.CFrame)
+        end
+
+        local function doTeleport()
+            local targetRoot = nil
+            if Settings.TargetPlayer and Settings.TargetPlayer.Character then
+                targetRoot = Settings.TargetPlayer.Character:FindFirstChild("HumanoidRootPart")
+            end
+            if not targetRoot then targetRoot = GetNearestEnemyRoot() end
+            if targetRoot then
+                local distance = Settings.ArenaTeleportDistance
+                local targetCF = targetRoot.CFrame * CFrame.new(0, 0, -distance)
+                root.CFrame = targetCF
+                arenaLastTeleport = tick()
+                local targetName = Settings.TargetPlayer and Settings.TargetPlayer.Name or "ближайший"
+                AddLog("Телепорт к " .. targetName .. " (" .. distance .. " студ.)")
+
+                -- Обновляем точку фриза на новую позицию
+                if Settings.LockAfterArenaTeleport and not Settings.InstantDeathOnHPChange then
+                    StartFreeze(targetCF)
+                end
+                return true
+            else
+                AddLog("Нет цели для телепорта")
+                return false
+            end
+        end
+
+        if Settings.ArenaTeleportContinuous then
+            if now - arenaLastTeleport >= Settings.ArenaTeleportCooldown then
+                doTeleport()
+            end
+        else
+            if arenaLastTeleport == 0 then
+                doTeleport()
+            end
+        end
+    else
+        -- Вне известных зон – снимаем фриз
+        if freezeEnabled then
+            StopFreeze()
+        end
+    end
+end
+
+local function OnHealthChanged(newHealth)
+    if stopScript then return end
+    local char = LP.Character
+    if not char then return end
+
+    if Settings.InstantDeathOnHPChange then
+        StopFreeze()
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.CFrame = RESET_POINT
+        end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.Health = 0
+        else
+            char:BreakJoints()
+        end
+        AddLog("Мгновенная смерть: HP изменилось")
+        return
+    end
+
+    if Settings.ResetOnDiceRoll and lastHealth and newHealth < lastHealth then
+        lastDiceHitTime = tick()
+        AddLog("Удар зафиксирован, поиск числа кубика (> " .. Settings.DiceThreshold .. ")")
+        task.spawn(function() StartDiceSearch(char) end)
+    end
+
+    if Settings.AutoResetOnHit and not Settings.ResetOnDiceRoll and lastHealth and newHealth < lastHealth then
+        local now = tick()
+        if now - lastResetTime >= 1 then
+            if not freezeEnabled then
+                local root = char:FindFirstChild("HumanoidRootPart")
+                if root then
+                    root.CFrame = RESET_POINT
+                    lastResetTime = now
+                    AddLog("Авто‑ресет: HP " .. lastHealth .. " → " .. newHealth)
+                end
+            end
+        end
+    end
+    lastHealth = newHealth
+end
+
+local function SetupHealthListener(char)
+    if stopScript then return end
+    if healthConnection then healthConnection:Disconnect() end
+    local hum = char:WaitForChild("Humanoid", 5)
+    if hum then
+        lastHealth = hum.Health
+        healthConnection = hum.HealthChanged:Connect(OnHealthChanged)
+        hum.Died:Once(function()
+            arenaLastTeleport = 0
+            lowZoneLastTime = 0
+            StopFreeze()
+            lastDiceHitTime = 0
+            diceSearchActive = false
+            AddLog("Смерть – Freeze снят")
+        end)
+        AddLog("Защита активирована (HP = " .. lastHealth .. ")")
+    end
+end
+
+local function StopAll()
+    stopScript = true
+    StopFreeze()
+    if healthConnection then healthConnection:Disconnect() end
+    _G.TeleportRunning = false
+    AddLog("Скрипт полностью остановлен.")
+end
+
+-- ==================== ЛОГ ====================
+local logLines = {}
+local logLabel = nil
+function AddLog(msg)
+    local fullMsg = os.date("%X") .. " - " .. msg
+    table.insert(logLines, fullMsg)
+    if #logLines > 10 then table.remove(logLines, 1) end
+    print("[Teleport] " .. msg)
+    if logLabel then pcall(function() logLabel.Text = table.concat(logLines, "\n") end) end
+end
+
+-- ==================== ГЛАВНЫЙ ЦИКЛ ====================
+RunService.Heartbeat:Connect(function()
+    if stopScript then return end
+    ProcessZones()
+end)
+
+LP.CharacterAdded:Connect(function(char)
+    if stopScript then return end
+    arenaLastTeleport = 0
+    lowZoneLastTime = 0
+    StopFreeze()
+    lastDiceHitTime = 0
+    diceSearchActive = false
+    SetupHealthListener(char)
+end)
+if LP.Character then SetupHealthListener(LP.Character) end
+
+-- ==================== GUI ====================
+local playerGui = LP:FindFirstChild("PlayerGui") or LP:WaitForChild("PlayerGui")
+if not playerGui then return end
+
+local sg = Instance.new("ScreenGui", playerGui)
+sg.Name = "SimpleTeleport"
+sg.ResetOnSpawn = false
+
+local main = Instance.new("Frame", sg)
+main.Size = UDim2.new(0, 280, 0, 730)
+main.Position = UDim2.new(0.02, 0, 0.3, 0)
+main.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 8)
+
+local title = Instance.new("TextLabel", main)
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundColor3 = Color3.fromRGB(100, 0, 150)
+title.Text = "Simple Teleport v6.7.4"
+title.TextColor3 = Color3.new(1,1,1)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 16
+title.Parent = main
+Instance.new("UICorner", title).CornerRadius = UDim.new(0, 8)
+
+-- Общий вкл/выкл
+local enabledBtn = Instance.new("TextButton", main)
+enabledBtn.Size = UDim2.new(0, 100, 0, 30)
+enabledBtn.Position = UDim2.new(0, 10, 0, 40)
+enabledBtn.Text = "Enabled: ON"
+enabledBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+enabledBtn.TextColor3 = Color3.new(1,1,1)
+enabledBtn.Font = Enum.Font.SourceSansBold
+enabledBtn.TextSize = 14
+enabledBtn.Parent = main
+Instance.new("UICorner", enabledBtn).CornerRadius = UDim.new(0, 6)
+enabledBtn.MouseButton1Click:Connect(function()
+    Settings.Enabled = not Settings.Enabled
+    enabledBtn.Text = "Enabled: " .. (Settings.Enabled and "ON" or "OFF")
+    enabledBtn.BackgroundColor3 = Settings.Enabled and Color3.fromRGB(50,200,50) or Color3.fromRGB(200,50,50)
+end)
+
+-- Авто‑ресет
+local resetBtn = Instance.new("TextButton", main)
+resetBtn.Size = UDim2.new(0, 140, 0, 30)
+resetBtn.Position = UDim2.new(0, 120, 0, 40)
+resetBtn.Text = "AutoReset on Hit: " .. (Settings.AutoResetOnHit and "ON" or "OFF")
+resetBtn.BackgroundColor3 = Settings.AutoResetOnHit and Color3.fromRGB(50,200,50) or Color3.fromRGB(200,50,50)
+resetBtn.TextColor3 = Color3.new(1,1,1)
+resetBtn.Font = Enum.Font.SourceSansBold
+resetBtn.TextSize = 13
+resetBtn.Parent = main
+Instance.new("UICorner", resetBtn).CornerRadius = UDim.new(0, 6)
+resetBtn.MouseButton1Click:Connect(function()
+    Settings.AutoResetOnHit = not Settings.AutoResetOnHit
+    resetBtn.Text = "AutoReset on Hit: " .. (Settings.AutoResetOnHit and "ON" or "OFF")
+    resetBtn.BackgroundColor3 = Settings.AutoResetOnHit and Color3.fromRGB(50,200,50) or Color3.fromRGB(200,50,50)
+    if Settings.AutoResetOnHit then
+        Settings.ResetOnDiceRoll = false
+        diceResetBtn.Text = "Dice Reset (>60): OFF"
+        diceResetBtn.BackgroundColor3 = Color3.fromRGB(200,50,50)
+    end
+end)
+
+-- Low Zone переключатель
+local lowZoneBtn = Instance.new("TextButton", main)
+lowZoneBtn.Size = UDim2.new(0, 140, 0, 30)
+lowZoneBtn.Position = UDim2.new(0, 10, 0, 80)
+lowZoneBtn.Text = "Low Zone: " .. (Settings.EnableLowZone and "ON" or "OFF")
+lowZoneBtn.BackgroundColor3 = Settings.EnableLowZone and Color3.fromRGB(50,200,50) or Color3.fromRGB(200,50,50)
+lowZoneBtn.TextColor3 = Color3.new(1,1,1)
+lowZoneBtn.Font = Enum.Font.SourceSansBold
+lowZoneBtn.TextSize = 13
+lowZoneBtn.Parent = main
+Instance.new("UICorner", lowZoneBtn).CornerRadius = UDim.new(0, 6)
+lowZoneBtn.MouseButton1Click:Connect(function()
+    Settings.EnableLowZone = not Settings.EnableLowZone
+    lowZoneBtn.Text = "Low Zone: " .. (Settings.EnableLowZone and "ON" or "OFF")
+    lowZoneBtn.BackgroundColor3 = Settings.EnableLowZone and Color3.fromRGB(50,200,50) or Color3.fromRGB(200,50,50)
+    _G.TeleportSettings = _G.TeleportSettings or {}
+    _G.TeleportSettings.EnableLowZone = Settings.EnableLowZone
+end)
+
+-- Кулдаун низкой зоны
+local cooldownLabel = Instance.new("TextLabel", main)
+cooldownLabel.Size = UDim2.new(1, -10, 0, 20)
+cooldownLabel.Position = UDim2.new(0, 5, 0, 115)
+cooldownLabel.Text = "Low Zone Cooldown (sec):"
+cooldownLabel.TextColor3 = Color3.new(1,1,1)
+cooldownLabel.Font = Enum.Font.SourceSans
+cooldownLabel.TextSize = 13
+cooldownLabel.BackgroundTransparency = 1
+cooldownLabel.Parent = main
+
+local cooldownFrame = Instance.new("Frame", main)
+cooldownFrame.Size = UDim2.new(0, 150, 0, 30)
+cooldownFrame.Position = UDim2.new(0, 10, 0, 135)
+cooldownFrame.BackgroundTransparency = 1
+
+local cooldownBox = Instance.new("TextBox", cooldownFrame)
+cooldownBox.Size = UDim2.new(0, 50, 0, 28)
+cooldownBox.Text = tostring(Settings.LowZoneCooldown)
+cooldownBox.BackgroundColor3 = Color3.fromRGB(50,50,70)
+cooldownBox.TextColor3 = Color3.new(1,1,1)
+cooldownBox.Font = Enum.Font.SourceSans
+cooldownBox.TextSize = 14
+Instance.new("UICorner", cooldownBox).CornerRadius = UDim.new(0, 4)
+
+local cooldownPlusBtn = Instance.new("TextButton", cooldownFrame)
+cooldownPlusBtn.Size = UDim2.new(0, 28, 0, 28)
+cooldownPlusBtn.Position = UDim2.new(0, 55, 0, 0)
+cooldownPlusBtn.Text = "+"
+cooldownPlusBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+cooldownPlusBtn.TextColor3 = Color3.new(1,1,1)
+cooldownPlusBtn.Font = Enum.Font.SourceSansBold
+cooldownPlusBtn.TextSize = 16
+Instance.new("UICorner", cooldownPlusBtn).CornerRadius = UDim.new(0, 4)
+cooldownPlusBtn.MouseButton1Click:Connect(function()
+    Settings.LowZoneCooldown = math.min(Settings.LowZoneCooldown + 0.5, 10)
+    cooldownBox.Text = string.format("%.1f", Settings.LowZoneCooldown)
+    _G.TeleportSettings = _G.TeleportSettings or {}
+    _G.TeleportSettings.LowZoneCooldown = Settings.LowZoneCooldown
+end)
+
+local cooldownMinusBtn = Instance.new("TextButton", cooldownFrame)
+cooldownMinusBtn.Size = UDim2.new(0, 28, 0, 28)
+cooldownMinusBtn.Position = UDim2.new(0, 88, 0, 0)
+cooldownMinusBtn.Text = "-"
+cooldownMinusBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+cooldownMinusBtn.TextColor3 = Color3.new(1,1,1)
+cooldownMinusBtn.Font = Enum.Font.SourceSansBold
+cooldownMinusBtn.TextSize = 16
+Instance.new("UICorner", cooldownMinusBtn).CornerRadius = UDim.new(0, 4)
+cooldownMinusBtn.MouseButton1Click:Connect(function()
+    Settings.LowZoneCooldown = math.max(Settings.LowZoneCooldown - 0.5, 0)
+    cooldownBox.Text = string.format("%.1f", Settings.LowZoneCooldown)
+    _G.TeleportSettings = _G.TeleportSettings or {}
+    _G.TeleportSettings.LowZoneCooldown = Settings.LowZoneCooldown
+end)
+
+cooldownBox.FocusLost:Connect(function()
+    local val = tonumber(cooldownBox.Text)
+    if val and val >= 0 then
+        Settings.LowZoneCooldown = val
+        _G.TeleportSettings = _G.TeleportSettings or {}
+        _G.TeleportSettings.LowZoneCooldown = val
+    else
+        cooldownBox.Text = string.format("%.1f", Settings.LowZoneCooldown)
+    end
+end)
+
+-- Поля координат для низкой зоны
+local lowPosLabel = Instance.new("TextLabel", main)
+lowPosLabel.Size = UDim2.new(1, -10, 0, 20)
+lowPosLabel.Position = UDim2.new(0, 5, 0, 170)
+lowPosLabel.Text = "Low Zone Target (X, Y, Z):"
+lowPosLabel.TextColor3 = Color3.new(1,1,1)
+lowPosLabel.Font = Enum.Font.SourceSans
+lowPosLabel.TextSize = 13
+lowPosLabel.BackgroundTransparency = 1
+lowPosLabel.Parent = main
+
+local lowX = Instance.new("TextBox", main)
+lowX.Size = UDim2.new(0, 60, 0, 24)
+lowX.Position = UDim2.new(0, 10, 0, 192)
+lowX.Text = tostring(Settings.LowZoneTarget.X)
+lowX.BackgroundColor3 = Color3.fromRGB(50,50,70)
+lowX.TextColor3 = Color3.new(1,1,1)
+lowX.Font = Enum.Font.SourceSans
+lowX.TextSize = 14
+Instance.new("UICorner", lowX).CornerRadius = UDim.new(0, 4)
+
+local lowY = Instance.new("TextBox", main)
+lowY.Size = UDim2.new(0, 60, 0, 24)
+lowY.Position = UDim2.new(0, 75, 0, 192)
+lowY.Text = tostring(Settings.LowZoneTarget.Y)
+lowY.BackgroundColor3 = Color3.fromRGB(50,50,70)
+lowY.TextColor3 = Color3.new(1,1,1)
+lowY.Font = Enum.Font.SourceSans
+lowY.TextSize = 14
+Instance.new("UICorner", lowY).CornerRadius = UDim.new(0, 4)
+
+local lowZ = Instance.new("TextBox", main)
+lowZ.Size = UDim2.new(0, 60, 0, 24)
+lowZ.Position = UDim2.new(0, 140, 0, 192)
+lowZ.Text = tostring(Settings.LowZoneTarget.Z)
+lowZ.BackgroundColor3 = Color3.fromRGB(50,50,70)
+lowZ.TextColor3 = Color3.new(1,1,1)
+lowZ.Font = Enum.Font.SourceSans
+lowZ.TextSize = 14
+Instance.new("UICorner", lowZ).CornerRadius = UDim.new(0, 4)
+
+local setLowPosBtn = Instance.new("TextButton", main)
+setLowPosBtn.Size = UDim2.new(0, 80, 0, 24)
+setLowPosBtn.Position = UDim2.new(0, 10, 0, 218)
+setLowPosBtn.Text = "Apply"
+setLowPosBtn.BackgroundColor3 = Color3.fromRGB(70, 130, 220)
+setLowPosBtn.TextColor3 = Color3.new(1,1,1)
+setLowPosBtn.Font = Enum.Font.SourceSansBold
+setLowPosBtn.TextSize = 13
+Instance.new("UICorner", setLowPosBtn).CornerRadius = UDim.new(0, 6)
+setLowPosBtn.MouseButton1Click:Connect(function()
+    local x = tonumber(lowX.Text)
+    local y = tonumber(lowY.Text)
+    local z = tonumber(lowZ.Text)
+    if x and y and z then
+        Settings.LowZoneTarget = CFrame.new(x, y, z)
+        _G.TeleportSettings = _G.TeleportSettings or {}
+        _G.TeleportSettings.LowZoneTarget = {x = x, y = y, z = z}
+        AddLog("Координаты низкой зоны обновлены: " .. x .. ", " .. y .. ", " .. z)
+    end
+end)
+
+-- Дистанция телепорта к врагу
+local distLabel = Instance.new("TextLabel", main)
+distLabel.Size = UDim2.new(1, -10, 0, 20)
+distLabel.Position = UDim2.new(0, 5, 0, 250)
+distLabel.Text = "Arena Teleport Distance (1-100):"
+distLabel.TextColor3 = Color3.new(1,1,1)
+distLabel.Font = Enum.Font.SourceSans
+distLabel.TextSize = 14
+distLabel.BackgroundTransparency = 1
+distLabel.Parent = main
+
+local distFrame = Instance.new("Frame", main)
+distFrame.Size = UDim2.new(0, 150, 0, 30)
+distFrame.Position = UDim2.new(0, 10, 0, 270)
+distFrame.BackgroundTransparency = 1
+
+local distBox = Instance.new("TextBox", distFrame)
+distBox.Size = UDim2.new(0, 50, 0, 28)
+distBox.Text = tostring(Settings.ArenaTeleportDistance)
+distBox.BackgroundColor3 = Color3.fromRGB(50,50,70)
+distBox.TextColor3 = Color3.new(1,1,1)
+distBox.Font = Enum.Font.SourceSans
+distBox.TextSize = 14
+Instance.new("UICorner", distBox).CornerRadius = UDim.new(0, 4)
+
+local distPlusBtn = Instance.new("TextButton", distFrame)
+distPlusBtn.Size = UDim2.new(0, 28, 0, 28)
+distPlusBtn.Position = UDim2.new(0, 55, 0, 0)
+distPlusBtn.Text = "+"
+distPlusBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+distPlusBtn.TextColor3 = Color3.new(1,1,1)
+distPlusBtn.Font = Enum.Font.SourceSansBold
+distPlusBtn.TextSize = 16
+Instance.new("UICorner", distPlusBtn).CornerRadius = UDim.new(0, 4)
+distPlusBtn.MouseButton1Click:Connect(function()
+    Settings.ArenaTeleportDistance = math.min(Settings.ArenaTeleportDistance + 1, 100)
+    distBox.Text = tostring(Settings.ArenaTeleportDistance)
+    _G.TeleportSettings = _G.TeleportSettings or {}
+    _G.TeleportSettings.ArenaTeleportDistance = Settings.ArenaTeleportDistance
+end)
+
+local distMinusBtn = Instance.new("TextButton", distFrame)
+distMinusBtn.Size = UDim2.new(0, 28, 0, 28)
+distMinusBtn.Position = UDim2.new(0, 88, 0, 0)
+distMinusBtn.Text = "-"
+distMinusBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+distMinusBtn.TextColor3 = Color3.new(1,1,1)
+distMinusBtn.Font = Enum.Font.SourceSansBold
+distMinusBtn.TextSize = 16
+Instance.new("UICorner", distMinusBtn).CornerRadius = UDim.new(0, 4)
+distMinusBtn.MouseButton1Click:Connect(function()
+    Settings.ArenaTeleportDistance = math.max(Settings.ArenaTeleportDistance - 1, 1)
+    distBox.Text = tostring(Settings.ArenaTeleportDistance)
+    _G.TeleportSettings = _G.TeleportSettings or {}
+    _G.TeleportSettings.ArenaTeleportDistance = Settings.ArenaTeleportDistance
+end)
+
+distBox.FocusLost:Connect(function()
+    local val = tonumber(distBox.Text)
+    if val and val >= 1 and val <= 100 then
+        Settings.ArenaTeleportDistance = val
+        _G.TeleportSettings = _G.TeleportSettings or {}
+        _G.TeleportSettings.ArenaTeleportDistance = val
+    else
+        distBox.Text = tostring(Settings.ArenaTeleportDistance)
+    end
+end)
+
+-- Arena Continuous переключатель
+local contBtn = Instance.new("TextButton", main)
+contBtn.Size = UDim2.new(0, 140, 0, 30)
+contBtn.Position = UDim2.new(0, 10, 0, 310)
+contBtn.Text = "Continuous Arena: " .. (Settings.ArenaTeleportContinuous and "ON" or "OFF")
+contBtn.BackgroundColor3 = Settings.ArenaTeleportContinuous and Color3.fromRGB(50,200,50) or Color3.fromRGB(200,50,50)
+contBtn.TextColor3 = Color3.new(1,1,1)
+contBtn.Font = Enum.Font.SourceSansBold
+contBtn.TextSize = 13
+contBtn.Parent = main
+Instance.new("UICorner", contBtn).CornerRadius = UDim.new(0, 6)
+contBtn.MouseButton1Click:Connect(function()
+    Settings.ArenaTeleportContinuous = not Settings.ArenaTeleportContinuous
+    contBtn.Text = "Continuous Arena: " .. (Settings.ArenaTeleportContinuous and "ON" or "OFF")
+    contBtn.BackgroundColor3 = Settings.ArenaTeleportContinuous and Color3.fromRGB(50,200,50) or Color3.fromRGB(200,50,50)
+    _G.TeleportSettings = _G.TeleportSettings or {}
+    _G.TeleportSettings.ArenaTeleportContinuous = Settings.ArenaTeleportContinuous
+end)
+
+-- Кулдаун для continuous арены
+local contCooldownLabel = Instance.new("TextLabel", main)
+contCooldownLabel.Size = UDim2.new(1, -10, 0, 20)
+contCooldownLabel.Position = UDim2.new(0, 5, 0, 345)
+contCooldownLabel.Text = "Arena Cooldown (1-20s):"
+contCooldownLabel.TextColor3 = Color3.new(1,1,1)
+contCooldownLabel.Font = Enum.Font.SourceSans
+contCooldownLabel.TextSize = 13
+contCooldownLabel.BackgroundTransparency = 1
+contCooldownLabel.Parent = main
+
+local contCooldownFrame = Instance.new("Frame", main)
+contCooldownFrame.Size = UDim2.new(0, 150, 0, 30)
+contCooldownFrame.Position = UDim2.new(0, 10, 0, 365)
+contCooldownFrame.BackgroundTransparency = 1
+
+local contCooldownBox = Instance.new("TextBox", contCooldownFrame)
+contCooldownBox.Size = UDim2.new(0, 50, 0, 28)
+contCooldownBox.Text = tostring(Settings.ArenaTeleportCooldown)
+contCooldownBox.BackgroundColor3 = Color3.fromRGB(50,50,70)
+contCooldownBox.TextColor3 = Color3.new(1,1,1)
+contCooldownBox.Font = Enum.Font.SourceSans
+contCooldownBox.TextSize = 14
+Instance.new("UICorner", contCooldownBox).CornerRadius = UDim.new(0, 4)
+
+local contPlusBtn = Instance.new("TextButton", contCooldownFrame)
+contPlusBtn.Size = UDim2.new(0, 28, 0, 28)
+contPlusBtn.Position = UDim2.new(0, 55, 0, 0)
+contPlusBtn.Text = "+"
+contPlusBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+contPlusBtn.TextColor3 = Color3.new(1,1,1)
+contPlusBtn.Font = Enum.Font.SourceSansBold
+contPlusBtn.TextSize = 16
+Instance.new("UICorner", contPlusBtn).CornerRadius = UDim.new(0, 4)
+contPlusBtn.MouseButton1Click:Connect(function()
+    Settings.ArenaTeleportCooldown = math.min(Settings.ArenaTeleportCooldown + 1, 20)
+    contCooldownBox.Text = tostring(Settings.ArenaTeleportCooldown)
+    _G.TeleportSettings = _G.TeleportSettings or {}
+    _G.TeleportSettings.ArenaTeleportCooldown = Settings.ArenaTeleportCooldown
+end)
+
+local contMinusBtn = Instance.new("TextButton", contCooldownFrame)
+contMinusBtn.Size = UDim2.new(0, 28, 0, 28)
+contMinusBtn.Position = UDim2.new(0, 88, 0, 0)
+contMinusBtn.Text = "-"
+contMinusBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+contMinusBtn.TextColor3 = Color3.new(1,1,1)
+contMinusBtn.Font = Enum.Font.SourceSansBold
+contMinusBtn.TextSize = 16
+Instance.new("UICorner", contMinusBtn).CornerRadius = UDim.new(0, 4)
+contMinusBtn.MouseButton1Click:Connect(function()
+    Settings.ArenaTeleportCooldown = math.max(Settings.ArenaTeleportCooldown - 1, 1)
+    contCooldownBox.Text = tostring(Settings.ArenaTeleportCooldown)
+    _G.TeleportSettings = _G.TeleportSettings or {}
+    _G.TeleportSettings.ArenaTeleportCooldown = Settings.ArenaTeleportCooldown
+end)
+
+contCooldownBox.FocusLost:Connect(function()
+    local val = tonumber(contCooldownBox.Text)
+    if val and val >= 1 and val <= 20 then
+        Settings.ArenaTeleportCooldown = val
+        _G.TeleportSettings = _G.TeleportSettings or {}
+        _G.TeleportSettings.ArenaTeleportCooldown = val
+    else
+        contCooldownBox.Text = tostring(Settings.ArenaTeleportCooldown)
+    end
+end)
+
+-- Lock After TP
+local lockBtn = Instance.new("TextButton", main)
+lockBtn.Size = UDim2.new(0, 140, 0, 30)
+lockBtn.Position = UDim2.new(0, 10, 0, 405)
+lockBtn.Text = "Lock After TP: " .. (Settings.LockAfterArenaTeleport and "ON" or "OFF")
+lockBtn.BackgroundColor3 = Settings.LockAfterArenaTeleport and Color3.fromRGB(50,200,50) or Color3.fromRGB(200,50,50)
+lockBtn.TextColor3 = Color3.new(1,1,1)
+lockBtn.Font = Enum.Font.SourceSansBold
+lockBtn.TextSize = 13
+lockBtn.Parent = main
+Instance.new("UICorner", lockBtn).CornerRadius = UDim.new(0, 6)
+lockBtn.MouseButton1Click:Connect(function()
+    Settings.LockAfterArenaTeleport = not Settings.LockAfterArenaTeleport
+    lockBtn.Text = "Lock After TP: " .. (Settings.LockAfterArenaTeleport and "ON" or "OFF")
+    lockBtn.BackgroundColor3 = Settings.LockAfterArenaTeleport and Color3.fromRGB(50,200,50) or Color3.fromRGB(200,50,50)
+    _G.TeleportSettings = _G.TeleportSettings or {}
+    _G.TeleportSettings.LockAfterArenaTeleport = Settings.LockAfterArenaTeleport
+    if not Settings.LockAfterArenaTeleport then
+        StopFreeze()
+        AddLog("Lock отключен")
+    end
+end)
+
+-- Instant Death on HP Change
+local instantDeathBtn = Instance.new("TextButton", main)
+instantDeathBtn.Size = UDim2.new(0, 160, 0, 30)
+instantDeathBtn.Position = UDim2.new(0, 10, 0, 445)
+instantDeathBtn.Text = "Instant Death on HPΔ: " .. (Settings.InstantDeathOnHPChange and "ON" or "OFF")
+instantDeathBtn.BackgroundColor3 = Settings.InstantDeathOnHPChange and Color3.fromRGB(200,50,50) or Color3.fromRGB(50,50,50)
+instantDeathBtn.TextColor3 = Color3.new(1,1,1)
+instantDeathBtn.Font = Enum.Font.SourceSansBold
+instantDeathBtn.TextSize = 12
+instantDeathBtn.Parent = main
+Instance.new("UICorner", instantDeathBtn).CornerRadius = UDim.new(0, 6)
+instantDeathBtn.MouseButton1Click:Connect(function()
+    Settings.InstantDeathOnHPChange = not Settings.InstantDeathOnHPChange
+    instantDeathBtn.Text = "Instant Death on HPΔ: " .. (Settings.InstantDeathOnHPChange and "ON" or "OFF")
+    instantDeathBtn.BackgroundColor3 = Settings.InstantDeathOnHPChange and Color3.fromRGB(200,50,50) or Color3.fromRGB(50,50,50)
+    _G.TeleportSettings = _G.TeleportSettings or {}
+    _G.TeleportSettings.InstantDeathOnHPChange = Settings.InstantDeathOnHPChange
+    AddLog("Мгновенная смерть: " .. (Settings.InstantDeathOnHPChange and "ВКЛ" or "ВЫКЛ"))
+end)
+
+-- Dice Reset
+local diceResetBtn = Instance.new("TextButton", main)
+diceResetBtn.Size = UDim2.new(0, 160, 0, 30)
+diceResetBtn.Position = UDim2.new(0, 10, 0, 485)
+diceResetBtn.Text = "Dice Reset (>60): OFF"
+diceResetBtn.BackgroundColor3 = Color3.fromRGB(200,50,50)
+diceResetBtn.TextColor3 = Color3.new(1,1,1)
+diceResetBtn.Font = Enum.Font.SourceSansBold
+diceResetBtn.TextSize = 12
+diceResetBtn.Parent = main
+Instance.new("UICorner", diceResetBtn).CornerRadius = UDim.new(0, 6)
+diceResetBtn.MouseButton1Click:Connect(function()
+    Settings.ResetOnDiceRoll = not Settings.ResetOnDiceRoll
+    diceResetBtn.Text = "Dice Reset (>" .. Settings.DiceThreshold .. "): " .. (Settings.ResetOnDiceRoll and "ON" or "OFF")
+    diceResetBtn.BackgroundColor3 = Settings.ResetOnDiceRoll and Color3.fromRGB(50,200,50) or Color3.fromRGB(200,50,50)
+    _G.TeleportSettings = _G.TeleportSettings or {}
+    _G.TeleportSettings.ResetOnDiceRoll = Settings.ResetOnDiceRoll
+    if Settings.ResetOnDiceRoll then
+        Settings.AutoResetOnHit = false
+        resetBtn.Text = "AutoReset on Hit: OFF"
+        resetBtn.BackgroundColor3 = Color3.fromRGB(200,50,50)
+    end
+    AddLog("Dice reset: " .. (Settings.ResetOnDiceRoll and "ВКЛ" or "ВЫКЛ"))
+end)
+
+-- Порог Dice
+local diceThresholdLabel = Instance.new("TextLabel", main)
+diceThresholdLabel.Size = UDim2.new(1, -10, 0, 20)
+diceThresholdLabel.Position = UDim2.new(0, 5, 0, 520)
+diceThresholdLabel.Text = "Dice Threshold:"
+diceThresholdLabel.TextColor3 = Color3.new(1,1,1)
+diceThresholdLabel.Font = Enum.Font.SourceSans
+diceThresholdLabel.TextSize = 13
+diceThresholdLabel.BackgroundTransparency = 1
+diceThresholdLabel.Parent = main
+
+local diceThresholdBox = Instance.new("TextBox", main)
+diceThresholdBox.Size = UDim2.new(0, 50, 0, 24)
+diceThresholdBox.Position = UDim2.new(0, 10, 0, 540)
+diceThresholdBox.Text = tostring(Settings.DiceThreshold)
+diceThresholdBox.BackgroundColor3 = Color3.fromRGB(50,50,70)
+diceThresholdBox.TextColor3 = Color3.new(1,1,1)
+diceThresholdBox.Font = Enum.Font.SourceSans
+diceThresholdBox.TextSize = 14
+diceThresholdBox.Parent = main
+Instance.new("UICorner", diceThresholdBox).CornerRadius = UDim.new(0, 4)
+diceThresholdBox.FocusLost:Connect(function()
+    local val = tonumber(diceThresholdBox.Text)
+    if val and val >= 1 then
+        Settings.DiceThreshold = val
+        _G.TeleportSettings = _G.TeleportSettings or {}
+        _G.TeleportSettings.DiceThreshold = val
+        diceResetBtn.Text = "Dice Reset (>" .. val .. "): " .. (Settings.ResetOnDiceRoll and "ON" or "OFF")
+        AddLog("Порог Dice изменён: " .. val)
+    else
+        diceThresholdBox.Text = tostring(Settings.DiceThreshold)
+    end
+end)
+
+-- Список игроков
+local playersLabel = Instance.new("TextLabel", main)
+playersLabel.Size = UDim2.new(1, -10, 0, 20)
+playersLabel.Position = UDim2.new(0, 5, 0, 575)
+playersLabel.Text = "Select target (or nearest):"
+playersLabel.TextColor3 = Color3.new(1,1,1)
+playersLabel.Font = Enum.Font.SourceSans
+playersLabel.TextSize = 14
+playersLabel.BackgroundTransparency = 1
+playersLabel.Parent = main
+
+local playerList = Instance.new("ScrollingFrame", main)
+playerList.Size = UDim2.new(1, -10, 0, 100)
+playerList.Position = UDim2.new(0, 5, 0, 600)
+playerList.BackgroundTransparency = 1
+playerList.CanvasSize = UDim2.new(0, 0, 0, 0)
+playerList.ScrollBarThickness = 3
+playerList.Parent = main
+
+local function refreshPlayerList()
+    playerList:ClearAllChildren()
+    local y = 0
+    local btn1 = Instance.new("TextButton", playerList)
+    btn1.Size = UDim2.new(1, -5, 0, 26)
+    btn1.Position = UDim2.new(0, 0, 0, y)
+    btn1.Text = "(Nearest)"
+    btn1.BackgroundColor3 = Color3.fromRGB(60, 30, 80)
+    btn1.TextColor3 = Color3.new(1,1,1)
+    btn1.Font = Enum.Font.SourceSans
+    btn1.TextSize = 14
+    btn1.Parent = playerList
+    Instance.new("UICorner", btn1).CornerRadius = UDim.new(0, 4)
+    btn1.MouseButton1Click:Connect(function()
+        Settings.TargetPlayer = nil
+        updateTargetLabel()
+    end)
+    y = y + 30
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP then
+            local btn = Instance.new("TextButton", playerList)
+            btn.Size = UDim2.new(1, -5, 0, 26)
+            btn.Position = UDim2.new(0, 0, 0, y)
+            btn.Text = p.Name
+            btn.BackgroundColor3 = Color3.fromRGB(60, 30, 80)
+            btn.TextColor3 = Color3.new(1,1,1)
+            btn.Font = Enum.Font.SourceSans
+            btn.TextSize = 14
+            btn.Parent = playerList
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+            btn.MouseButton1Click:Connect(function()
+                Settings.TargetPlayer = p
+                updateTargetLabel()
+            end)
+            y = y + 30
+        end
+    end
+    playerList.CanvasSize = UDim2.new(0, 0, 0, y)
+end
+
+local targetLabel = Instance.new("TextLabel", main)
+targetLabel.Size = UDim2.new(1, -10, 0, 20)
+targetLabel.Position = UDim2.new(0, 5, 0, 705)
+targetLabel.Text = "Target: Nearest"
+targetLabel.TextColor3 = Color3.new(0.8, 1, 0.8)
+targetLabel.Font = Enum.Font.SourceSansBold
+targetLabel.TextSize = 13
+targetLabel.BackgroundTransparency = 1
+targetLabel.Parent = main
+
+function updateTargetLabel()
+    targetLabel.Text = "Target: " .. (Settings.TargetPlayer and Settings.TargetPlayer.Name or "Nearest")
+end
+
+refreshPlayerList()
+Players.PlayerAdded:Connect(function() refreshPlayerList() end)
+Players.PlayerRemoving:Connect(function() refreshPlayerList() end)
+
+-- Лог
+local logFrame = Instance.new("ScrollingFrame", main)
+logFrame.Size = UDim2.new(1, -10, 0, 30)
+logFrame.Position = UDim2.new(0, 5, 0, 728)
+logFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+logFrame.CanvasSize = UDim2.new(0, 0, 0, 200)
+logFrame.ScrollBarThickness = 3
+logFrame.Parent = main
+Instance.new("UICorner", logFrame).CornerRadius = UDim.new(0, 4)
+
+logLabel = Instance.new("TextLabel", logFrame)
+logLabel.Size = UDim2.new(1, 0, 0, 200)
+logLabel.BackgroundTransparency = 1
+logLabel.TextColor3 = Color3.new(1,1,1)
+logLabel.Font = Enum.Font.SourceSans
+logLabel.TextSize = 12
+logLabel.TextWrapped = true
+logLabel.TextXAlignment = Enum.TextXAlignment.Left
+logLabel.TextYAlignment = Enum.TextYAlignment.Top
+logLabel.Text = ""
+logLabel.Parent = logFrame
+
+-- Закрытие GUI по P с полной остановкой
+UserInput.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.P then
+        sg:Destroy()
+        StopAll()
+    end
+end)
+
+AddLog("Simple Teleport v6.7.4 loaded. Lock теперь срабатывает сразу на арене.")
