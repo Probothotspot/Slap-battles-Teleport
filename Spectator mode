@@ -1,0 +1,798 @@
+--[[
+    ╔═══════════════════════════════════════════════════╗
+    ║         SPECTATOR MODE — Roblox Script            ║
+    ║         Author: Probothotspot                     ║
+    ║         Compatible: Xeno / Delta                  ║
+    ║         v2.1 — Manual zoom input + ❌ close        ║
+    ╚═══════════════════════════════════════════════════╝
+]]
+
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local camera = workspace.CurrentCamera
+
+-- State
+local state = {
+    isSpectating = false,
+    targetPlayer = nil,
+    zoomDistance = 15,
+    minZoom = 5,
+    maxZoom = 9999,
+    originalCameraType = nil,
+    connection = nil,
+    yaw = 0,
+    pitch = 15,
+    isDragging = false,
+    lastMousePos = nil,
+    sensitivity = 0.3,
+    viewMode = "third",
+}
+
+-- Cleanup old GUI
+if playerGui:FindFirstChild("SpectatorGui") then
+    playerGui.SpectatorGui:Destroy()
+end
+
+-- Create GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "SpectatorGui"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = playerGui
+
+-- ═══════════════════════════════════════════
+-- MAIN FRAME
+-- ═══════════════════════════════════════════
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 240, 0, 410)
+mainFrame.Position = UDim2.new(0, 15, 0.5, -205)
+mainFrame.BackgroundColor3 = Color3.fromRGB(15, 23, 42)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.ClipsDescendants = true
+mainFrame.Parent = gui
+
+local corner = Instance.new("UICorner", mainFrame)
+corner.CornerRadius = UDim.new(0, 12)
+
+local stroke = Instance.new("UIStroke", mainFrame)
+stroke.Color = Color3.fromRGB(59, 130, 246)
+stroke.Thickness = 2
+stroke.Transparency = 0.5
+
+-- ═══════════════════════════════════════════
+-- HEADER
+-- ═══════════════════════════════════════════
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 40)
+header.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+header.BorderSizePixel = 0
+header.Parent = mainFrame
+
+local headerCorner = Instance.new("UICorner", header)
+headerCorner.CornerRadius = UDim.new(0, 12)
+
+local headerBottomFix = Instance.new("Frame")
+headerBottomFix.Size = UDim2.new(1, 0, 0, 12)
+headerBottomFix.Position = UDim2.new(0, 0, 1, -12)
+headerBottomFix.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+headerBottomFix.BorderSizePixel = 0
+headerBottomFix.Parent = header
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -80, 1, 0)
+title.Position = UDim2.new(0, 12, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "👁️ Spectator Mode"
+title.TextColor3 = Color3.fromRGB(147, 197, 253)
+title.TextSize = 12
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = header
+
+-- ═══════════════════════════════════════════
+-- CLOSE BUTTON — now ❌ emoji
+-- ═══════════════════════════════════════════
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 28, 0, 28)
+closeBtn.Position = UDim2.new(1, -36, 0.5, -14)
+closeBtn.BackgroundColor3 = Color3.fromRGB(239, 68, 68)
+closeBtn.BackgroundTransparency = 1
+closeBtn.Text = "❌"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.TextSize = 16
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = header
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
+
+closeBtn.MouseButton1Click:Connect(function()
+    exitSpectate()
+    gui:Destroy()
+end)
+
+-- Minimize Button
+local minimized = false
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 28, 0, 28)
+minimizeBtn.Position = UDim2.new(1, -68, 0.5, -14)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(100, 116, 139)
+minimizeBtn.BackgroundTransparency = 0.8
+minimizeBtn.Text = "−"
+minimizeBtn.TextColor3 = Color3.fromRGB(148, 163, 184)
+minimizeBtn.TextSize = 16
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.BorderSizePixel = 0
+minimizeBtn.Parent = header
+Instance.new("UICorner", minimizeBtn).CornerRadius = UDim.new(0, 6)
+
+-- ═══════════════════════════════════════════
+-- BODY
+-- ═══════════════════════════════════════════
+local body = Instance.new("Frame")
+body.Name = "Body"
+body.Size = UDim2.new(1, 0, 1, -40)
+body.Position = UDim2.new(0, 0, 0, 40)
+body.BackgroundTransparency = 1
+body.ClipsDescendants = true
+body.Parent = mainFrame
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, 0, 1, 0)
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 3
+scroll.ScrollBarImageColor3 = Color3.fromRGB(59, 130, 246)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.Parent = body
+
+local bodyLayout = Instance.new("UIListLayout")
+bodyLayout.Padding = UDim.new(0, 6)
+bodyLayout.SortOrder = Enum.SortOrder.LayoutOrder
+bodyLayout.Parent = scroll
+
+local bodyPadding = Instance.new("UIPadding")
+bodyPadding.PaddingLeft = UDim.new(0, 8)
+bodyPadding.PaddingRight = UDim.new(0, 8)
+bodyPadding.PaddingTop = UDim.new(0, 8)
+bodyPadding.PaddingBottom = UDim.new(0, 8)
+bodyPadding.Parent = scroll
+
+-- Spectating Label
+local spectatingLabel = Instance.new("TextLabel")
+spectatingLabel.Name = "SpectatingLabel"
+spectatingLabel.Size = UDim2.new(1, 0, 0, 20)
+spectatingLabel.LayoutOrder = 0
+spectatingLabel.BackgroundColor3 = Color3.fromRGB(59, 130, 246)
+spectatingLabel.BackgroundTransparency = 0.85
+spectatingLabel.Text = ""
+spectatingLabel.TextColor3 = Color3.fromRGB(96, 165, 250)
+spectatingLabel.TextSize = 11
+spectatingLabel.Font = Enum.Font.GothamBold
+spectatingLabel.TextXAlignment = Enum.TextXAlignment.Center
+spectatingLabel.Visible = false
+spectatingLabel.Parent = scroll
+local spectatingCorner = Instance.new("UICorner", spectatingLabel)
+spectatingCorner.CornerRadius = UDim.new(0, 6)
+
+-- Search Box
+local searchBox = Instance.new("TextBox")
+searchBox.Size = UDim2.new(1, 0, 0, 28)
+searchBox.LayoutOrder = 1
+searchBox.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+searchBox.PlaceholderText = "🔍 Search player..."
+searchBox.PlaceholderColor3 = Color3.fromRGB(100, 116, 139)
+searchBox.Text = ""
+searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+searchBox.TextSize = 11
+searchBox.Font = Enum.Font.Gotham
+searchBox.BorderSizePixel = 0
+searchBox.ClearTextOnFocus = false
+searchBox.Parent = scroll
+Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0, 6)
+Instance.new("UIPadding", searchBox).PaddingLeft = UDim.new(0, 8)
+
+-- Players header row
+local playersHeaderRow = Instance.new("Frame")
+playersHeaderRow.Size = UDim2.new(1, 0, 0, 16)
+playersHeaderRow.LayoutOrder = 2
+playersHeaderRow.BackgroundTransparency = 1
+playersHeaderRow.Parent = scroll
+
+local playersLabel = Instance.new("TextLabel")
+playersLabel.Size = UDim2.new(0.5, 0, 1, 0)
+playersLabel.BackgroundTransparency = 1
+playersLabel.Text = "PLAYERS ONLINE"
+playersLabel.TextColor3 = Color3.fromRGB(100, 116, 139)
+playersLabel.TextSize = 9
+playersLabel.Font = Enum.Font.GothamBold
+playersLabel.TextXAlignment = Enum.TextXAlignment.Left
+playersLabel.Parent = playersHeaderRow
+
+local playerCountLabel = Instance.new("TextLabel")
+playerCountLabel.Size = UDim2.new(0.5, 0, 1, 0)
+playerCountLabel.Position = UDim2.new(0.5, 0, 0, 0)
+playerCountLabel.BackgroundTransparency = 1
+playerCountLabel.Text = "0"
+playerCountLabel.TextColor3 = Color3.fromRGB(100, 116, 139)
+playerCountLabel.TextSize = 9
+playerCountLabel.Font = Enum.Font.GothamBold
+playerCountLabel.TextXAlignment = Enum.TextXAlignment.Right
+playerCountLabel.Parent = playersHeaderRow
+
+-- Players Scroll
+local playersScroll = Instance.new("ScrollingFrame")
+playersScroll.Size = UDim2.new(1, 0, 0, 110)
+playersScroll.LayoutOrder = 3
+playersScroll.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+playersScroll.BackgroundTransparency = 0.5
+playersScroll.BorderSizePixel = 0
+playersScroll.ScrollBarThickness = 3
+playersScroll.ScrollBarImageColor3 = Color3.fromRGB(59, 130, 246)
+playersScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+playersScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+playersScroll.Parent = scroll
+Instance.new("UICorner", playersScroll).CornerRadius = UDim.new(0, 6)
+
+local playersLayout = Instance.new("UIListLayout")
+playersLayout.Padding = UDim.new(0, 2)
+playersLayout.Parent = playersScroll
+
+local playersPadding = Instance.new("UIPadding", playersScroll)
+playersPadding.PaddingTop = UDim.new(0, 2)
+playersPadding.PaddingBottom = UDim.new(0, 2)
+playersPadding.PaddingLeft = UDim.new(0, 2)
+playersPadding.PaddingRight = UDim.new(0, 2)
+
+-- Zoom header row
+local zoomHeaderRow = Instance.new("Frame")
+zoomHeaderRow.Size = UDim2.new(1, 0, 0, 16)
+zoomHeaderRow.LayoutOrder = 4
+zoomHeaderRow.BackgroundTransparency = 1
+zoomHeaderRow.Parent = scroll
+
+local zoomLabel = Instance.new("TextLabel")
+zoomLabel.Size = UDim2.new(0.5, 0, 1, 0)
+zoomLabel.BackgroundTransparency = 1
+zoomLabel.Text = "ZOOM"
+zoomLabel.TextColor3 = Color3.fromRGB(100, 116, 139)
+zoomLabel.TextSize = 9
+zoomLabel.Font = Enum.Font.GothamBold
+zoomLabel.TextXAlignment = Enum.TextXAlignment.Left
+zoomLabel.Parent = zoomHeaderRow
+
+local zoomValueLabel = Instance.new("TextLabel")
+zoomValueLabel.Name = "ZoomValue"
+zoomValueLabel.Size = UDim2.new(0.5, 0, 1, 0)
+zoomValueLabel.Position = UDim2.new(0.5, 0, 0, 0)
+zoomValueLabel.BackgroundTransparency = 1
+zoomValueLabel.Text = tostring(state.zoomDistance)
+zoomValueLabel.TextColor3 = Color3.fromRGB(96, 165, 250)
+zoomValueLabel.TextSize = 10
+zoomValueLabel.Font = Enum.Font.GothamBold
+zoomValueLabel.TextXAlignment = Enum.TextXAlignment.Right
+zoomValueLabel.Parent = zoomHeaderRow
+
+-- Zoom Controls (slider)
+local zoomFrame = Instance.new("Frame")
+zoomFrame.Size = UDim2.new(1, 0, 0, 28)
+zoomFrame.LayoutOrder = 5
+zoomFrame.BackgroundTransparency = 1
+zoomFrame.Parent = scroll
+
+local zoomMinus = Instance.new("TextButton")
+zoomMinus.Size = UDim2.new(0, 28, 0, 28)
+zoomMinus.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+zoomMinus.Text = "−"
+zoomMinus.TextColor3 = Color3.fromRGB(96, 165, 250)
+zoomMinus.TextSize = 16
+zoomMinus.Font = Enum.Font.GothamBold
+zoomMinus.BorderSizePixel = 0
+zoomMinus.Parent = zoomFrame
+Instance.new("UICorner", zoomMinus).CornerRadius = UDim.new(0, 6)
+
+local zoomPlus = Instance.new("TextButton")
+zoomPlus.Size = UDim2.new(0, 28, 0, 28)
+zoomPlus.Position = UDim2.new(1, -28, 0, 0)
+zoomPlus.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+zoomPlus.Text = "+"
+zoomPlus.TextColor3 = Color3.fromRGB(96, 165, 250)
+zoomPlus.TextSize = 16
+zoomPlus.Font = Enum.Font.GothamBold
+zoomPlus.BorderSizePixel = 0
+zoomPlus.Parent = zoomFrame
+Instance.new("UICorner", zoomPlus).CornerRadius = UDim.new(0, 6)
+
+local zoomBar = Instance.new("Frame")
+zoomBar.Size = UDim2.new(1, -68, 0, 6)
+zoomBar.Position = UDim2.new(0, 34, 0.5, -3)
+zoomBar.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+zoomBar.BorderSizePixel = 0
+zoomBar.Parent = zoomFrame
+Instance.new("UICorner", zoomBar).CornerRadius = UDim.new(0, 3)
+
+local zoomFill = Instance.new("Frame")
+zoomFill.Size = UDim2.new(math.clamp((state.zoomDistance - state.minZoom) / 100, 0, 1), 0, 1, 0)
+zoomFill.BackgroundColor3 = Color3.fromRGB(59, 130, 246)
+zoomFill.BorderSizePixel = 0
+zoomFill.Parent = zoomBar
+Instance.new("UICorner", zoomFill).CornerRadius = UDim.new(0, 3)
+
+-- ═══════════════════════════════════════════
+-- MANUAL ZOOM INPUT — type a number to set zoom
+-- ═══════════════════════════════════════════
+local zoomInputBox = Instance.new("TextBox")
+zoomInputBox.Name = "ZoomInput"
+zoomInputBox.Size = UDim2.new(1, 0, 0, 26)
+zoomInputBox.LayoutOrder = 6
+zoomInputBox.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+zoomInputBox.PlaceholderText = "✏️ Enter zoom (5–9999)..."
+zoomInputBox.PlaceholderColor3 = Color3.fromRGB(71, 85, 105)
+zoomInputBox.Text = ""
+zoomInputBox.TextColor3 = Color3.fromRGB(96, 165, 250)
+zoomInputBox.TextSize = 11
+zoomInputBox.Font = Enum.Font.GothamBold
+zoomInputBox.BorderSizePixel = 0
+zoomInputBox.ClearTextOnFocus = true
+zoomInputBox.Parent = scroll
+Instance.new("UICorner", zoomInputBox).CornerRadius = UDim.new(0, 6)
+
+local zoomInputStroke = Instance.new("UIStroke", zoomInputBox)
+zoomInputStroke.Color = Color3.fromRGB(59, 130, 246)
+zoomInputStroke.Thickness = 1
+zoomInputStroke.Transparency = 0.5
+
+local zoomInputPad = Instance.new("UIPadding", zoomInputBox)
+zoomInputPad.PaddingLeft = UDim.new(0, 8)
+zoomInputPad.PaddingRight = UDim.new(0, 8)
+
+-- Apply zoom when user presses Enter or loses focus
+zoomInputBox.FocusLost:Connect(function(enterPressed)
+    local input = zoomInputBox.Text
+    local num = tonumber(input)
+    if num then
+        num = math.clamp(math.floor(num), state.minZoom, state.maxZoom)
+        state.zoomDistance = num
+        zoomValueLabel.Text = tostring(num)
+        local ratio = math.clamp((num - state.minZoom) / 100, 0, 1)
+        zoomFill.Size = UDim2.new(ratio, 0, 1, 0)
+        zoomInputBox.Text = ""
+        print("[Spectator] Zoom set to: " .. num)
+    else
+        zoomInputBox.Text = ""
+    end
+end)
+
+-- View Mode Button
+local viewModeBtn = Instance.new("TextButton")
+viewModeBtn.Size = UDim2.new(1, 0, 0, 28)
+viewModeBtn.LayoutOrder = 7
+viewModeBtn.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+viewModeBtn.Text = "📷 3rd Person (tap to switch)"
+viewModeBtn.TextColor3 = Color3.fromRGB(148, 163, 184)
+viewModeBtn.TextSize = 10
+viewModeBtn.Font = Enum.Font.GothamBold
+viewModeBtn.BorderSizePixel = 0
+viewModeBtn.Parent = scroll
+Instance.new("UICorner", viewModeBtn).CornerRadius = UDim.new(0, 6)
+Instance.new("UIStroke", viewModeBtn).Color = Color3.fromRGB(59, 130, 246)
+
+-- Spectate Button
+local spectateBtn = Instance.new("TextButton")
+spectateBtn.Name = "SpectateBtn"
+spectateBtn.Size = UDim2.new(1, 0, 0, 32)
+spectateBtn.LayoutOrder = 8
+spectateBtn.BackgroundColor3 = Color3.fromRGB(59, 130, 246)
+spectateBtn.Text = "👁️ Spectate"
+spectateBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+spectateBtn.TextSize = 12
+spectateBtn.Font = Enum.Font.GothamBold
+spectateBtn.BorderSizePixel = 0
+spectateBtn.AutoButtonColor = true
+spectateBtn.Parent = scroll
+Instance.new("UICorner", spectateBtn).CornerRadius = UDim.new(0, 6)
+
+-- Exit Button
+local exitBtn = Instance.new("TextButton")
+exitBtn.Name = "ExitBtn"
+exitBtn.Size = UDim2.new(1, 0, 0, 32)
+exitBtn.LayoutOrder = 9
+exitBtn.BackgroundColor3 = Color3.fromRGB(239, 68, 68)
+exitBtn.Text = "❌ Exit Spectate"
+exitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+exitBtn.TextSize = 11
+exitBtn.Font = Enum.Font.GothamBold
+exitBtn.BorderSizePixel = 0
+exitBtn.Visible = false
+exitBtn.Parent = scroll
+Instance.new("UICorner", exitBtn).CornerRadius = UDim.new(0, 6)
+
+-- Navigation Buttons
+local navFrame = Instance.new("Frame")
+navFrame.Size = UDim2.new(1, 0, 0, 26)
+navFrame.LayoutOrder = 10
+navFrame.BackgroundTransparency = 1
+navFrame.Visible = false
+navFrame.Parent = scroll
+
+local prevBtn = Instance.new("TextButton")
+prevBtn.Size = UDim2.new(0.48, 0, 1, 0)
+prevBtn.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+prevBtn.Text = "◀ Prev"
+prevBtn.TextColor3 = Color3.fromRGB(148, 163, 184)
+prevBtn.TextSize = 11
+prevBtn.Font = Enum.Font.GothamBold
+prevBtn.BorderSizePixel = 0
+prevBtn.Parent = navFrame
+Instance.new("UICorner", prevBtn).CornerRadius = UDim.new(0, 4)
+
+local nextBtn = Instance.new("TextButton")
+nextBtn.Size = UDim2.new(0.48, 0, 1, 0)
+nextBtn.Position = UDim2.new(0.52, 0, 0, 0)
+nextBtn.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+nextBtn.Text = "Next ▶"
+nextBtn.TextColor3 = Color3.fromRGB(148, 163, 184)
+nextBtn.TextSize = 11
+nextBtn.Font = Enum.Font.GothamBold
+nextBtn.BorderSizePixel = 0
+nextBtn.Parent = navFrame
+Instance.new("UICorner", nextBtn).CornerRadius = UDim.new(0, 4)
+
+-- Author
+local author = Instance.new("TextLabel")
+author.Size = UDim2.new(1, 0, 0, 16)
+author.LayoutOrder = 11
+author.BackgroundTransparency = 1
+author.Text = "By: Probothotspot"
+author.TextColor3 = Color3.fromRGB(71, 85, 105)
+author.TextSize = 9
+author.Font = Enum.Font.Gotham
+author.Parent = scroll
+
+-- === FUNCTIONS ===
+
+local playerItems = {}
+local selectedPlayer = nil
+
+local function updateZoom(delta)
+    state.zoomDistance = math.clamp(state.zoomDistance + delta, state.minZoom, state.maxZoom)
+    zoomValueLabel.Text = tostring(math.floor(state.zoomDistance))
+    local ratio = math.clamp((state.zoomDistance - state.minZoom) / 100, 0, 1)
+    zoomFill.Size = UDim2.new(ratio, 0, 1, 0)
+end
+
+local function createPlayerItem(targetPlayer)
+    local item = Instance.new("TextButton")
+    item.Size = UDim2.new(1, 0, 0, 30)
+    item.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+    item.BackgroundTransparency = 0.5
+    item.BorderSizePixel = 0
+    item.Text = ""
+    item.Parent = playersScroll
+
+    local itemCorner = Instance.new("UICorner", item)
+    itemCorner.CornerRadius = UDim.new(0, 6)
+
+    local icon = Instance.new("TextLabel")
+    icon.Size = UDim2.new(0, 26, 1, 0)
+    icon.Position = UDim2.new(0, 4, 0, 0)
+    icon.BackgroundTransparency = 1
+    icon.Text = "👤"
+    icon.TextSize = 12
+    icon.Parent = item
+
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(1, -36, 1, 0)
+    nameLabel.Position = UDim2.new(0, 32, 0, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = targetPlayer.Name
+    nameLabel.TextColor3 = Color3.fromRGB(226, 232, 240)
+    nameLabel.TextSize = 11
+    nameLabel.Font = Enum.Font.GothamMedium
+    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    nameLabel.Parent = item
+
+    local selectIndicator = Instance.new("Frame")
+    selectIndicator.Name = "Indicator"
+    selectIndicator.Size = UDim2.new(0, 3, 1, -8)
+    selectIndicator.Position = UDim2.new(0, 0, 0, 4)
+    selectIndicator.BackgroundColor3 = Color3.fromRGB(59, 130, 246)
+    selectIndicator.BorderSizePixel = 0
+    selectIndicator.Visible = false
+    selectIndicator.Parent = item
+    Instance.new("UICorner", selectIndicator).CornerRadius = UDim.new(0, 2)
+
+    item.MouseButton1Click:Connect(function()
+        if selectedPlayer and playerItems[selectedPlayer] then
+            playerItems[selectedPlayer].BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+            playerItems[selectedPlayer].BackgroundTransparency = 0.5
+            playerItems[selectedPlayer].Indicator.Visible = false
+        end
+
+        selectedPlayer = targetPlayer
+        item.BackgroundColor3 = Color3.fromRGB(59, 130, 246)
+        item.BackgroundTransparency = 0.7
+        selectIndicator.Visible = true
+
+        spectateBtn.BackgroundColor3 = Color3.fromRGB(59, 130, 246)
+        spectateBtn.Text = "👁️ Spectate " .. targetPlayer.Name
+    end)
+
+    playerItems[targetPlayer] = item
+    return item
+end
+
+local function refreshPlayerList()
+    for _, item in pairs(playerItems) do
+        item:Destroy()
+    end
+    playerItems = {}
+    selectedPlayer = nil
+
+    local count = 0
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= player then
+            createPlayerItem(p)
+            count = count + 1
+        end
+    end
+
+    playerCountLabel.Text = count .. " players"
+    spectateBtn.BackgroundColor3 = Color3.fromRGB(71, 85, 105)
+    spectateBtn.Text = "👁️ Select a player"
+end
+
+viewModeBtn.MouseButton1Click:Connect(function()
+    if state.viewMode == "third" then
+        state.viewMode = "first"
+        viewModeBtn.Text = "👤 1st Person (tap to switch)"
+        viewModeBtn.BackgroundColor3 = Color3.fromRGB(59, 130, 246)
+        viewModeBtn.BackgroundTransparency = 0.5
+    else
+        state.viewMode = "third"
+        viewModeBtn.Text = "📷 3rd Person (tap to switch)"
+        viewModeBtn.BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+        viewModeBtn.BackgroundTransparency = 0
+    end
+end)
+
+local function startSpectate()
+    if not selectedPlayer then return end
+    if not selectedPlayer.Character then return end
+
+    local character = selectedPlayer.Character
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return end
+
+    state.isSpectating = true
+    state.targetPlayer = selectedPlayer
+    state.originalCameraType = camera.CameraType
+    state.yaw = 0
+    state.pitch = 15
+
+    camera.CameraType = Enum.CameraType.Scriptable
+
+    spectateBtn.Text = "👁️ Spectating..."
+    spectateBtn.BackgroundColor3 = Color3.fromRGB(34, 197, 94)
+    exitBtn.Visible = true
+    navFrame.Visible = true
+    spectatingLabel.Text = "📡 Spectating: " .. selectedPlayer.Name
+    spectatingLabel.Visible = true
+
+    state.connection = RunService.RenderStepped:Connect(function()
+        if not state.isSpectating then return end
+        if not state.targetPlayer or not state.targetPlayer.Character then
+            exitSpectate()
+            return
+        end
+
+        local char = state.targetPlayer.Character
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local head = char:FindFirstChild("Head")
+        if not hrp then return end
+
+        if state.viewMode == "first" then
+            local targetPart = head or hrp
+            local yawRad = math.rad(state.yaw)
+            local pitchRad = math.rad(state.pitch)
+            local lookDir = CFrame.Angles(0, yawRad, 0) * CFrame.Angles(pitchRad, 0, 0)
+            camera.CFrame = CFrame.new(targetPart.Position + Vector3.new(0, 0.5, 0)) * lookDir
+        else
+            local yawRad = math.rad(state.yaw)
+            local pitchRad = math.rad(math.clamp(state.pitch, -60, 75))
+            local offset = CFrame.Angles(0, yawRad, 0) * CFrame.Angles(pitchRad, 0, 0) * CFrame.new(0, 0, state.zoomDistance)
+            local targetPos = hrp.Position + Vector3.new(0, 2, 0)
+            local camPos = targetPos + offset.Position
+            camera.CFrame = CFrame.new(camPos, targetPos)
+        end
+    end)
+
+    print("[Spectator] Now watching: " .. selectedPlayer.Name)
+    print("[Spectator] Hold RIGHT MOUSE BUTTON + move to rotate camera")
+end
+
+function exitSpectate()
+    state.isSpectating = false
+    state.targetPlayer = nil
+    state.isDragging = false
+
+    if state.connection then
+        state.connection:Disconnect()
+        state.connection = nil
+    end
+
+    camera.CameraType = state.originalCameraType or Enum.CameraType.Custom
+    camera.CameraSubject = player.Character and player.Character:FindFirstChild("Humanoid")
+
+    spectateBtn.Text = selectedPlayer and ("👁️ Spectate " .. selectedPlayer.Name) or "👁️ Select a player"
+    spectateBtn.BackgroundColor3 = selectedPlayer and Color3.fromRGB(59, 130, 246) or Color3.fromRGB(71, 85, 105)
+    exitBtn.Visible = false
+    navFrame.Visible = false
+    spectatingLabel.Visible = false
+
+    print("[Spectator] Exited spectate mode")
+end
+
+local function getPlayerIndex(targetPlayer)
+    local players = {}
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= player then
+            table.insert(players, p)
+        end
+    end
+    for i, p in ipairs(players) do
+        if p == targetPlayer then return i, players end
+    end
+    return 1, players
+end
+
+local function spectateNext()
+    if not state.isSpectating then return end
+    local idx, players = getPlayerIndex(state.targetPlayer)
+    idx = idx % #players + 1
+
+    if selectedPlayer and playerItems[selectedPlayer] then
+        playerItems[selectedPlayer].BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+        playerItems[selectedPlayer].BackgroundTransparency = 0.5
+        playerItems[selectedPlayer].Indicator.Visible = false
+    end
+
+    selectedPlayer = players[idx]
+    state.targetPlayer = selectedPlayer
+
+    if playerItems[selectedPlayer] then
+        playerItems[selectedPlayer].BackgroundColor3 = Color3.fromRGB(59, 130, 246)
+        playerItems[selectedPlayer].BackgroundTransparency = 0.7
+        playerItems[selectedPlayer].Indicator.Visible = true
+    end
+
+    spectatingLabel.Text = "📡 Spectating: " .. selectedPlayer.Name
+    print("[Spectator] Switched to: " .. selectedPlayer.Name)
+end
+
+local function spectatePrev()
+    if not state.isSpectating then return end
+    local idx, players = getPlayerIndex(state.targetPlayer)
+    idx = idx - 1
+    if idx < 1 then idx = #players end
+
+    if selectedPlayer and playerItems[selectedPlayer] then
+        playerItems[selectedPlayer].BackgroundColor3 = Color3.fromRGB(30, 41, 59)
+        playerItems[selectedPlayer].BackgroundTransparency = 0.5
+        playerItems[selectedPlayer].Indicator.Visible = false
+    end
+
+    selectedPlayer = players[idx]
+    state.targetPlayer = selectedPlayer
+
+    if playerItems[selectedPlayer] then
+        playerItems[selectedPlayer].BackgroundColor3 = Color3.fromRGB(59, 130, 246)
+        playerItems[selectedPlayer].BackgroundTransparency = 0.7
+        playerItems[selectedPlayer].Indicator.Visible = true
+    end
+
+    spectatingLabel.Text = "📡 Spectating: " .. selectedPlayer.Name
+    print("[Spectator] Switched to: " .. selectedPlayer.Name)
+end
+
+spectateBtn.MouseButton1Click:Connect(function()
+    if state.isSpectating then return end
+    startSpectate()
+end)
+
+exitBtn.MouseButton1Click:Connect(exitSpectate)
+nextBtn.MouseButton1Click:Connect(spectateNext)
+prevBtn.MouseButton1Click:Connect(spectatePrev)
+
+zoomMinus.MouseButton1Click:Connect(function() updateZoom(-5) end)
+zoomPlus.MouseButton1Click:Connect(function() updateZoom(5) end)
+
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        if state.isSpectating then
+            state.isDragging = true
+            state.lastMousePos = input.Position
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        state.isDragging = false
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseWheel then
+        if state.isSpectating then
+            updateZoom(-input.Position.Z * 3)
+        end
+    end
+
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        if state.isSpectating and state.isDragging then
+            local delta = input.Delta
+            state.yaw = state.yaw - delta.X * state.sensitivity
+            state.pitch = math.clamp(state.pitch - delta.Y * state.sensitivity, -60, 75)
+        end
+    end
+end)
+
+minimizeBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    minimizeBtn.Text = minimized and "+" or "−"
+    body.Visible = not minimized
+    TweenService:Create(mainFrame, TweenInfo.new(0.2), {
+        Size = minimized and UDim2.new(0, 240, 0, 40) or UDim2.new(0, 240, 0, 410)
+    }):Play()
+end)
+
+searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    local query = searchBox.Text:lower()
+    for targetPlayer, item in pairs(playerItems) do
+        item.Visible = targetPlayer.Name:lower():find(query) ~= nil
+    end
+end)
+
+Players.PlayerAdded:Connect(function(p)
+    task.wait(1)
+    createPlayerItem(p)
+    playerCountLabel.Text = (#Players:GetPlayers() - 1) .. " players"
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    if playerItems[p] then
+        playerItems[p]:Destroy()
+        playerItems[p] = nil
+    end
+    if state.targetPlayer == p then
+        exitSpectate()
+    end
+    if selectedPlayer == p then
+        selectedPlayer = nil
+        spectateBtn.Text = "👁️ Select a player"
+        spectateBtn.BackgroundColor3 = Color3.fromRGB(71, 85, 105)
+    end
+    playerCountLabel.Text = (#Players:GetPlayers() - 1) .. " players"
+end)
+
+refreshPlayerList()
+
+print("[Spectator Mode] v2.1 Loaded! By: Probothotspot")
+print("[Spectator Mode] NEW: Type a number in the zoom input to set zoom!")
+print("[Spectator Mode] Select a player and click Spectate")
+print("[Spectator Mode] Hold RIGHT MOUSE BUTTON + move to rotate camera")
+print("[Spectator Mode] Scroll wheel to zoom, click button to switch 1st/3rd person")
