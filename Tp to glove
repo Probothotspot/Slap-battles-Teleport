@@ -1,0 +1,1512 @@
+-- ============================================================
+--  LAUNCHER + SCRIPT "Teleport to Glove" v4.6 (Slap Battles)
+--  ✅ bomb → Handle (вместо Center)
+--  ✅ bind → Handle, ReTeleportCooldown = 3.0
+--  ✅ Поворот лицом к цели, все стратегии, Extended (прямо в ладонь)
+--  ✅ Защита nil, диагностика
+--  ✅ Xeno / Delta совместимость
+-- ============================================================
+
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+local PlayerGui = LP:FindFirstChild("PlayerGui") or CoreGui
+
+if not PlayerGui then
+    PlayerGui = CoreGui
+end
+
+local detectedDevice = (UserInputService.TouchEnabled) and "Mobile" or "PC"
+
+-- ==============================
+--  ПЕРЕМЕННЫЕ ЛАУНЧЕРА
+-- ==============================
+local selectedLang = "Русский"
+local selectedDevice = detectedDevice
+
+if _G.LauncherSettings then
+    selectedLang = _G.LauncherSettings.lang or selectedLang
+    selectedDevice = _G.LauncherSettings.device or selectedDevice
+end
+
+local launcherGui = nil
+local mainFrame = nil
+
+-- Тексты лаунчера
+local launcherTexts = {
+    ["Русский"] = {
+        title = "🚀 TELEPORT TO GLOVE v4.6",
+        langLabel = "Язык:",
+        deviceLabel = "Устройство:",
+        execute = "▶ EXECUTE SCRIPT",
+        hint = "Настройте параметры и нажмите Execute",
+        reset = "Сброс",
+        update = "Проверить обновления",
+        version = "v4.6 | 28.06.2026",
+        updateAvailable = "Доступна новая версия %s. Скачайте обновление.",
+        updateLatest = "У вас последняя версия.",
+        updateError = "Не удалось проверить обновления."
+    },
+    ["English"] = {
+        title = "🚀 TELEPORT TO GLOVE v4.6",
+        langLabel = "Language:",
+        deviceLabel = "Device:",
+        execute = "▶ EXECUTE SCRIPT",
+        hint = "Configure and press Execute",
+        reset = "Reset",
+        update = "Check for updates",
+        version = "v4.6 | 06/28/2026",
+        updateAvailable = "New version %s available. Download update.",
+        updateLatest = "You have the latest version.",
+        updateError = "Failed to check for updates."
+    },
+    ["Українська"] = {
+        title = "🚀 ТЕЛЕПОРТ ДО РУКАВИЧКИ v4.6",
+        langLabel = "Мова:",
+        deviceLabel = "Пристрій:",
+        execute = "▶ ВИКОНАТИ СКРИПТ",
+        hint = "Налаштуйте та натисніть Виконати",
+        reset = "Скинути",
+        update = "Перевірити оновлення",
+        version = "v4.6 | 28.06.2026",
+        updateAvailable = "Доступна нова версія %s. Завантажте оновлення.",
+        updateLatest = "У вас остання версія.",
+        updateError = "Не вдалося перевірити оновлення."
+    }
+}
+
+local function animateAppear(frame, duration)
+    if not TweenService then return end
+    pcall(function()
+        local originalSize = frame.Size
+        local originalTransp = frame.BackgroundTransparency
+        frame.BackgroundTransparency = 1
+        frame.Size = UDim2.new(originalSize.X.Scale, originalSize.X.Offset * 0.85,
+                                originalSize.Y.Scale, originalSize.Y.Offset * 0.85)
+        TweenService:Create(frame, TweenInfo.new(duration or 0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            BackgroundTransparency = originalTransp,
+            Size = originalSize
+        }):Play()
+    end)
+end
+
+local function animateDisappear(frame, callback)
+    if not TweenService then
+        if callback then callback() end
+        return
+    end
+    pcall(function()
+        local tween = TweenService:Create(frame, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(0, 0, 0, 0)
+        })
+        if callback then
+            tween.Completed:Connect(callback)
+        end
+        tween:Play()
+    end)
+end
+
+-- ==============================
+--  ОСНОВНОЙ СКРИПТ
+-- ==============================
+local function startMainScript(lang, device)
+    if _G.TeleportDeathRunning then
+        print("⚠️ Скрипт уже был запущен. Принудительно перезапускаем.")
+        _G.TeleportDeathRunning = false
+    end
+
+    _G.TeleportDeathRunning = true
+
+    local Players_ = Players
+    local LP_ = LP
+    local UserInput_ = UserInputService
+    local RunService_ = game:GetService("RunService")
+    local Workspace_ = game:GetService("Workspace")
+
+    local stopScript = false
+    local playerSelectionWindow = nil
+    local recentTargets = {}
+
+    -- ==================== НАСТРОЙКИ ====================
+    local Settings = {
+        Enabled = true,
+        TeleportDistance = 5,
+        TargetPlayerName = "",
+        GloveSearchRadius = 100,
+        ReTeleportEnabled = true,
+        ReTeleportDistance = 30,
+        ReTeleportCooldown = 3.0,       -- Увеличено до 3 секунд
+        VerticalTolerance = 10,
+        FallbackDistance = 3,
+        CloseGloveThreshold = 10,
+        AnimationsEnabled = true,
+    }
+    pcall(function()
+        if _G.TeleportDeathSettings then
+            for k, v in pairs(_G.TeleportDeathSettings) do
+                if Settings[k] ~= nil then Settings[k] = v end
+            end
+        end
+    end)
+
+    -- ==================== ТЕКСТЫ ====================
+    local texts
+    if lang == "Русский" then
+        texts = {
+            logPrefix = "✅ Скрипт запущен!",
+            title = "⚡ Телепорт к перчатке v4.6",
+            enabled = "Включено",
+            reteleport = "Повторный телепорт",
+            target = "Цель",
+            select = "Выберите игрока",
+            teleportDist = "Дист. телепорта",
+            searchRadius = "Радиус поиска",
+            reteleportDist = "Дист. ретелепорта",
+            reteleportCooldown = "Задержка ретелепорта",
+            verticalTolerance = "Допуск по высоте",
+            unload = "⏻ ВЫГРУЗИТЬ",
+            clear = "✕ Очистить",
+            animationsToggle = "Анимации",
+            recent = "Недавние",
+            statusActive = "🟢 Активен",
+            statusFar = "🟡 Далеко",
+            statusLost = "🔴 Потерян",
+            noTarget = "Цель не выбрана",
+        }
+    elseif lang == "English" then
+        texts = {
+            logPrefix = "✅ Script started!",
+            title = "⚡ Teleport to Glove v4.6",
+            enabled = "Enabled",
+            reteleport = "Re-Teleport",
+            target = "Target",
+            select = "Select player",
+            teleportDist = "TP Distance",
+            searchRadius = "Search Radius",
+            reteleportDist = "ReTP Distance",
+            reteleportCooldown = "ReTP Cooldown",
+            verticalTolerance = "Vert. Tolerance",
+            unload = "⏻ UNLOAD",
+            clear = "✕ Clear",
+            animationsToggle = "Animations",
+            recent = "Recent",
+            statusActive = "🟢 Active",
+            statusFar = "🟡 Far",
+            statusLost = "🔴 Lost",
+            noTarget = "No target selected",
+        }
+    elseif lang == "Українська" then
+        texts = {
+            logPrefix = "✅ Скрипт запущено!",
+            title = "⚡ Телепорт до рукавички v4.6",
+            enabled = "Увімкнено",
+            reteleport = "Повторний телепорт",
+            target = "Ціль",
+            select = "Оберіть гравця",
+            teleportDist = "Дист. телепорту",
+            searchRadius = "Радіус пошуку",
+            reteleportDist = "Дист. ретелепорту",
+            reteleportCooldown = "Затримка ретелепорту",
+            verticalTolerance = "Допуск по висоті",
+            unload = "⏻ ВИВАНТАЖИТИ",
+            clear = "✕ Очистити",
+            animationsToggle = "Анімації",
+            recent = "Нещодавні",
+            statusActive = "🟢 Активний",
+            statusFar = "🟡 Далеко",
+            statusLost = "🔴 Втрачений",
+            noTarget = "Ціль не вибрана",
+        }
+    end
+
+    -- ==================== СОСТОЯНИЯ ====================
+    local lastTeleportTime = 0
+    local lastFailedTeleport = 0
+    local LOBBY_PORTAL = CFrame.new(-1210, 330, 3)
+
+    -- ==================== УТИЛИТЫ ====================
+    local function isGroundBelow(pos)
+        local rayOrigin = pos + Vector3.new(0, 2, 0)
+        local rayDir = Vector3.new(0, -20, 0)
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Blacklist
+        params.FilterDescendantsInstances = {LP_.Character}
+        return Workspace_:Raycast(rayOrigin, rayDir, params) ~= nil
+    end
+
+    local function findSafePositionNear(targetPos)
+        if isGroundBelow(targetPos) then return targetPos end
+        for _, offset in ipairs({Vector3.new(2,0,0), Vector3.new(-2,0,0), Vector3.new(0,0,2),
+                                Vector3.new(0,0,-2), Vector3.new(4,0,0), Vector3.new(-4,0,0),
+                                Vector3.new(0,0,4), Vector3.new(0,0,-4)}) do
+            local test = targetPos + offset
+            if isGroundBelow(test) then return test end
+        end
+        return targetPos
+    end
+
+    -- ==================== БАЗА СТРАТЕГИЙ (bomb убран из Center) ====================
+    local GloveStrategies = {
+        ["mace"] = "Custom",
+        ["poltergeist"] = "Behind",
+        ["target"] = "Behind",
+        ["duplication"] = "Behind",
+        ["tableflip"] = "Behind",
+        ["god's hand"] = "Center",
+        ["counter"] = "Center",
+        -- ["bomb"] = "Center",   -- удалено, теперь bomb будет Handle по умолчанию
+        ["defense"] = "Center",
+        ["bind"] = "Handle",
+    }
+
+    local function detectStrategy(tool)
+        local name = tool.Name:lower()
+        if name:find("extended") then
+            return "ExtendedStrategy"
+        end
+        for keyword, strat in pairs(GloveStrategies) do
+            if name:find(keyword) then
+                return strat
+            end
+        end
+        for _, part in ipairs(tool:GetDescendants()) do
+            if part:IsA("BasePart") and (part.Name:lower():find("ball") or part.Name:lower():find("chain")) then
+                return "Custom"
+            end
+        end
+        return "Handle"
+    end
+
+    -- ==================== ПОИСК ПЕРЧАТКИ ====================
+    local function GetTargetGlove()
+        local myChar = LP_.Character
+        if not myChar then return nil end
+        local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+        if not myRoot then return nil end
+
+        local targetPlayer = nil
+        if Settings.TargetPlayerName ~= "" then
+            targetPlayer = Players_:FindFirstChild(Settings.TargetPlayerName)
+        end
+
+        if not targetPlayer or not targetPlayer.Character then
+            local nearestDist = Settings.GloveSearchRadius
+            for _, plr in ipairs(Players_:GetPlayers()) do
+                if plr ~= LP_ and plr.Character then
+                    local hum = plr.Character:FindFirstChild("Humanoid")
+                    local root = plr.Character:FindFirstChild("HumanoidRootPart")
+                    if hum and root and hum.Health > 0 then
+                        local dist = (myRoot.Position - root.Position).Magnitude
+                        if dist < nearestDist then
+                            nearestDist = dist
+                            targetPlayer = plr
+                        end
+                    end
+                end
+            end
+        end
+
+        if not targetPlayer then return nil end
+
+        local function findToolInContainer(container)
+            if not container then return nil end
+            for _, child in ipairs(container:GetChildren()) do
+                if child:IsA("Tool") or child:IsA("Model") then
+                    return child
+                end
+            end
+            return nil
+        end
+
+        local char = targetPlayer.Character
+        local tool = findToolInContainer(char)
+        if not tool then
+            local backpack = targetPlayer:FindFirstChild("Backpack")
+            tool = findToolInContainer(backpack)
+        end
+
+        if not tool then
+            return {
+                targetPlayer = targetPlayer,
+                hasTool = false,
+                strategy = "Idle",
+                handlePart = nil,
+                distToTarget = nil,
+                tool = nil
+            }
+        end
+
+        local strategy = detectStrategy(tool)
+        local handlePart = nil
+        local distToTarget = nil
+        local customPart = nil
+
+        if strategy == "Handle" or strategy == "Center" then
+            handlePart = tool:FindFirstChild("Handle")
+            if not handlePart or not handlePart:IsA("BasePart") then
+                for _, part in ipairs(tool:GetDescendants()) do
+                    if part:IsA("BasePart") and (part.Name == "Handle" or part.Name:lower():find("glove")) then
+                        handlePart = part
+                        break
+                    end
+                end
+            end
+            if handlePart then
+                local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                distToTarget = targetRoot and (handlePart.Position - targetRoot.Position).Magnitude or 100
+            end
+        elseif strategy == "Custom" then
+            for _, part in ipairs(tool:GetDescendants()) do
+                if part:IsA("BasePart") and (part.Name:lower():find("ball") or part.Name:lower():find("chain") or part.Name:lower():find("mace")) then
+                    customPart = part
+                    break
+                end
+            end
+            if not customPart then
+                local farthest = nil
+                local maxDist = 0
+                local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                local ref = targetRoot and targetRoot.Position or targetPlayer.Character:GetPivot().Position
+                for _, part in ipairs(tool:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        local d = (part.Position - ref).Magnitude
+                        if d > maxDist then
+                            maxDist = d
+                            farthest = part
+                        end
+                    end
+                end
+                customPart = farthest
+            end
+            if customPart then
+                distToTarget = (customPart.Position - targetPlayer.Character:FindFirstChild("HumanoidRootPart").Position).Magnitude
+            end
+        end
+
+        return {
+            targetPlayer = targetPlayer,
+            hasTool = true,
+            strategy = strategy,
+            handlePart = handlePart,
+            customPart = customPart,
+            distToTarget = distToTarget,
+            tool = tool
+        }
+    end
+
+    -- ==================== ТЕЛЕПОРТАЦИЯ (с поворотом лицом) ====================
+    local function addRecentTarget(playerName)
+        for i, name in ipairs(recentTargets) do
+            if name == playerName then
+                table.remove(recentTargets, i)
+                break
+            end
+        end
+        table.insert(recentTargets, playerName)
+        if #recentTargets > 10 then
+            table.remove(recentTargets, 1)
+        end
+    end
+
+    local function processTeleport()
+        if stopScript or not Settings.Enabled then return end
+        local char = LP_.Character
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        local y = root.Position.Y
+
+        if y >= 320 and y <= 330 then
+            root.CFrame = LOBBY_PORTAL
+            AddLog("Телепорт к порталу")
+            return
+        end
+
+        if y >= -50 and y <= 80 then
+            local info = GetTargetGlove()
+            if not info or not info.targetPlayer then return end
+
+            local targetPlayer = info.targetPlayer
+            local strategy = info.strategy
+
+            if strategy == "Idle" then
+                if tick() - (lastTeleportTime or 0) > 5 then
+                    AddLog("Ожидание: цель ничего не держит.")
+                end
+                return
+            end
+
+            if not LP_.Character or not LP_.Character:FindFirstChild("HumanoidRootPart") then
+                AddLog("⚠️ Персонаж не готов к телепорту.")
+                return
+            end
+
+            -- ============= ОБРАБОТКА EXTENDED =============
+            if strategy == "ExtendedStrategy" then
+                if info.tool and targetPlayer.Character then
+                    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    if targetRoot then
+                        local farthestPart = nil
+                        local maxDist = 0
+                        pcall(function()
+                            for _, part in ipairs(info.tool:GetDescendants()) do
+                                if part:IsA("BasePart") then
+                                    local dist = (part.Position - targetRoot.Position).Magnitude
+                                    if dist > maxDist then
+                                        maxDist = dist
+                                        farthestPart = part
+                                    end
+                                end
+                            end
+                        end)
+                        if farthestPart then
+                            local targetPos = farthestPart.Position + Vector3.new(0, 0.5, 0)
+                            local dist3D = (root.Position - targetPos).Magnitude
+
+                            local needTP = (lastTeleportTime == 0)
+                            if not needTP and Settings.ReTeleportEnabled then
+                                if dist3D > Settings.ReTeleportDistance + 0.5 then
+                                    needTP = true
+                                end
+                            end
+
+                            if needTP and (tick() - lastFailedTeleport < 0.5) then
+                                AddLog("⚠️ Телепорт не удался, пауза 0.5 сек")
+                                return
+                            end
+
+                            if needTP and (tick() - lastTeleportTime >= Settings.ReTeleportCooldown) then
+                                local success, err = pcall(function()
+                                    local targetRootNow = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                                    if targetRootNow then
+                                        root.CFrame = CFrame.lookAt(targetPos, targetRootNow.Position)
+                                    else
+                                        root.CFrame = CFrame.new(targetPos)
+                                    end
+                                end)
+                                if success then
+                                    lastTeleportTime = tick()
+                                    AddLog("Телепорт в ладонь Extended " .. targetPlayer.Name .. " (дист: " .. string.format("%.1f", dist3D) .. ") [повёрнут к цели]")
+                                    addRecentTarget(targetPlayer.Name)
+                                else
+                                    AddLog("❌ Ошибка телепорта: " .. tostring(err))
+                                    lastFailedTeleport = tick()
+                                end
+                            end
+                        else
+                            AddLog("Не удалось найти ладонь Extended у цели")
+                        end
+                    end
+                end
+                return
+            end
+
+            -- ============= ОСТАЛЬНЫЕ СТРАТЕГИИ =============
+            local targetPos = nil
+            local reason = ""
+
+            if strategy == "Handle" then
+                if info.handlePart and info.distToTarget and info.distToTarget <= Settings.CloseGloveThreshold then
+                    local head = targetPlayer.Character:FindFirstChild("Head")
+                    if head and head:IsA("BasePart") then
+                        targetPos = head.Position + head.CFrame.LookVector * Settings.FallbackDistance
+                        targetPos = Vector3.new(targetPos.X, head.Position.Y + 1.5, targetPos.Z)
+                        reason = "перед " .. targetPlayer.Name .. " (близкая перчатка)"
+                    end
+                elseif info.handlePart then
+                    local success, pos = pcall(function()
+                        local dirToGlove = (info.handlePart.Position - root.Position).Unit
+                        if dirToGlove.Magnitude == 0 then dirToGlove = info.handlePart.CFrame.LookVector end
+                        local p = info.handlePart.Position - dirToGlove * Settings.TeleportDistance
+                        return Vector3.new(p.X, info.handlePart.Position.Y + 1.5, p.Z)
+                    end)
+                    if success then
+                        targetPos = pos
+                        reason = "в перчатку " .. targetPlayer.Name .. " (Extended)"
+                    else
+                        AddLog("Ошибка расчёта позиции Handle")
+                        lastFailedTeleport = tick()
+                        return
+                    end
+                else
+                    local head = targetPlayer.Character:FindFirstChild("Head")
+                    if head and head:IsA("BasePart") then
+                        targetPos = head.Position + head.CFrame.LookVector * Settings.FallbackDistance
+                        targetPos = Vector3.new(targetPos.X, head.Position.Y + 1.5, targetPos.Z)
+                        reason = "перед " .. targetPlayer.Name .. " (нет Handle)"
+                    end
+                end
+            elseif strategy == "Behind" then
+                local rootPart = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if rootPart then
+                    targetPos = rootPart.Position - rootPart.CFrame.LookVector * Settings.FallbackDistance
+                    targetPos = Vector3.new(targetPos.X, rootPart.Position.Y + 1.5, targetPos.Z)
+                    reason = "за спину " .. targetPlayer.Name
+                end
+            elseif strategy == "Center" then
+                local rootPart = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if rootPart then
+                    targetPos = rootPart.Position + Vector3.new(0, 1.5, 0)
+                    reason = "в центр " .. targetPlayer.Name
+                end
+            elseif strategy == "Custom" then
+                if info.customPart then
+                    local success, pos = pcall(function()
+                        local dirToPart = (info.customPart.Position - root.Position).Unit
+                        if dirToPart.Magnitude == 0 then dirToPart = info.customPart.CFrame.LookVector end
+                        local p = info.customPart.Position - dirToPart * Settings.TeleportDistance
+                        return Vector3.new(p.X, info.customPart.Position.Y + 1.5, p.Z)
+                    end)
+                    if success then
+                        targetPos = pos
+                        reason = "в специальную часть " .. targetPlayer.Name .. " (" .. info.tool.Name .. ")"
+                    end
+                else
+                    AddLog("Не удалось найти особую часть для Custom-перчатки " .. info.tool.Name)
+                    lastFailedTeleport = tick()
+                    return
+                end
+            end
+
+            if not targetPos then return end
+
+            targetPos = findSafePositionNear(targetPos)
+            local dist3D = (root.Position - targetPos).Magnitude
+            local verticalDiff = math.abs(root.Position.Y - targetPos.Y)
+
+            local needTP = (lastTeleportTime == 0)
+            if not needTP and Settings.ReTeleportEnabled then
+                if dist3D > Settings.ReTeleportDistance + 0.5 or verticalDiff > Settings.VerticalTolerance + 0.5 then
+                    needTP = true
+                end
+            end
+
+            if needTP and (tick() - lastFailedTeleport < 0.5) then
+                AddLog("⚠️ Телепорт не удался, пауза 0.5 сек")
+                return
+            end
+
+            if needTP and (tick() - lastTeleportTime >= Settings.ReTeleportCooldown) then
+                local success, err = pcall(function()
+                    local targetRootNow = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    if targetRootNow then
+                        root.CFrame = CFrame.lookAt(targetPos, targetRootNow.Position)
+                    else
+                        root.CFrame = CFrame.new(targetPos)
+                    end
+                end)
+                if success then
+                    lastTeleportTime = tick()
+                    AddLog("Телепорт: " .. reason .. " (дист: " .. string.format("%.1f", dist3D) .. ") [повёрнут к цели]")
+                    addRecentTarget(targetPlayer.Name)
+                else
+                    AddLog("❌ Ошибка телепорта: " .. tostring(err))
+                    lastFailedTeleport = tick()
+                end
+            end
+        end
+    end
+
+    local function StopAll()
+        stopScript = true
+        _G.TeleportDeathRunning = false
+        AddLog("Скрипт полностью остановлен.")
+    end
+
+    -- ==================== ЛОГ ====================
+    local logLines = {}
+    local logLabel = nil
+    function AddLog(msg)
+        local fullMsg = os.date("%X") .. " - " .. msg
+        table.insert(logLines, fullMsg)
+        if #logLines > 10 then table.remove(logLines, 1) end
+        print("[TeleportGlove] " .. msg)
+        if logLabel then pcall(function() logLabel.Text = table.concat(logLines, "\n") end) end
+    end
+
+    -- ==================== ГЛАВНЫЙ ЦИКЛ ====================
+    RunService_.Heartbeat:Connect(function()
+        if stopScript then return end
+        processTeleport()
+    end)
+    LP_.CharacterAdded:Connect(function()
+        if stopScript then return end
+        lastTeleportTime = 0
+    end)
+
+    -- ==================== GUI ====================
+    local playerGui = LP_:FindFirstChild("PlayerGui") or CoreGui
+    if not playerGui then playerGui = CoreGui end
+    local sg = Instance.new("ScreenGui", playerGui)
+    sg.Name = "TeleportDeathGUI"
+    sg.ResetOnSpawn = false
+
+    local statusIndicator
+    local titleLabel
+
+    local function updateStatusIndicator(info)
+        if not statusIndicator or not titleLabel then return end
+        local targetName = Settings.TargetPlayerName ~= "" and Settings.TargetPlayerName or texts.noTarget
+        local gloveName = info and info.tool and info.tool.Name or ""
+        local statusText = ""
+        local color = Color3.fromRGB(255,0,0)
+
+        if info and info.targetPlayer and info.hasTool then
+            local myRoot = LP_.Character and LP_.Character:FindFirstChild("HumanoidRootPart")
+            local targetRoot = info.targetPlayer.Character and info.targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if myRoot and targetRoot then
+                local dist = (myRoot.Position - targetRoot.Position).Magnitude
+                if dist <= Settings.GloveSearchRadius then
+                    statusText = texts.statusActive
+                    color = Color3.fromRGB(0,255,0)
+                else
+                    statusText = texts.statusFar
+                    color = Color3.fromRGB(255,255,0)
+                end
+            else
+                statusText = texts.statusLost
+            end
+        else
+            statusText = texts.statusLost
+        end
+
+        titleLabel.Text = "🎯 " .. texts.target .. " " .. targetName .. " (" .. gloveName .. ")"
+        statusIndicator.BackgroundColor3 = color
+        statusIndicator.Text = statusText
+    end
+
+    local function createStyledButton(parent, text, size, position, color, callback, fontSize)
+        local btn = Instance.new("TextButton", parent)
+        btn.Size = size
+        btn.Position = position
+        btn.BackgroundColor3 = color or Color3.fromRGB(80, 140, 200)
+        btn.TextColor3 = Color3.new(1,1,1)
+        btn.Text = text
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = fontSize or (device == "Mobile" and 16 or 13)
+        btn.AutoButtonColor = false
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+        Instance.new("UIStroke", btn).Thickness = 1.2
+        if callback then btn.MouseButton1Click:Connect(callback) end
+        return btn
+    end
+
+    local function addToggle(parent, yPos, label, setting)
+        local lbl = Instance.new("TextLabel", parent)
+        lbl.Size = UDim2.new(0, 110, 0, 20)
+        lbl.Position = UDim2.new(0, 14, 0, yPos)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = label
+        lbl.TextColor3 = Color3.new(0.9,0.9,1)
+        lbl.Font = Enum.Font.GothamSemibold
+        lbl.TextSize = device == "Mobile" and 15 or 13
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+
+        local btn = Instance.new("TextButton", parent)
+        btn.Size = UDim2.new(0, 56, 0, device == "Mobile" and 30 or 24)
+        btn.Position = UDim2.new(1, -70, 0, yPos-2)
+        btn.BackgroundColor3 = Settings[setting] and Color3.fromRGB(0,200,0) or Color3.fromRGB(200,0,0)
+        btn.Text = Settings[setting] and "ON" or "OFF"
+        btn.TextColor3 = Color3.new(1,1,1)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = device == "Mobile" and 14 or 13
+        btn.AutoButtonColor = false
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+        Instance.new("UIStroke", btn).Thickness = 1.5
+        btn.MouseButton1Click:Connect(function()
+            Settings[setting] = not Settings[setting]
+            btn.BackgroundColor3 = Settings[setting] and Color3.fromRGB(0,200,0) or Color3.fromRGB(200,0,0)
+            btn.Text = Settings[setting] and "ON" or "OFF"
+            pcall(function() _G.TeleportDeathSettings[setting] = Settings[setting] end)
+            AddLog(setting .. " = " .. tostring(Settings[setting]))
+        end)
+        return yPos + (device == "Mobile" and 38 or 34)
+    end
+
+    local function addTargetSelector(parent, yPos)
+        local lbl = Instance.new("TextLabel", parent)
+        lbl.Size = UDim2.new(0, 80, 0, 20)
+        lbl.Position = UDim2.new(0, 14, 0, yPos)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = texts.target
+        lbl.TextColor3 = Color3.new(0.9,0.9,1)
+        lbl.Font = Enum.Font.GothamSemibold
+        lbl.TextSize = device == "Mobile" and 15 or 13
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+
+        local targetBtn = Instance.new("TextButton", parent)
+        targetBtn.Size = UDim2.new(0, device == "Mobile" and 120 or 100, 0, device == "Mobile" and 32 or 28)
+        targetBtn.Position = UDim2.new(0, 100, 0, yPos-4)
+        targetBtn.BackgroundColor3 = Color3.new(1,1,1)
+        targetBtn.TextColor3 = Color3.new(0,0,0)
+        targetBtn.Font = Enum.Font.GothamMedium
+        targetBtn.TextSize = device == "Mobile" and 16 or 14
+        targetBtn.Text = (Settings.TargetPlayerName ~= "") and Settings.TargetPlayerName or texts.select
+        targetBtn.AutoButtonColor = false
+        Instance.new("UICorner", targetBtn).CornerRadius = UDim.new(0,6)
+        Instance.new("UIStroke", targetBtn).Thickness = 1
+
+        local clearBtn = Instance.new("TextButton", parent)
+        clearBtn.Size = UDim2.new(0, 40, 0, device == "Mobile" and 32 or 28)
+        clearBtn.Position = UDim2.new(1, -50, 0, yPos-4)
+        clearBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        clearBtn.Text = texts.clear
+        clearBtn.TextColor3 = Color3.new(1,1,1)
+        clearBtn.Font = Enum.Font.GothamBold
+        clearBtn.TextSize = device == "Mobile" and 12 or 10
+        Instance.new("UICorner", clearBtn).CornerRadius = UDim.new(0,6)
+        clearBtn.MouseButton1Click:Connect(function()
+            Settings.TargetPlayerName = ""
+            targetBtn.Text = texts.select
+            AddLog("Цель очищена")
+        end)
+
+        local recentBtn = Instance.new("TextButton", parent)
+        recentBtn.Size = UDim2.new(0, 80, 0, device == "Mobile" and 30 or 24)
+        recentBtn.Position = UDim2.new(0, 14, 0, yPos + (device == "Mobile" and 36 or 32))
+        recentBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 120)
+        recentBtn.Text = texts.recent
+        recentBtn.TextColor3 = Color3.new(1,1,1)
+        recentBtn.Font = Enum.Font.GothamBold
+        recentBtn.TextSize = device == "Mobile" and 14 or 12
+        recentBtn.AutoButtonColor = false
+        Instance.new("UICorner", recentBtn).CornerRadius = UDim.new(0,6)
+        Instance.new("UIStroke", recentBtn).Thickness = 1
+
+        local recentWindow
+        recentBtn.MouseButton1Click:Connect(function()
+            if recentWindow and recentWindow.Parent then
+                recentWindow:Destroy()
+                recentWindow = nil
+                return
+            end
+            recentWindow = Instance.new("Frame", parent)
+            recentWindow.Size = UDim2.new(0, 180, 0, 150)
+            recentWindow.Position = UDim2.new(0, 10, 0, yPos + (device == "Mobile" and 80 or 70))
+            recentWindow.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+            recentWindow.BorderSizePixel = 1
+            Instance.new("UICorner", recentWindow).CornerRadius = UDim.new(0,8)
+
+            local scroll = Instance.new("ScrollingFrame", recentWindow)
+            scroll.Size = UDim2.new(1, -10, 1, -30)
+            scroll.Position = UDim2.new(0, 5, 0, 5)
+            scroll.BackgroundTransparency = 1
+            scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+            scroll.ScrollBarThickness = 4
+            Instance.new("UIListLayout", scroll).Padding = UDim.new(0,4)
+
+            local closeBtnRecent = Instance.new("TextButton", recentWindow)
+            closeBtnRecent.Size = UDim2.new(1, -10, 0, 25)
+            closeBtnRecent.Position = UDim2.new(0, 5, 1, -30)
+            closeBtnRecent.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+            closeBtnRecent.Text = "✕ " .. (lang == "Русский" and "Закрыть" or "Close")
+            closeBtnRecent.TextColor3 = Color3.new(1,1,1)
+            closeBtnRecent.Font = Enum.Font.GothamBold
+            closeBtnRecent.TextSize = 12
+            Instance.new("UICorner", closeBtnRecent).CornerRadius = UDim.new(0,6)
+            closeBtnRecent.MouseButton1Click:Connect(function()
+                if recentWindow then recentWindow:Destroy() end
+                recentWindow = nil
+            end)
+
+            for _, name in ipairs(recentTargets) do
+                local btn = Instance.new("TextButton", scroll)
+                btn.Size = UDim2.new(1, 0, 0, 28)
+                btn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+                btn.Text = name
+                btn.TextColor3 = Color3.new(1,1,1)
+                btn.Font = Enum.Font.Gotham
+                btn.TextSize = 13
+                btn.AutoButtonColor = false
+                Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
+                btn.MouseButton1Click:Connect(function()
+                    Settings.TargetPlayerName = name
+                    targetBtn.Text = name
+                    if recentWindow then recentWindow:Destroy() end
+                    recentWindow = nil
+                    AddLog("Выбрана цель из недавних: " .. name)
+                end)
+            end
+            scroll.CanvasSize = UDim2.new(0, 0, 0, #recentTargets * 32 + 10)
+        end)
+
+        targetBtn.MouseButton1Click:Connect(function()
+            if playerSelectionWindow and playerSelectionWindow.Parent then
+                playerSelectionWindow:Destroy()
+                playerSelectionWindow = nil
+                return
+            end
+            playerSelectionWindow = Instance.new("Frame", parent)
+            playerSelectionWindow.Size = UDim2.new(0, 200, 0, 180)
+            playerSelectionWindow.Position = UDim2.new(0, 10, 0, yPos + (device == "Mobile" and 120 or 80))
+            playerSelectionWindow.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+            playerSelectionWindow.BorderSizePixel = 1
+            Instance.new("UICorner", playerSelectionWindow).CornerRadius = UDim.new(0,8)
+
+            local scroll = Instance.new("ScrollingFrame", playerSelectionWindow)
+            scroll.Size = UDim2.new(1, -10, 1, -30)
+            scroll.Position = UDim2.new(0, 5, 0, 5)
+            scroll.BackgroundTransparency = 1
+            scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+            scroll.ScrollBarThickness = 4
+            Instance.new("UIListLayout", scroll).Padding = UDim.new(0,4)
+
+            local closeBtn = Instance.new("TextButton", playerSelectionWindow)
+            closeBtn.Size = UDim2.new(1, -10, 0, 25)
+            closeBtn.Position = UDim2.new(0, 5, 1, -30)
+            closeBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+            closeBtn.Text = "✕ " .. (lang == "Русский" and "Закрыть" or "Close")
+            closeBtn.TextColor3 = Color3.new(1,1,1)
+            closeBtn.Font = Enum.Font.GothamBold
+            closeBtn.TextSize = 12
+            Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,6)
+            closeBtn.MouseButton1Click:Connect(function()
+                if playerSelectionWindow then playerSelectionWindow:Destroy() end
+                playerSelectionWindow = nil
+            end)
+
+            local function refresh()
+                for _, child in ipairs(scroll:GetChildren()) do
+                    if child:IsA("TextButton") and child ~= closeBtn then child:Destroy() end
+                end
+                for _, plr in ipairs(Players_:GetPlayers()) do
+                    if plr ~= LP_ then
+                        local btn = Instance.new("TextButton", scroll)
+                        btn.Size = UDim2.new(1, 0, 0, 28)
+                        btn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+                        btn.Text = plr.Name
+                        btn.TextColor3 = Color3.new(1,1,1)
+                        btn.Font = Enum.Font.Gotham
+                        btn.TextSize = 13
+                        btn.AutoButtonColor = false
+                        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
+                        btn.MouseButton1Click:Connect(function()
+                            Settings.TargetPlayerName = plr.Name
+                            targetBtn.Text = plr.Name
+                            if playerSelectionWindow then playerSelectionWindow:Destroy() end
+                            playerSelectionWindow = nil
+                            AddLog("Выбрана цель: " .. plr.Name)
+                        end)
+                    end
+                end
+                scroll.CanvasSize = UDim2.new(0, 0, 0, #Players_:GetPlayers() * 32 + 10)
+            end
+            refresh()
+            local connAdd = Players_.PlayerAdded:Connect(refresh)
+            local connRem = Players_.PlayerRemoving:Connect(refresh)
+            playerSelectionWindow.Destroying:Connect(function()
+                connAdd:Disconnect(); connRem:Disconnect()
+            end)
+        end)
+
+        return yPos + (device == "Mobile" and 80 or 70)
+    end
+
+    local function addTextBox(parent, yPos, label, setting, isNumber)
+        local lbl = Instance.new("TextLabel", parent)
+        lbl.Size = UDim2.new(0, 90, 0, 20)
+        lbl.Position = UDim2.new(0, 14, 0, yPos)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = label
+        lbl.TextColor3 = Color3.new(0.9,0.9,1)
+        lbl.Font = Enum.Font.GothamSemibold
+        lbl.TextSize = device == "Mobile" and 15 or 13
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+
+        local box = Instance.new("TextBox", parent)
+        box.Size = UDim2.new(0, 90, 0, device == "Mobile" and 32 or 26)
+        box.Position = UDim2.new(0, 110, 0, yPos-3)
+        box.Text = tostring(Settings[setting])
+        box.TextColor3 = Color3.new(0,0,0)
+        box.BackgroundColor3 = Color3.new(1,1,1)
+        box.Font = Enum.Font.GothamMedium
+        box.TextSize = device == "Mobile" and 16 or 14
+        box.ClearTextOnFocus = false
+        Instance.new("UICorner", box).CornerRadius = UDim.new(0,6)
+        Instance.new("UIStroke", box).Thickness = 1
+        box.FocusLost:Connect(function()
+            local val = box.Text
+            if isNumber then
+                local num = tonumber(val)
+                if num then
+                    Settings[setting] = num
+                    pcall(function() _G.TeleportDeathSettings[setting] = num end)
+                    AddLog(setting .. " = " .. num)
+                else
+                    box.Text = tostring(Settings[setting])
+                end
+            else
+                Settings[setting] = val
+                pcall(function() _G.TeleportDeathSettings[setting] = val end)
+                AddLog(setting .. " = " .. val)
+            end
+        end)
+        return yPos + (device == "Mobile" and 38 or 34)
+    end
+
+    -- ============= ПОСТРОЕНИЕ GUI =============
+    if device == "PC" then
+        local main = Instance.new("Frame", sg)
+        main.Size = UDim2.new(0, 330, 0, 540)
+        main.Position = UDim2.new(0.02, 0, 0.2, 0)
+        main.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+        main.BackgroundTransparency = 0.1
+        main.BorderSizePixel = 0
+        main.Active = true
+        main.Draggable = true
+        main.ClipsDescendants = true
+        Instance.new("UIStroke", main).Thickness = 3
+        if Settings.AnimationsEnabled and TweenService then
+            animateAppear(main, 0.4)
+        end
+
+        titleLabel = Instance.new("TextLabel", main)
+        titleLabel.Size = UDim2.new(1, -50, 0, 40)
+        titleLabel.Position = UDim2.new(0, 10, 0, 5)
+        titleLabel.BackgroundColor3 = Color3.fromRGB(120, 0, 180)
+        titleLabel.Text = texts.title
+        titleLabel.TextColor3 = Color3.new(1,1,1)
+        titleLabel.Font = Enum.Font.GothamBold
+        titleLabel.TextSize = 16
+        local tgrad = Instance.new("UIGradient", titleLabel)
+        tgrad.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(140, 20, 200)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(90, 0, 140))
+        })
+
+        statusIndicator = Instance.new("TextLabel", main)
+        statusIndicator.Size = UDim2.new(0, 20, 0, 20)
+        statusIndicator.Position = UDim2.new(1, -25, 0, 10)
+        statusIndicator.BackgroundColor3 = Color3.fromRGB(255,0,0)
+        statusIndicator.Text = ""
+        statusIndicator.TextColor3 = Color3.new(1,1,1)
+        statusIndicator.Font = Enum.Font.GothamBold
+        statusIndicator.TextSize = 12
+        Instance.new("UICorner", statusIndicator).CornerRadius = UDim.new(1, 0)
+
+        local yPos = 50
+        yPos = addToggle(main, yPos, texts.enabled, "Enabled")
+        yPos = addToggle(main, yPos, texts.reteleport, "ReTeleportEnabled")
+        yPos = addToggle(main, yPos, texts.animationsToggle, "AnimationsEnabled")
+        yPos = yPos + 6
+        yPos = addTargetSelector(main, yPos)
+        yPos = addTextBox(main, yPos, texts.teleportDist, "TeleportDistance", true)
+        yPos = addTextBox(main, yPos, texts.searchRadius, "GloveSearchRadius", true)
+        yPos = addTextBox(main, yPos, texts.reteleportDist, "ReTeleportDistance", true)
+        yPos = addTextBox(main, yPos, texts.reteleportCooldown, "ReTeleportCooldown", true)
+        yPos = addTextBox(main, yPos, texts.verticalTolerance, "VerticalTolerance", true)
+
+        local divider = Instance.new("Frame", main)
+        divider.Size = UDim2.new(1, -24, 0, 1)
+        divider.Position = UDim2.new(0, 12, 0, yPos + 8)
+        divider.BackgroundColor3 = Color3.fromRGB(100, 100, 120)
+
+        logLabel = Instance.new("TextLabel", main)
+        logLabel.Size = UDim2.new(1, -24, 0, 100)
+        logLabel.Position = UDim2.new(0, 12, 0, yPos + 18)
+        logLabel.BackgroundColor3 = Color3.fromRGB(20,20,30)
+        logLabel.TextColor3 = Color3.fromRGB(180, 180, 255)
+        logLabel.Font = Enum.Font.Gotham
+        logLabel.TextSize = 11
+        logLabel.TextXAlignment = Enum.TextXAlignment.Left
+        logLabel.TextYAlignment = Enum.TextYAlignment.Top
+        logLabel.TextWrapped = true
+        logLabel.RichText = true
+        Instance.new("UICorner", logLabel).CornerRadius = UDim.new(0,6)
+        Instance.new("UIStroke", logLabel).Thickness = 1
+
+        createStyledButton(main, texts.unload, UDim2.new(1, -24, 0, 32),
+            UDim2.new(0, 12, 0, yPos + 128), Color3.fromRGB(220, 50, 50), function()
+                sg:Destroy()
+                StopAll()
+            end)
+
+        task.spawn(function()
+            while not stopScript and sg and sg.Parent do
+                local info = GetTargetGlove()
+                updateStatusIndicator(info)
+                task.wait(1)
+            end
+        end)
+
+        UserInput_.InputBegan:Connect(function(input, gp)
+            if gp then return end
+            if input.KeyCode == Enum.KeyCode.P then sg:Destroy() StopAll() end
+        end)
+    else
+        local main = Instance.new("Frame", sg)
+        main.Size = UDim2.new(0, 340, 0, 460)
+        main.Position = UDim2.new(0.5, -170, 0.5, -230)
+        main.BackgroundColor3 = Color3.fromRGB(20, 20, 35)
+        main.BackgroundTransparency = 0.05
+        main.BorderSizePixel = 0
+        main.Active = true
+        main.Draggable = true
+        main.ClipsDescendants = true
+        Instance.new("UICorner", main).CornerRadius = UDim.new(0, 18)
+        Instance.new("UIStroke", main).Thickness = 2
+        local mainGrad = Instance.new("UIGradient", main)
+        mainGrad.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 35, 55)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(25, 25, 45)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 15, 30))
+        })
+        mainGrad.Rotation = 135
+        if Settings.AnimationsEnabled and TweenService then
+            animateAppear(main, 0.5)
+        end
+
+        titleLabel = Instance.new("TextLabel", main)
+        titleLabel.Size = UDim2.new(1, -50, 0, 38)
+        titleLabel.Position = UDim2.new(0, 10, 0, 5)
+        titleLabel.BackgroundColor3 = Color3.fromRGB(150, 20, 220)
+        titleLabel.Text = texts.title
+        titleLabel.TextColor3 = Color3.new(1,1,1)
+        titleLabel.Font = Enum.Font.GothamBold
+        titleLabel.TextSize = 15
+        Instance.new("UICorner", titleLabel).CornerRadius = UDim.new(0, 12)
+        local tgrad = Instance.new("UIGradient", titleLabel)
+        tgrad.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(180, 50, 255)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(100, 0, 200))
+        })
+        tgrad.Rotation = 90
+
+        statusIndicator = Instance.new("TextLabel", main)
+        statusIndicator.Size = UDim2.new(0, 24, 0, 24)
+        statusIndicator.Position = UDim2.new(1, -30, 0, 8)
+        statusIndicator.BackgroundColor3 = Color3.fromRGB(255,0,0)
+        statusIndicator.Text = ""
+        statusIndicator.TextColor3 = Color3.new(1,1,1)
+        statusIndicator.Font = Enum.Font.GothamBold
+        statusIndicator.TextSize = 14
+        Instance.new("UICorner", statusIndicator).CornerRadius = UDim.new(1, 0)
+
+        local tabBar = Instance.new("Frame", main)
+        tabBar.Size = UDim2.new(1, 0, 0, 40)
+        tabBar.Position = UDim2.new(0, 0, 0, 44)
+        tabBar.BackgroundTransparency = 1
+
+        local tabBtns = {}
+        local tabScrolls = {}
+        local tabNames = (lang == "Русский") and {"Основные", "Расст.", "Задерж.", "Недавние"} or
+                         (lang == "English") and {"Main", "Dist", "Delay", "Recent"} or
+                         {"Основні", "Дист.", "Затримка", "Нещодавні"}
+        local tabCount = #tabNames
+
+        local tabContainer = Instance.new("Frame", main)
+        tabContainer.Size = UDim2.new(1, -16, 1, -90)
+        tabContainer.Position = UDim2.new(0, 8, 0, 88)
+        tabContainer.BackgroundTransparency = 1
+        tabContainer.ClipsDescendants = true
+
+        for i = 1, tabCount do
+            local btn = Instance.new("TextButton", tabBar)
+            btn.Size = UDim2.new(1/tabCount, -4, 1, 0)
+            btn.Position = UDim2.new((i-1)/tabCount, 2, 0, 0)
+            btn.Text = tabNames[i]
+            btn.TextColor3 = Color3.new(1,1,1)
+            btn.TextSize = 13
+            btn.Font = Enum.Font.GothamBold
+            btn.BackgroundColor3 = (i == 1) and Color3.fromRGB(100, 70, 200) or Color3.fromRGB(50, 50, 70)
+            btn.BorderSizePixel = 0
+            btn.AutoButtonColor = false
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
+            Instance.new("UIStroke", btn).Thickness = 1
+            tabBtns[i] = btn
+
+            local scroll = Instance.new("ScrollingFrame", tabContainer)
+            scroll.Size = UDim2.new(1, 0, 1, 0)
+            scroll.Position = UDim2.new(0, 0, 0, 0)
+            scroll.BackgroundTransparency = 1
+            scroll.BorderSizePixel = 0
+            scroll.ScrollBarThickness = 3
+            scroll.ScrollBarImageColor3 = Color3.fromRGB(150, 150, 200)
+            scroll.Visible = (i == 1)
+            scroll.CanvasSize = UDim2.new(0, 0, 0, 140)
+            tabScrolls[i] = scroll
+        end
+
+        local function switchTab(idx)
+            for i, scroll in ipairs(tabScrolls) do
+                scroll.Visible = (i == idx)
+                tabBtns[i].BackgroundColor3 = (i == idx) and Color3.fromRGB(100, 70, 200) or Color3.fromRGB(50, 50, 70)
+            end
+        end
+
+        for i, btn in ipairs(tabBtns) do
+            btn.MouseButton1Click:Connect(function() switchTab(i) end)
+        end
+
+        local y = 12
+        y = addToggle(tabScrolls[1], y, texts.enabled, "Enabled")
+        y = addToggle(tabScrolls[1], y, texts.reteleport, "ReTeleportEnabled")
+        y = addToggle(tabScrolls[1], y, texts.animationsToggle, "AnimationsEnabled")
+        y = addTargetSelector(tabScrolls[1], y)
+        tabScrolls[1].CanvasSize = UDim2.new(0, 0, 0, y + 20)
+
+        y = 12
+        y = addTextBox(tabScrolls[2], y, texts.teleportDist, "TeleportDistance", true)
+        y = addTextBox(tabScrolls[2], y, texts.searchRadius, "GloveSearchRadius", true)
+        y = addTextBox(tabScrolls[2], y, texts.reteleportDist, "ReTeleportDistance", true)
+        tabScrolls[2].CanvasSize = UDim2.new(0, 0, 0, y + 20)
+
+        y = 12
+        y = addTextBox(tabScrolls[3], y, texts.reteleportCooldown, "ReTeleportCooldown", true)
+        y = addTextBox(tabScrolls[3], y, texts.verticalTolerance, "VerticalTolerance", true)
+        logLabel = Instance.new("TextLabel", tabScrolls[3])
+        logLabel.Size = UDim2.new(1, -16, 0, 80)
+        logLabel.Position = UDim2.new(0, 8, 0, y)
+        logLabel.BackgroundColor3 = Color3.fromRGB(15,15,25)
+        logLabel.TextColor3 = Color3.fromRGB(200, 200, 255)
+        logLabel.Font = Enum.Font.Gotham
+        logLabel.TextSize = 11
+        logLabel.TextXAlignment = Enum.TextXAlignment.Left
+        logLabel.TextYAlignment = Enum.TextYAlignment.Top
+        logLabel.TextWrapped = true
+        logLabel.RichText = true
+        Instance.new("UICorner", logLabel).CornerRadius = UDim.new(0,8)
+        Instance.new("UIStroke", logLabel).Thickness = 1
+        y = y + 92
+        createStyledButton(tabScrolls[3], texts.unload, UDim2.new(1, -16, 0, 40),
+            UDim2.new(0, 8, 0, y), Color3.fromRGB(240, 60, 60), function()
+                sg:Destroy()
+                StopAll()
+            end, 16)
+        tabScrolls[3].CanvasSize = UDim2.new(0, 0, 0, y + 50)
+
+        local recentScroll = Instance.new("ScrollingFrame", tabScrolls[4])
+        recentScroll.Size = UDim2.new(1, -16, 0, 1)
+        recentScroll.Position = UDim2.new(0, 8, 0, 12)
+        recentScroll.BackgroundTransparency = 1
+        recentScroll.ScrollBarThickness = 3
+        Instance.new("UIListLayout", recentScroll).Padding = UDim.new(0,6)
+
+        local function refreshRecentTab()
+            for _, child in ipairs(recentScroll:GetChildren()) do
+                if child:IsA("TextButton") then child:Destroy() end
+            end
+            for _, name in ipairs(recentTargets) do
+                local btn = Instance.new("TextButton", recentScroll)
+                btn.Size = UDim2.new(1, 0, 0, 36)
+                btn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+                btn.Text = name
+                btn.TextColor3 = Color3.new(1,1,1)
+                btn.Font = Enum.Font.Gotham
+                btn.TextSize = 14
+                btn.AutoButtonColor = false
+                Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+                btn.MouseButton1Click:Connect(function()
+                    Settings.TargetPlayerName = name
+                    AddLog("Выбрана цель из недавних: " .. name)
+                end)
+            end
+            recentScroll.CanvasSize = UDim2.new(0, 0, 0, #recentTargets * 42 + 10)
+        end
+        refreshRecentTab()
+        tabScrolls[4].CanvasSize = UDim2.new(0, 0, 0, 300)
+
+        switchTab(1)
+
+        task.spawn(function()
+            while not stopScript and sg and sg.Parent do
+                local info = GetTargetGlove()
+                updateStatusIndicator(info)
+                if tabScrolls[4].Visible then
+                    refreshRecentTab()
+                end
+                task.wait(1)
+            end
+        end)
+
+        UserInput_.InputBegan:Connect(function(input, gp)
+            if gp then return end
+            if input.KeyCode == Enum.KeyCode.P then sg:Destroy() StopAll() end
+        end)
+    end
+
+    AddLog(texts.logPrefix)
+end
+
+-- ==============================
+--  ЛАУНЧЕР (исправленный)
+-- ==============================
+local function createLauncher()
+    print("[Launcher] Запуск createLauncher...")
+
+    if launcherGui then launcherGui:Destroy() end
+    launcherGui = Instance.new("ScreenGui")
+    launcherGui.Name = "TeleportGloveLauncher"
+    launcherGui.ResetOnSpawn = false
+
+    local parentGui = PlayerGui
+    if not parentGui then parentGui = CoreGui end
+    launcherGui.Parent = parentGui
+
+    mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
+    mainFrame.BackgroundTransparency = 0.1
+    mainFrame.BorderSizePixel = 2
+    mainFrame.BorderColor3 = Color3.fromRGB(200, 150, 255)
+    mainFrame.Active = true
+    mainFrame.Draggable = true
+
+    local function setSizes(dev)
+        if dev == "PC" then
+            mainFrame.Size = UDim2.new(0, 420, 0, 400)
+            mainFrame.Position = UDim2.new(0.5, -210, 0.5, -200)
+        else
+            mainFrame.Size = UDim2.new(0, 360, 0, 380)
+            mainFrame.Position = UDim2.new(0.5, -180, 0.5, -190)
+        end
+    end
+    setSizes(selectedDevice)
+
+    local L = launcherTexts[selectedLang] or launcherTexts["Русский"]
+
+    Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 16)
+    Instance.new("UIStroke", mainFrame).Thickness = 2
+    local gradient = Instance.new("UIGradient", mainFrame)
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 35, 55)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 35))
+    })
+    mainFrame.Parent = launcherGui
+
+    if TweenService then animateAppear(mainFrame, 0.5) end
+
+    local title = Instance.new("TextLabel", mainFrame)
+    title.Size = UDim2.new(1, 0, 0, 50)
+    title.BackgroundColor3 = Color3.fromRGB(60, 60, 90)
+    title.Text = L.title
+    title.TextColor3 = Color3.new(1,1,1)
+    title.TextSize = selectedDevice == "PC" and 22 or 18
+    title.Font = Enum.Font.GothamBold
+    local tgrad = Instance.new("UIGradient", title)
+    tgrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 50, 200)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(150, 50, 250))
+    })
+
+    local langLabel = Instance.new("TextLabel", mainFrame)
+    langLabel.Size = UDim2.new(0.4, 0, 0, 30)
+    langLabel.Position = UDim2.new(0.1, 0, 0.18, 0)
+    langLabel.BackgroundTransparency = 1
+    langLabel.Text = L.langLabel
+    langLabel.TextColor3 = Color3.new(1,1,1)
+    langLabel.TextSize = selectedDevice == "PC" and 18 or 16
+    langLabel.Font = Enum.Font.GothamBold
+
+    local langBtn = Instance.new("TextButton", mainFrame)
+    langBtn.Size = UDim2.new(0.4, 0, 0, 35)
+    langBtn.Position = UDim2.new(0.55, 0, 0.16, 0)
+    langBtn.Text = selectedLang
+    langBtn.TextColor3 = Color3.new(1,1,1)
+    langBtn.TextSize = selectedDevice == "PC" and 18 or 16
+    langBtn.Font = Enum.Font.GothamBold
+    langBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 140)
+    Instance.new("UICorner", langBtn).CornerRadius = UDim.new(0, 8)
+
+    local langOptions = {"Русский", "English", "Українська"}
+    langBtn.MouseButton1Click:Connect(function()
+        local currentIdx = 1
+        for i, v in ipairs(langOptions) do
+            if v == selectedLang then currentIdx = i break end
+        end
+        currentIdx = currentIdx % #langOptions + 1
+        selectedLang = langOptions[currentIdx]
+        langBtn.Text = selectedLang
+        L = launcherTexts[selectedLang] or launcherTexts["Русский"]
+        title.Text = L.title
+        langLabel.Text = L.langLabel
+        deviceLabel.Text = L.deviceLabel
+        executeBtn.Text = L.execute
+        hint.Text = L.hint
+        resetBtn.Text = L.reset
+        updateBtn.Text = L.update
+        versionLabel.Text = L.version
+        _G.LauncherSettings = { lang = selectedLang, device = selectedDevice }
+    end)
+
+    local deviceLabel = Instance.new("TextLabel", mainFrame)
+    deviceLabel.Size = UDim2.new(0.4, 0, 0, 30)
+    deviceLabel.Position = UDim2.new(0.1, 0, 0.35, 0)
+    deviceLabel.BackgroundTransparency = 1
+    deviceLabel.Text = L.deviceLabel
+    deviceLabel.TextColor3 = Color3.new(1,1,1)
+    deviceLabel.TextSize = selectedDevice == "PC" and 18 or 16
+    deviceLabel.Font = Enum.Font.GothamBold
+
+    local deviceBtn = Instance.new("TextButton", mainFrame)
+    deviceBtn.Size = UDim2.new(0.4, 0, 0, 35)
+    deviceBtn.Position = UDim2.new(0.55, 0, 0.33, 0)
+    deviceBtn.Text = selectedDevice
+    deviceBtn.TextColor3 = Color3.new(1,1,1)
+    deviceBtn.TextSize = selectedDevice == "PC" and 18 or 16
+    deviceBtn.Font = Enum.Font.GothamBold
+    deviceBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 140)
+    Instance.new("UICorner", deviceBtn).CornerRadius = UDim.new(0, 8)
+
+    deviceBtn.MouseButton1Click:Connect(function()
+        if deviceBtn.Text == "PC" then
+            deviceBtn.Text = "Mobile"
+            selectedDevice = "Mobile"
+        else
+            deviceBtn.Text = "PC"
+            selectedDevice = "PC"
+        end
+        setSizes(selectedDevice)
+        _G.LauncherSettings = { lang = selectedLang, device = selectedDevice }
+    end)
+
+    local executeBtn = Instance.new("TextButton", mainFrame)
+    executeBtn.Size = UDim2.new(0.8, 0, 0, 50)
+    executeBtn.Position = UDim2.new(0.1, 0, 0.52, 0)
+    executeBtn.Text = L.execute
+    executeBtn.TextColor3 = Color3.new(1,1,1)
+    executeBtn.TextSize = selectedDevice == "PC" and 20 or 18
+    executeBtn.Font = Enum.Font.GothamBold
+    executeBtn.BackgroundColor3 = Color3.fromRGB(60, 180, 60)
+    Instance.new("UICorner", executeBtn).CornerRadius = UDim.new(0, 10)
+
+    executeBtn.MouseButton1Click:Connect(function()
+        animateDisappear(mainFrame, function()
+            launcherGui:Destroy()
+            startMainScript(selectedLang, selectedDevice)
+        end)
+    end)
+
+    local resetBtn = Instance.new("TextButton", mainFrame)
+    resetBtn.Size = UDim2.new(0.35, 0, 0, 30)
+    resetBtn.Position = UDim2.new(0.1, 0, 0.68, 0)
+    resetBtn.Text = L.reset
+    resetBtn.TextColor3 = Color3.new(1,1,1)
+    resetBtn.TextSize = 14
+    resetBtn.Font = Enum.Font.GothamBold
+    resetBtn.BackgroundColor3 = Color3.fromRGB(180, 130, 50)
+    Instance.new("UICorner", resetBtn).CornerRadius = UDim.new(0, 8)
+    resetBtn.MouseButton1Click:Connect(function()
+        selectedLang = "Русский"
+        selectedDevice = "PC"
+        langBtn.Text = selectedLang
+        deviceBtn.Text = selectedDevice
+        setSizes("PC")
+        L = launcherTexts["Русский"]
+        title.Text = L.title
+        langLabel.Text = L.langLabel
+        deviceLabel.Text = L.deviceLabel
+        executeBtn.Text = L.execute
+        hint.Text = L.hint
+        resetBtn.Text = L.reset
+        updateBtn.Text = L.update
+        versionLabel.Text = L.version
+        _G.LauncherSettings = { lang = selectedLang, device = selectedDevice }
+    end)
+
+    local function AddLog(msg)
+        print("[TeleportGlove] " .. msg)
+    end
+
+    local updateBtn = Instance.new("TextButton", mainFrame)
+    updateBtn.Size = UDim2.new(0.35, 0, 0, 30)
+    updateBtn.Position = UDim2.new(0.55, 0, 0.68, 0)
+    updateBtn.Text = L.update
+    updateBtn.TextColor3 = Color3.new(1,1,1)
+    updateBtn.TextSize = 14
+    updateBtn.Font = Enum.Font.GothamBold
+    updateBtn.BackgroundColor3 = Color3.fromRGB(50, 130, 180)
+    Instance.new("UICorner", updateBtn).CornerRadius = UDim.new(0, 8)
+    updateBtn.MouseButton1Click:Connect(function()
+        local success, result = pcall(function()
+            return game:HttpGet("https://raw.githubusercontent.com/your-repo/version.txt")
+        end)
+        if success and result then
+            local latestVersion = result:match("v?([%d%.]+)")
+            if latestVersion and latestVersion ~= "4.6" then
+                AddLog(string.format(L.updateAvailable, "v"..latestVersion))
+            else
+                AddLog(L.updateLatest)
+            end
+        else
+            AddLog(L.updateError)
+        end
+    end)
+
+    local closeBtn = Instance.new("TextButton", mainFrame)
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -40, 0, 8)
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = Color3.new(1,1,1)
+    closeBtn.TextSize = 18
+    closeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
+    closeBtn.MouseButton1Click:Connect(function()
+        animateDisappear(mainFrame, function()
+            launcherGui:Destroy()
+        end)
+    end)
+
+    local hint = Instance.new("TextLabel", mainFrame)
+    hint.Size = UDim2.new(1, 0, 0, 20)
+    hint.Position = UDim2.new(0, 0, 0.85, 0)
+    hint.BackgroundTransparency = 1
+    hint.Text = L.hint
+    hint.TextColor3 = Color3.fromRGB(180, 180, 220)
+    hint.TextSize = 11
+    hint.Font = Enum.Font.Gotham
+    hint.TextXAlignment = Enum.TextXAlignment.Center
+
+    local versionLabel = Instance.new("TextLabel", mainFrame)
+    versionLabel.Size = UDim2.new(1, 0, 0, 20)
+    versionLabel.Position = UDim2.new(0, 0, 0.92, 0)
+    versionLabel.BackgroundTransparency = 1
+    versionLabel.Text = L.version
+    versionLabel.TextColor3 = Color3.fromRGB(140, 140, 180)
+    versionLabel.TextSize = 10
+    versionLabel.Font = Enum.Font.Gotham
+    versionLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+    local function addHover(btn, hoverColor, normalColor)
+        if not TweenService then return end
+        btn.MouseEnter:Connect(function()
+            TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = hoverColor}):Play()
+        end)
+        btn.MouseLeave:Connect(function()
+            TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = normalColor}):Play()
+        end)
+    end
+    addHover(executeBtn, Color3.fromRGB(100, 220, 100), executeBtn.BackgroundColor3)
+    addHover(langBtn, Color3.fromRGB(120, 120, 200), langBtn.BackgroundColor3)
+    addHover(deviceBtn, Color3.fromRGB(120, 120, 200), deviceBtn.BackgroundColor3)
+    addHover(closeBtn, Color3.fromRGB(150, 50, 50), closeBtn.BackgroundColor3)
+    addHover(resetBtn, Color3.fromRGB(200, 160, 80), resetBtn.BackgroundColor3)
+    addHover(updateBtn, Color3.fromRGB(80, 160, 220), updateBtn.BackgroundColor3)
+
+    local dragging, dragStart, startPos
+    title.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = mainFrame.Position
+        end
+    end)
+    title.InputEnded:Connect(function() dragging = false end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+                                           startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    print("[Launcher] Все элементы добавлены, GUI готов")
+    print("🚀 Launcher loaded. Auto-device: " .. selectedDevice)
+end
+
+createLauncher()
