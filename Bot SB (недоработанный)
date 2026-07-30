@@ -1,0 +1,2007 @@
+-- Mahoraga v5.1 ADAPTIVE EDGE MASTER – умная навигация + обход препятствий
+
+repeat task.wait() until game:IsLoaded()
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+local PathfindingService = game:GetService("PathfindingService")
+local DataStoreService = game:GetService("DataStoreService")
+local HttpService = game:GetService("HttpService")
+
+local VirtualInputManager = nil
+pcall(function() VirtualInputManager = game:GetService("VirtualInputManager") end)
+
+local hasFireTouch = pcall(function() return firetouchinterest end) and firetouchinterest ~= nil
+
+local State = {
+    Phase = "ToPoint",
+    LastTargetName = nil, LastTargetPlayer = nil, LastTargetIsNpc = false,
+    LastTargetSwitchTime = 0, LastDodgeTime = 0, AllyCheckTimer = 0, LastAuraTeleport = 0,
+    LastCollectScan = 0, LastStrafeDir = nil, LastStrafeUpdate = 0, LastSlapTime = 0,
+    LastMoveUpdate = 0, LastChatMessage = 0, TacticMode = "balanced", LastHitAndRun = 0,
+    ZoneCenter = nil, LastZoneUpdate = 0, LastAbilityAnalyze = 0, AbilityMemory = {},
+    PatrolTarget = nil, LastPatrolUpdate = 0,
+    EnemyLastAbilityTime = {}, EnemyAttackIntervals = {}, BaitEdgeActive = false, LastFeintAttempt = 0,
+    MimicData = {}, EnemyPatterns = {},
+    PrimaryThreat = nil, ThreatLevels = {},
+    CombatLog = {},
+    LastAdaptationTime = 0,
+    LastEvaluation = 0,
+    RoundStartTime = 0,
+    LastStatBoost = 0,
+    LastFlankTime = 0,
+    StrafeNextChange = 0,
+    StrafeDirection = Vector3.new(1,0,0),
+    StrafeJumpCooldown = 0,
+}
+
+local Stats = {
+    Slaps = 0, Deaths = 0, LastKiller = nil, DuelsWon = 0, DuelsLost = 0,
+    HitsLanded = 0, HitsReceived = 0, RoundsPlayed = 0,
+}
+local EnemyMemory = {}
+local TrainingData = {
+    opponentPatterns = {}, myMistakes = {}, successfulTactics = {}, zoneStats = {},
+    lastDeathTime = 0, lastKillTime = 0, totalAbilitiesUsed = 0, successfulDodges = 0,
+}
+
+-- ===================== СЛОТЫ СОХРАНЕНИЙ =====================
+local currentSaveSlot = 1
+local brainStores = {}
+for i = 1, 3 do
+    pcall(function() brainStores[i] = DataStoreService:GetDataStore("MahoragaBrain_v5.1_Slot"..i) end)
+end
+
+local BrainStorage = {}
+function BrainStorage.saveToDataStore(slot)
+    slot = slot or currentSaveSlot
+    local store = brainStores[slot]
+    if not store then return false end
+    local ok, _ = pcall(function()
+        local data = HttpService:JSONEncode({
+            EnemyMemory = EnemyMemory,
+            TrainingData = TrainingData,
+            AbilityMemory = State.AbilityMemory,
+            MimicData = State.MimicData,
+            ThreatLevels = State.ThreatLevels,
+            CombatLog = State.CombatLog,
+            Stats = Stats,
+            Settings = {
+                MinDistance = Settings.MinDistance,
+                FlankEnabled = Settings.FlankEnabled,
+                CameraLock = Settings.CameraLock,
+                StrafeEnabled = Settings.StrafeEnabled,
+                UseAbility = Settings.UseAbility,
+                Allies = Settings.Allies,
+                AdaptationEnabled = Settings.AdaptationEnabled,
+                AdaptationSpeed = Settings.AdaptationSpeed,
+                AggroRange = Settings.AggroRange,
+            },
+            timestamp = tick(),
+            version = "5.1",
+        })
+        store:SetAsync(LocalPlayer.UserId, data)
+    end)
+    return ok
+end
+function BrainStorage.loadFromDataStore(slot)
+    slot = slot or currentSaveSlot
+    local store = brainStores[slot]
+    if not store then return nil end
+    local ok, data = pcall(function() return store:GetAsync(LocalPlayer.UserId) end)
+    if ok and data then
+        local dec = HttpService:JSONDecode(data)
+        if dec and dec.version == "5.1" then return dec end
+    end
+    return nil
+end
+function BrainStorage.saveToFile(slot)
+    slot = slot or currentSaveSlot
+    local ok = pcall(function()
+        if writefile then
+            local data = HttpService:JSONEncode({
+                EnemyMemory = EnemyMemory,
+                TrainingData = TrainingData,
+                AbilityMemory = State.AbilityMemory,
+                MimicData = State.MimicData,
+                ThreatLevels = State.ThreatLevels,
+                CombatLog = State.CombatLog,
+                Stats = Stats,
+                Settings = {
+                    MinDistance = Settings.MinDistance,
+                    FlankEnabled = Settings.FlankEnabled,
+                    CameraLock = Settings.CameraLock,
+                    StrafeEnabled = Settings.StrafeEnabled,
+                    UseAbility = Settings.UseAbility,
+                    Allies = Settings.Allies,
+                    AdaptationEnabled = Settings.AdaptationEnabled,
+                    AdaptationSpeed = Settings.AdaptationSpeed,
+                    AggroRange = Settings.AggroRange,
+                },
+                timestamp = tick(),
+                version = "5.1",
+            })
+            writefile("MahoragaBrain_Slot"..slot..".json", data)
+        end
+    end)
+    return ok
+end
+function BrainStorage.loadFromFile(slot)
+    slot = slot or currentSaveSlot
+    local ok, content = pcall(function()
+        if readfile then return readfile("MahoragaBrain_Slot"..slot..".json") end
+    end)
+    if ok and content then
+        local dec = HttpService:JSONDecode(content)
+        if dec and dec.version == "5.1" then return dec end
+    end
+    return nil
+end
+function BrainStorage.save(slot)
+    slot = slot or currentSaveSlot
+    local ds = BrainStorage.saveToDataStore(slot)
+    local fi = BrainStorage.saveToFile(slot)
+    if ds or fi then print("🧠 Мозг Махораги сохранён в слот "..slot) end
+end
+function BrainStorage.load(slot)
+    slot = slot or currentSaveSlot
+    local data = BrainStorage.loadFromDataStore(slot) or BrainStorage.loadFromFile(slot)
+    if data then
+        EnemyMemory = data.EnemyMemory or EnemyMemory
+        TrainingData = data.TrainingData or TrainingData
+        State.AbilityMemory = data.AbilityMemory or State.AbilityMemory
+        State.MimicData = data.MimicData or State.MimicData
+        State.ThreatLevels = data.ThreatLevels or State.ThreatLevels
+        State.CombatLog = data.CombatLog or State.CombatLog
+        Stats = data.Stats or Stats
+        if data.Settings then
+            Settings.MinDistance = data.Settings.MinDistance or Settings.MinDistance
+            Settings.FlankEnabled = data.Settings.FlankEnabled or Settings.FlankEnabled
+            Settings.CameraLock = data.Settings.CameraLock or Settings.CameraLock
+            Settings.StrafeEnabled = data.Settings.StrafeEnabled or Settings.StrafeEnabled
+            Settings.UseAbility = data.Settings.UseAbility or Settings.UseAbility
+            Settings.Allies = data.Settings.Allies or Settings.Allies
+            Settings.AdaptationEnabled = data.Settings.AdaptationEnabled
+            if Settings.AdaptationEnabled == nil then Settings.AdaptationEnabled = true end
+            Settings.AdaptationSpeed = data.Settings.AdaptationSpeed or 1
+            Settings.AggroRange = data.Settings.AggroRange or 150
+        end
+        currentSaveSlot = slot
+        print("🧠 Мозг Махораги загружен из слота "..slot)
+        return true
+    else
+        print("🆕 Слот "..slot.." пуст")
+        return false
+    end
+end
+
+local lastAutoSave = 0
+local function autoSave()
+    if tick() - lastAutoSave < 60 then return end
+    lastAutoSave = tick()
+    BrainStorage.save()
+end
+
+local function learnFromExperience(event, data)
+    if event == "enemy_killed_us" then
+        TrainingData.lastDeathTime = tick()
+        BrainStorage.save()
+    elseif event == "we_killed_enemy" then
+        TrainingData.lastKillTime = tick()
+        if Settings.DuelTrainingMode then Stats.DuelsWon = Stats.DuelsWon + 1 end
+        BrainStorage.save()
+    elseif event == "ability_used" then
+        TrainingData.totalAbilitiesUsed = (TrainingData.totalAbilitiesUsed or 0) + 1
+    elseif event == "dodge_successful" then
+        TrainingData.successfulDodges = (TrainingData.successfulDodges or 0) + 1
+    end
+end
+
+-- ===================== НАСТРОЙКИ =====================
+local Settings = {
+    Enabled = false,
+    AttackRange = 12, AggroRange = 150, WalkSpeed = 24,
+    TargetPlayer = "", PortalPosition = Vector3.new(-1210, 330, 3), TeleportDelay = 2,
+    PortalActivationDistance = 5, StuckTimeout = 2, ObstacleCheckDistance = 8,
+    ObstacleSideMoveDuration = 0.5, UsePathfinding = true, AutoAbility = false,
+    AbilityInterval = 5, AvoidDangerous = true, DangerousGloves = "Killstreak,God,Error,OVERKILL",
+    Whitelist = "", Blacklist = "", SwitchDistanceThreshold = 5, SwitchCooldown = 1.0,
+    UpdateDelay = 0.2,
+    JumpBeforeAttack = false, JumpDelay = 0.5, AttackNPC = false,
+    DodgeEnabled = false, DodgeDistance = 15, DodgeCooldown = 3, AllyHelpEnabled = false,
+    AllyHelpRange = 30, ShowTargetInfo = false, StealthMode = false, StealthEnemyThreshold = 3,
+    PriorityTargets = "", MapAdaptEnabled = true, HumanizeEnabled = false, HumanizeMinDelay = 0.1,
+    HumanizeMaxDelay = 0.4, HumanizeMoveError = 2, HumanizeKeyPressMin = 0.05,
+    HumanizeKeyPressMax = 0.15, NoclipEnabled = false,
+    ProfilesEnabled = false,
+    Profiles = {
+        { name = "Атака", glove = "", conditionType = "enemyCount", conditionValue = 3, priority = 1 },
+        { name = "Защита", glove = "", conditionType = "health", conditionValue = 50, priority = 2 },
+        { name = "Фарм", glove = "", conditionType = "distance", conditionValue = 30, priority = 3 },
+        { name = "Слот 4", glove = "", conditionType = "none", conditionValue = 0, priority = 4 },
+        { name = "Слот 5", glove = "", conditionType = "none", conditionValue = 0, priority = 5 }
+    },
+    SafeEdgeCheck = true, MaxYDifference = 10,
+    CapsLockControl = false, StrafeEnabled = false, StrafeRadius = 8,
+    PredictionEnabled = false, PredictionFactor = 0.5, ImprovedDodge = false,
+    AbilityComboEnabled = false,
+    EnemyMemoryEnabled = false,
+    HumanMistakes = false,
+    AdaptiveAggression = false,
+    NoSpawnKill = false,
+    FinishLowHP = false,
+    HitAndRunEnabled = false, HitAndRunHPThreshold = 60,
+    ZoneControlEnabled = false, ZoneControlRadius = 30,
+    SmartAbilitiesEnabled = false, DuelTrainingMode = false, DuelOpponent = "",
+    LearningRate = 0.4,
+    Difficulty = "Средне",
+    EdgePushEnabled = false, EdgePushDistance = 5,
+    AdvancedDodgeEnabled = false,
+    FeintEnabled = false,
+    BaitEdgeEnabled = false,
+    AdaptiveCooldownEnabled = false,
+    EnemyAbilityCooldown = 8,
+    PatternInterruptEnabled = false,
+    BerserkMode = false,
+    MimicMode = false,
+    EdgeJumpCounterEnabled = false,
+    ThreatSystemEnabled = false,
+    RealTimeAdaptation = false,
+    CameraLock = false,
+    MinDistance = 5,
+    FlankEnabled = false,
+    Allies = "",
+    UseAbility = false,
+    AdaptationEnabled = true,
+    AdaptationSpeed = 1,
+}
+
+-- ===================== ИГРОВЫЕ РЕЖИМЫ =====================
+local Gamemodes = {
+    NoSlapTrading = {
+        Name = "NoSlapTrading",
+        PlaceId = nil,
+        Enabled = true,
+        DisplayName = "NO SLAP TRADING\nGAMEMODE",
+        Description = "No more slapping each other",
+        Color = Color3.fromRGB(123, 255, 0),
+    },
+    PassivesOnly = {
+        Name = "PassivesOnly",
+        PlaceId = nil,
+        Enabled = true,
+        DisplayName = "PASSIVES ONLY\nGAMEMODE",
+        Description = "No more stinky E abilities",
+        Color = Color3.fromRGB(131, 115, 255),
+    },
+}
+
+local FallbackGamemode = "MainPlace"
+
+local lastJumpTime = 0
+local humanizeLastAction = 0
+
+-- ===================== БАЗОВЫЕ ФУНКЦИИ =====================
+local function isOnArena()
+    local char = LocalPlayer.Character; if not char then return false end
+    local root = char:FindFirstChild("HumanoidRootPart"); if not root then return false end
+    local y = root.Position.Y; return not (y >= 320 and y <= 340) and y >= -10
+end
+local function splitList(str)
+    local t = {}
+    for part in (str .. ","):gmatch("([^,]*),") do
+        local trimmed = part:match("^%s*(.-)%s*$")
+        if trimmed ~= "" then t[#t+1] = trimmed end
+    end
+    return t
+end
+local function isDangerousGlove(player)
+    if not player.Character then return false end
+    local tool = player.Character:FindFirstChildOfClass("Tool")
+    if not tool then return false end
+    local name = tool.Name:lower()
+    for _, kw in ipairs(splitList(Settings.DangerousGloves)) do
+        if name:find(kw:lower()) then return true end
+    end
+    return false
+end
+local function isWhitelisted(player)
+    if Settings.Whitelist == "" then return false end
+    for _, n in ipairs(splitList(Settings.Whitelist)) do
+        if player.Name:lower() == n:lower() then return true end
+    end
+    return false
+end
+local function isBlacklisted(player)
+    if Settings.Blacklist == "" then return true end
+    for _, n in ipairs(splitList(Settings.Blacklist)) do
+        if player.Name:lower() == n:lower() then return true end
+    end
+    return false
+end
+local function isAlly(player)
+    if Settings.Allies == "" then return false end
+    for _, n in ipairs(splitList(Settings.Allies)) do
+        if player.Name:lower() == n:lower() then return true end
+    end
+    return false
+end
+local function isOnGround(player)
+    local myChar = LocalPlayer.Character; if not myChar then return false end
+    local myRoot = myChar:FindFirstChild("HumanoidRootPart"); if not myRoot then return false end
+    local targetChar = player.Character; if not targetChar then return false end
+    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart"); if not targetRoot then return false end
+    return math.abs(myRoot.Position.Y - targetRoot.Position.Y) <= Settings.MaxYDifference
+end
+local function isEdgeAhead(distance, direction)
+    local char = LocalPlayer.Character; if not char then return false end
+    local root = char:FindFirstChild("HumanoidRootPart"); if not root then return false end
+    local forward = direction or root.CFrame.LookVector
+    local checkPos = root.Position + forward * distance
+    local rayOrigin = checkPos + Vector3.new(0, 2, 0)
+    local rayDir = Vector3.new(0, -10, 0)
+    local params = RaycastParams.new(); params.FilterType = Enum.RaycastFilterType.Blacklist; params.FilterDescendantsInstances = {char}
+    local hit = Workspace:Raycast(rayOrigin, rayDir, params)
+    return hit == nil
+end
+local function isGroundBelow(pos)
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local rayOrigin = pos + Vector3.new(0, 1, 0)
+    local rayDir = Vector3.new(0, -5, 0)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = {char}
+    local hit = Workspace:Raycast(rayOrigin, rayDir, params)
+    return hit ~= nil
+end
+local function findSafePositionNear(targetPos)
+    local char = LocalPlayer.Character; if not char then return targetPos end
+    local root = char:FindFirstChild("HumanoidRootPart"); if not root then return targetPos end
+    if isGroundBelow(targetPos) then return targetPos end
+    for _, offset in ipairs({Vector3.new(2,0,0), Vector3.new(-2,0,0), Vector3.new(0,0,2), Vector3.new(0,0,-2), Vector3.new(4,0,0), Vector3.new(-4,0,0), Vector3.new(0,0,4), Vector3.new(0,0,-4)}) do
+        local test = targetPos + offset
+        if isGroundBelow(test) then return test end
+    end
+    local dir = (root.Position - targetPos).Unit
+    if dir.Magnitude < 0.1 then dir = Vector3.new(1,0,0) end
+    local backPos = targetPos + dir * 5
+    if isGroundBelow(backPos) then return backPos end
+    return targetPos
+end
+local function applyNoclip()
+    if not Settings.NoclipEnabled then return end
+    local char = LocalPlayer.Character; if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = false end end
+end
+LocalPlayer.CharacterAdded:Connect(function()
+    if Settings.NoclipEnabled then task.wait(0.1); applyNoclip() end
+end)
+local function isHighPlatform()
+    local char = LocalPlayer.Character; if not char then return false end
+    local root = char:FindFirstChild("HumanoidRootPart"); if not root then return false end
+    return root.Position.Y > 200
+end
+local function humanizeAction(actionType)
+    if not Settings.HumanizeEnabled then return end
+    local delay = Settings.HumanizeMinDelay + math.random() * (Settings.HumanizeMaxDelay - Settings.HumanizeMinDelay)
+    task.wait(delay); humanizeLastAction = tick()
+end
+local function shouldMakeMistake(probability)
+    if not Settings.HumanMistakes then return false end
+    return math.random() < probability
+end
+local function humanizedMoveTo(targetPos)
+    if not Settings.HumanizeEnabled then return targetPos end
+    local offset = Vector3.new(
+        math.random(-Settings.HumanizeMoveError, Settings.HumanizeMoveError) / 10,
+        0,
+        math.random(-Settings.HumanizeMoveError, Settings.HumanizeMoveError) / 10
+    )
+    return targetPos + offset
+end
+
+-- ===================== ПРЕДСКАЗАНИЕ ДВИЖЕНИЯ =====================
+local function getPredictedPosition(targetRoot)
+    if not Settings.PredictionEnabled then return targetRoot.Position end
+    local vel = targetRoot.Velocity or targetRoot.AssemblyLinearVelocity or Vector3.zero
+    return targetRoot.Position + vel * Settings.PredictionFactor
+end
+
+-- ===================== СТРЕЙФ =====================
+local function performStrafe(targetPos, myRoot, humanoid, targetRoot)
+    if not Settings.StrafeEnabled then return end
+
+    local now = tick()
+    local dist = (myRoot.Position - targetPos).Magnitude
+    local minDist = Settings.MinDistance or 5
+
+    if now >= State.StrafeNextChange then
+        State.StrafeNextChange = now + 0.2 + math.random() * 0.2
+        local dirToTarget = (targetPos - myRoot.Position).Unit
+        if dirToTarget.Magnitude == 0 then dirToTarget = Vector3.new(1,0,0) end
+        local rightDir = dirToTarget:Cross(Vector3.yAxis).Unit
+        local backDir = -dirToTarget
+
+        local choices = {}
+        local function addIfSafe(dir)
+            local testPos = myRoot.Position + dir * 3
+            if isGroundBelow(testPos) then
+                table.insert(choices, dir)
+            end
+        end
+        addIfSafe(rightDir)
+        addIfSafe(-rightDir)
+        if dist < Settings.AttackRange * 0.8 then
+            addIfSafe((backDir + rightDir).Unit)
+            addIfSafe((backDir - rightDir).Unit)
+        end
+        if dist > minDist then
+            addIfSafe((dirToTarget + rightDir).Unit)
+            addIfSafe((dirToTarget - rightDir).Unit)
+        end
+        addIfSafe(dirToTarget)
+        addIfSafe(backDir)
+
+        if #choices > 0 then
+            State.StrafeDirection = choices[math.random(#choices)]
+        else
+            State.StrafeDirection = dirToTarget
+        end
+    end
+
+    humanoid:Move(State.StrafeDirection * (Settings.WalkSpeed * 0.5), false)
+    myRoot.CFrame = CFrame.lookAt(myRoot.Position, targetPos)
+end
+
+-- ===================== СБРОС СОСТОЯНИЙ ПРИ РЕСПАВНЕ =====================
+LocalPlayer.CharacterAdded:Connect(function(char)
+    State.LastSlapTime = 0
+    State.LastFlankTime = 0
+    State.StrafeNextChange = 0
+    State.StrafeDirection = Vector3.new(1,0,0)
+    State.StrafeJumpCooldown = 0
+    State.RoundStartTime = tick()
+    State.LastStatBoost = tick()
+    State.TacticMode = "balanced"
+    if Settings.NoclipEnabled then applyNoclip() end
+end)
+
+-- ===================== ЗОНАЛЬНЫЙ КОНТРОЛЬ =====================
+local function updateZoneControl()
+    if not Settings.ZoneControlEnabled then return end
+    if tick() - State.LastZoneUpdate < 2 then return end
+    State.LastZoneUpdate = tick()
+    local char = LocalPlayer.Character; if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart"); if not root then return end
+    local totalPos = Vector3.zero; local count = 0
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            totalPos = totalPos + player.Character.HumanoidRootPart.Position
+            count = count + 1
+        end
+    end
+    if count > 0 then State.ZoneCenter = totalPos / count else State.ZoneCenter = Vector3.new(-1210, 330, 3) end
+    if State.ZoneCenter then
+        local enemiesNearCenter = 0
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                if hrp and (hrp.Position - State.ZoneCenter).Magnitude < Settings.ZoneControlRadius then
+                    enemiesNearCenter = enemiesNearCenter + 1
+                end
+            end
+        end
+        if enemiesNearCenter > 2 then
+            local offset = Vector3.new(math.random(-1,1), 0, math.random(-1,1)).Unit * Settings.ZoneControlRadius * 0.7
+            State.ZoneCenter = State.ZoneCenter + offset
+        end
+    end
+end
+local function isInZone(pos)
+    if not Settings.ZoneControlEnabled or not State.ZoneCenter then return true end
+    return (pos - State.ZoneCenter).Magnitude <= Settings.ZoneControlRadius
+end
+local function getZonePosition()
+    if not Settings.ZoneControlEnabled or not State.ZoneCenter then return nil end
+    local char = LocalPlayer.Character; if not char then return nil end
+    local root = char:FindFirstChild("HumanoidRootPart"); if not root then return nil end
+    if not isInZone(root.Position) then
+        local dirToZone = (State.ZoneCenter - root.Position).Unit
+        return State.ZoneCenter - dirToZone * Settings.ZoneControlRadius * 0.5
+    end
+    return nil
+end
+
+-- ===================== ТАКТИКА УДАР-ОТХОД =====================
+local function shouldHitAndRun(enemy)
+    if not Settings.HitAndRunEnabled then return false end
+    local char = LocalPlayer.Character; if not char then return false end
+    local hum = char:FindFirstChildOfClass("Humanoid"); if not hum then return false end
+    local myHP = (hum.Health / hum.MaxHealth) * 100
+    if isDangerousGlove(enemy) then return true end
+    if myHP < Settings.HitAndRunHPThreshold then return true end
+    if Settings.EnemyMemoryEnabled and EnemyMemory[enemy.Name] then
+        local totalDeaths = 0
+        for _, count in pairs(EnemyMemory[enemy.Name].deathsFrom or {}) do totalDeaths = totalDeaths + count end
+        if totalDeaths >= 2 then return true end
+    end
+    return false
+end
+local function executeHitAndRun(targetPos)
+    local char = LocalPlayer.Character; if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid"); local root = char:FindFirstChild("HumanoidRootPart"); local tool = char:FindFirstChildOfClass("Tool")
+    if not humanoid or not root or not tool then return end
+    humanoid.WalkSpeed = Settings.WalkSpeed * 1.3
+    humanoid:MoveTo(targetPos)
+    local timeout = tick() + 1.5
+    while tick() < timeout do if (root.Position - targetPos).Magnitude < Settings.AttackRange then break end; task.wait(0.1) end
+    tool:Activate(); Stats.Slaps = Stats.Slaps + 1; Stats.HitsLanded = Stats.HitsLanded + 1; State.LastSlapTime = tick()
+    local retreatDir = (root.Position - targetPos).Unit
+    if retreatDir.Magnitude == 0 then retreatDir = -humanoid.MoveDirection.Unit end
+    if retreatDir.Magnitude == 0 then retreatDir = Vector3.new(1,0,0) end
+    local retreatPos = root.Position + retreatDir * Settings.AttackRange * 2
+    humanoid:MoveTo(retreatPos); task.wait(0.5); humanoid.WalkSpeed = Settings.WalkSpeed; State.LastHitAndRun = tick()
+    if Settings.DuelTrainingMode then TrainingData.successfulTactics.hitAndRun = (TrainingData.successfulTactics.hitAndRun or 0) + 1 end
+end
+
+-- ===================== УМНЫЙ ТАЙМИНГ СПОСОБНОСТЕЙ =====================
+local function analyzeAbilityMoment()
+    if not Settings.SmartAbilitiesEnabled then return end
+    if tick() - State.LastAbilityAnalyze < 1 then return end
+    State.LastAbilityAnalyze = tick()
+    local char = LocalPlayer.Character; if not char then return end
+    local tool = char:FindFirstChild("Ability") or char:FindFirstChildOfClass("Tool")
+    if not tool then return end
+    local abilityName = tool.Name
+    if not State.AbilityMemory[abilityName] then
+        State.AbilityMemory[abilityName] = {
+            usedAfterDodge = 0, usedAfterSlap = 0, usedWhileEnemyAttacking = 0,
+            usedFromDistance = 0, totalUses = 0, bestMoment = "afterSlap",
+        }
+    end
+    local mem = State.AbilityMemory[abilityName]
+    local moment = "afterSlap"
+    if tick() - State.LastDodgeTime < 0.5 then moment = "afterDodge"
+    elseif State.LastTargetPlayer and State.LastTargetPlayer.Character then
+        local enemyChar = State.LastTargetPlayer.Character
+        local tool = enemyChar:FindFirstChildOfClass("Tool")
+        if tool and tool.Enabled then moment = "whileEnemyAttacking" end
+    end
+    if moment == "afterDodge" then mem.usedAfterDodge = (mem.usedAfterDodge or 0) + 1
+    elseif moment == "afterSlap" then mem.usedAfterSlap = (mem.usedAfterSlap or 0) + 1
+    elseif moment == "whileEnemyAttacking" then mem.usedWhileEnemyAttacking = (mem.usedWhileEnemyAttacking or 0) + 1
+    elseif moment == "fromDistance" then mem.usedFromDistance = (mem.usedFromDistance or 0) + 1 end
+    mem.totalUses = mem.totalUses + 1
+    local bestCount = 0
+    for m, count in pairs({afterDodge = mem.usedAfterDodge or 0, afterSlap = mem.usedAfterSlap or 0, whileEnemyAttacking = mem.usedWhileEnemyAttacking or 0, fromDistance = mem.usedFromDistance or 0}) do
+        if count > bestCount then bestCount = count; mem.bestMoment = m end
+    end
+end
+local function trySmartAbility()
+    if not Settings.SmartAbilitiesEnabled then return end
+    if not (Settings.AutoAbility or Settings.UseAbility) then return end
+    if tick() - abilityTimer < Settings.AbilityInterval then return end
+    local char = LocalPlayer.Character; if not char then return end
+    local tool = char:FindFirstChild("Ability") or char:FindFirstChildOfClass("Tool")
+    if not tool then return end
+    local abilityName = tool.Name
+    local mem = State.AbilityMemory[abilityName]
+    if not mem then tool:Activate(); abilityTimer = tick(); learnFromExperience("ability_used", {}); return end
+    local shouldUse = false
+    if mem.bestMoment == "afterDodge" and tick() - State.LastDodgeTime < 1 then shouldUse = true
+    elseif mem.bestMoment == "afterSlap" and tick() - State.LastSlapTime < 0.5 then shouldUse = true
+    elseif mem.bestMoment == "whileEnemyAttacking" and State.LastTargetPlayer then
+        local enemyChar = State.LastTargetPlayer.Character
+        if enemyChar then
+            local enemyTool = enemyChar:FindFirstChildOfClass("Tool")
+            if enemyTool and enemyTool.Enabled then shouldUse = true end
+        end
+    end
+    if shouldUse then tool:Activate(); abilityTimer = tick(); learnFromExperience("ability_used", {}); analyzeAbilityMoment() end
+end
+
+-- ===================== ОБХОД ПРЕПЯТСТВИЙ (старый, без pathfinding) =====================
+local function smartMoveTo(targetPos, checkEdge)
+    if checkEdge == nil then checkEdge = Settings.SafeEdgeCheck end
+    local char = LocalPlayer.Character; if not char then return false end
+    local humanoid = char:FindFirstChildOfClass("Humanoid"); local root = char:FindFirstChild("HumanoidRootPart")
+    if not humanoid or not root then return false end
+    humanoid.WalkSpeed = Settings.WalkSpeed; humanoid.Sit = false
+
+    local dirToTarget = (targetPos - root.Position).Unit
+    if dirToTarget.Magnitude < 0.01 then return true end
+
+    if not isGroundBelow(targetPos) then
+        targetPos = findSafePositionNear(targetPos)
+    end
+
+    if checkEdge and isEdgeAhead(4, dirToTarget) then
+        local right = dirToTarget:Cross(Vector3.yAxis).Unit
+        local back = -dirToTarget
+        local alternatives = { right, -right, (back + right).Unit, (back - right).Unit }
+        local bestDir = nil
+        for _, dir in ipairs(alternatives) do
+            local testPos = root.Position + dir * 5
+            if isGroundBelow(testPos) and not isEdgeAhead(4, dir) then
+                bestDir = dir
+                break
+            end
+        end
+        if bestDir then
+            humanoid:MoveTo(root.Position + bestDir * 8)
+        else
+            humanoid:MoveTo(root.Position + back * 5)
+        end
+        return false
+    end
+
+    humanoid:MoveTo(targetPos)
+    local startTime = tick()
+    while (root.Position - targetPos).Magnitude > 1 and tick() - startTime < 5 do
+        if not Settings.Enabled or not isOnArena() then return false end
+        if root.Velocity.Y < -50 then
+            humanoid:Move(Vector3.zero, true); humanoid.Jump = true; return false
+        end
+        if checkEdge and isEdgeAhead(2, dirToTarget) then
+            humanoid:Move(Vector3.zero, true)
+            return false
+        end
+
+        -- Проверка на перепрыгиваемое препятствие
+        local rayOrigin = root.Position + Vector3.new(0, 1, 0)
+        local rayDir = dirToTarget * 4
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Blacklist
+        params.FilterDescendantsInstances = {char}
+        local hit = Workspace:Raycast(rayOrigin, rayDir, params)
+        if hit then
+            local obstacle = hit.Instance
+            if obstacle and obstacle:IsA("BasePart") then
+                local height = obstacle.Size.Y
+                if height <= 5 and humanoid.FloorMaterial ~= Enum.Material.Air then
+                    humanoid.Jump = true
+                end
+            end
+        end
+
+        task.wait(0.2)
+    end
+    humanoid:Move(Vector3.zero, true)
+    return true
+end
+
+-- ===================== НАВИГАЦИЯ С ПОИСКОМ ПУТИ =====================
+local function isPathClear(targetPos)
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return false end
+
+    local rayOrigin = root.Position
+    local rayDir = (targetPos - root.Position).Unit * 5  -- луч на 5 метров
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = {char}
+    local hit = Workspace:Raycast(rayOrigin, rayDir, params)
+    if hit then return false end
+
+    if isEdgeAhead(4, (targetPos - root.Position).Unit) then return false end
+    return true
+end
+
+local function findPath(targetPos)
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+
+    local path = PathfindingService:CreatePath({
+        AgentRadius = 2,
+        AgentHeight = 5,
+        AgentMaxSlope = 45,
+        AgentCanJump = true,
+        AgentMaxClimb = 2,
+        Costs = { Water = 20, Pathfindable = 1 }
+    })
+    local success, errorMsg = pcall(function()
+        path:ComputeAsync(root.Position, targetPos)
+    end)
+    if success and path.Status == Enum.PathStatus.Success then
+        local waypoints = path:GetWaypoints()
+        local validWaypoints = {}
+        for _, wp in ipairs(waypoints) do
+            if wp.Action ~= Enum.PathWaypointAction.Jump and isGroundBelow(wp.Position) then
+                table.insert(validWaypoints, wp.Position)
+            end
+        end
+        if #validWaypoints > 0 then
+            return validWaypoints
+        end
+    end
+    return nil
+end
+
+local function navigateTo(targetPos)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not humanoid or not root then return end
+
+    if (root.Position - targetPos).Magnitude < 2 then
+        humanoid:Move(Vector3.zero, true)
+        return
+    end
+
+    if isPathClear(targetPos) then
+        smartMoveTo(targetPos, Settings.SafeEdgeCheck)
+    else
+        local waypoints = findPath(targetPos)
+        if waypoints then
+            for _, wp in ipairs(waypoints) do
+                if (root.Position - wp).Magnitude < 2 then continue end
+                smartMoveTo(wp, Settings.SafeEdgeCheck)
+                if (root.Position - targetPos).Magnitude < Settings.AttackRange then break end
+                task.wait(0.1)
+            end
+        else
+            -- Если путь не найден, прекращаем движение к этой цели
+            State.LastTargetPlayer = nil
+            State.LastTargetName = nil
+        end
+    end
+end
+
+-- ===================== ПАМЯТЬ ВРАГОВ =====================
+local function updateEnemyMemory(player, action)
+    if not Settings.EnemyMemoryEnabled then return end
+    local name = player.Name
+    if not EnemyMemory[name] then
+        EnemyMemory[name] = {deathsFrom={}, lastSeen=tick(), aggressiveActions=0, passiveActions=0, patterns={}, lastPositions={}}
+    end
+    local mem = EnemyMemory[name]; mem.lastSeen = tick()
+    if action == "killed" then
+        local tool = player.Character and player.Character:FindFirstChildOfClass("Tool")
+        local glove = tool and tool.Name or "Unknown"
+        mem.deathsFrom[glove] = (mem.deathsFrom[glove] or 0) + 1
+        local myChar = LocalPlayer.Character
+        if myChar then
+            local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+            local enemyRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if myRoot and enemyRoot then
+                local dist = (myRoot.Position - enemyRoot.Position).Magnitude
+                table.insert(mem.patterns, {action="kill", distance=dist, glove=glove, time=tick()})
+            end
+        end
+    elseif action == "attacked" then
+        mem.aggressiveActions = mem.aggressiveActions + 1
+        local enemyRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if enemyRoot then table.insert(mem.lastPositions, enemyRoot.Position); if #mem.lastPositions > 10 then table.remove(mem.lastPositions, 1) end end
+    elseif action == "dodged" then mem.passiveActions = mem.passiveActions + 1 end
+end
+local function getMostDangerousGlove(player)
+    local mem = EnemyMemory[player.Name]
+    if not mem or not mem.deathsFrom then return nil end
+    local maxCount, gloveName = 0, nil
+    for g, count in pairs(mem.deathsFrom) do if count > maxCount then maxCount = count; gloveName = g end end
+    return gloveName, maxCount
+end
+local function evaluateTarget(player, myRoot)
+    local char = player.Character; if not char then return 0 end
+    local hum = char:FindFirstChildOfClass("Humanoid"); local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hum or not hrp then return 0 end
+    local score = 50
+    if Settings.FinishLowHP and hum.Health < 20 then score = score + 100
+    else score = score + (100 - hum.Health) * 0.5 end
+    if isDangerousGlove(player) then score = score - 60 end
+    local dangerousGlove, deaths = getMostDangerousGlove(player)
+    if dangerousGlove and deaths and deaths >= 2 then score = score - 100 end
+    local dist = (myRoot.Position - hrp.Position).Magnitude
+    if dist < Settings.AttackRange * 0.8 then score = score + 20
+    elseif dist < Settings.AttackRange * 1.5 then score = score + 10
+    elseif dist > Settings.AggroRange * 0.8 then score = score - 30 end
+    local mem = EnemyMemory[player.Name]
+    if mem and mem.aggressiveActions > mem.passiveActions * 2 then score = score - 15 end
+    if Settings.NoSpawnKill and char:GetAttribute("LastSpawn") and tick() - char:GetAttribute("LastSpawn") < 2 then score = -1000 end
+    return score
+end
+
+-- ===================== ФИЛЬТР ПАДАЮЩИХ ИГРОКОВ =====================
+local function isPlayerFalling(player)
+    if not player.Character then return false end
+    local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    if hrp.Velocity.Y < -30 or hrp.Position.Y < -10 then return true end
+    return false
+end
+
+-- ===================== ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ =====================
+local function isPointNearEdge(point, dist)
+    for _, dir in ipairs({Vector3.new(1,0,0), Vector3.new(-1,0,0), Vector3.new(0,0,1), Vector3.new(0,0,-1)}) do
+        local checkPos = point + dir * dist
+        local rayOrigin = checkPos + Vector3.new(0,2,0)
+        local rayDir = Vector3.new(0,-10,0)
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Blacklist
+        params.FilterDescendantsInstances = {LocalPlayer.Character}
+        local hit = Workspace:Raycast(rayOrigin, rayDir, params)
+        if not hit then return true end
+    end
+    return false
+end
+
+local function walkToPortal()
+    local char = LocalPlayer.Character; if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not humanoid or not root then return end
+    local target = Settings.PortalPosition
+    humanoid:MoveTo(target)
+    if (root.Position - target).Magnitude < Settings.PortalActivationDistance then
+        humanoid:Move(Vector3.zero, true)
+    end
+end
+
+local function tryDodge()
+    if tick() - State.LastDodgeTime < Settings.DodgeCooldown then return false end
+    local char = LocalPlayer.Character; if not char then return false end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid then return false end
+    local targetPlayer = State.LastTargetPlayer
+    if not targetPlayer or not targetPlayer.Character then return false end
+    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then return false end
+    local dist = (root.Position - targetRoot.Position).Magnitude
+    if dist > Settings.AttackRange * 1.5 then return false end
+    local dodgeDir = (root.Position - targetRoot.Position).Unit
+    if dodgeDir.Magnitude == 0 then dodgeDir = Vector3.new(1,0,0) end
+    local dodgePos = root.Position + dodgeDir * Settings.DodgeDistance
+    State.LastDodgeTime = tick()
+    humanoid:MoveTo(dodgePos)
+    task.wait(0.1)
+    return true
+end
+
+local function tryAdvancedDodge()
+    if tick() - State.LastDodgeTime < Settings.DodgeCooldown then return false end
+    local char = LocalPlayer.Character; if not char then return false end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid then return false end
+    local targetPlayer = State.LastTargetPlayer
+    if not targetPlayer or not targetPlayer.Character then return false end
+    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then return false end
+    local dist = (root.Position - targetRoot.Position).Magnitude
+    if dist > Settings.AttackRange then return false end
+    local behind = targetRoot.CFrame * CFrame.new(0,0, Settings.DodgeDistance)
+    local dodgePos = behind.Position
+    State.LastDodgeTime = tick()
+    humanoid:MoveTo(dodgePos)
+    task.wait(0.1)
+    return true
+end
+
+local function getStealthMoveTarget(predictedPos)
+    if not Settings.StealthMode then return predictedPos end
+    local char = LocalPlayer.Character; if not char then return predictedPos end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return predictedPos end
+    local offset = (root.Position - predictedPos).Unit
+    local right = offset:Cross(Vector3.yAxis).Unit
+    return predictedPos + right * 5
+end
+
+local function tryEdgePush(targetRoot, targetPlayer)
+    if not targetRoot or not targetPlayer then return false end
+    local char = LocalPlayer.Character; if not char then return false end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid then return false end
+    if not isPointNearEdge(targetRoot.Position, Settings.EdgePushDistance) then return false end
+    local dirToEdge = (targetRoot.Position - root.Position).Unit
+    local pushPos = targetRoot.Position + dirToEdge * 1.5
+    humanoid:MoveTo(pushPos)
+    if (root.Position - pushPos).Magnitude < 3 then
+        local tool = char:FindFirstChildOfClass("Tool")
+        if tool then tool:Activate() end
+        Stats.Slaps = Stats.Slaps + 1; Stats.HitsLanded = Stats.HitsLanded + 1
+        State.LastSlapTime = tick()
+        return true
+    end
+    return false
+end
+
+local function tryEdgeJumpCounter(targetRoot, targetPlayer)
+    if not targetRoot or not targetPlayer then return false end
+    local char = LocalPlayer.Character; if not char then return false end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid then return false end
+    local enemyVel = targetRoot.Velocity or targetRoot.AssemblyLinearVelocity or Vector3.zero
+    if enemyVel.Y > 5 and isEdgeAhead(2) and isPointNearEdge(targetRoot.Position, 3) then
+        humanoid.Jump = true
+        task.wait(0.1)
+        local tool = char:FindFirstChildOfClass("Tool")
+        if tool then tool:Activate() end
+        Stats.Slaps = Stats.Slaps + 1; Stats.HitsLanded = Stats.HitsLanded + 1
+        return true
+    end
+    return false
+end
+
+local function tryBaitEdge(pos, targetRoot, targetPlayer)
+    if not targetRoot or not targetPlayer then return false end
+    local char = LocalPlayer.Character; if not char then return false end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid then return false end
+    if not isEdgeAhead(4) then return false end
+    if (root.Position - targetRoot.Position).Magnitude > Settings.AttackRange then return false end
+    local dodgeDir = root.CFrame.RightVector * 5
+    humanoid:MoveTo(root.Position + dodgeDir)
+    task.wait(0.1)
+    local tool = char:FindFirstChildOfClass("Tool")
+    if tool then tool:Activate() end
+    Stats.Slaps = Stats.Slaps + 1; Stats.HitsLanded = Stats.HitsLanded + 1
+    State.LastSlapTime = tick()
+    return true
+end
+
+local function tryInterruptAttack(targetRoot, targetPlayer)
+    if not targetRoot or not targetPlayer then return false end
+    local char = LocalPlayer.Character; if not char then return false end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid then return false end
+    local enemyTool = targetPlayer.Character and targetPlayer.Character:FindFirstChildOfClass("Tool")
+    if not enemyTool or not enemyTool.Enabled then return false end
+    local behind = targetRoot.CFrame * CFrame.new(0,0, -3)
+    humanoid:MoveTo(behind.Position)
+    if (root.Position - behind.Position).Magnitude < 5 then
+        local tool = char:FindFirstChildOfClass("Tool")
+        if tool then tool:Activate() end
+        Stats.Slaps = Stats.Slaps + 1; Stats.HitsLanded = Stats.HitsLanded + 1
+        State.LastSlapTime = tick()
+        return true
+    end
+    return false
+end
+
+local function tryFeint(pos, targetPlayer)
+    if not targetPlayer then return false end
+    local char = LocalPlayer.Character; if not char then return false end
+    local tool = char:FindFirstChildOfClass("Tool")
+    if not tool then return false end
+    tool:Activate()
+    task.wait(0.05)
+    return true
+end
+
+local function getMimicDodge(enemyPlayer)
+    if not Settings.MimicMode or not enemyPlayer then return nil end
+    if not State.MimicData[enemyPlayer.Name] then
+        State.MimicData[enemyPlayer.Name] = {lastDir = nil, lastTime = 0}
+    end
+    local data = State.MimicData[enemyPlayer.Name]
+    local root = enemyPlayer.Character and enemyPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+    local vel = root.Velocity or root.AssemblyLinearVelocity or Vector3.zero
+    if vel.Magnitude > 5 then
+        data.lastDir = vel.Unit.X
+        data.lastTime = tick()
+    end
+    if tick() - data.lastTime < 1 and data.lastDir then
+        return Vector3.new(data.lastDir, 0, 0)
+    end
+    return nil
+end
+
+local function updateEnemyAbilityState(enemyPlayer)
+    if not enemyPlayer then return end
+    local enemyChar = enemyPlayer.Character
+    if not enemyChar then return end
+    local tool = enemyChar:FindFirstChildOfClass("Tool")
+    if tool and tool.Enabled then
+        State.EnemyLastAbilityTime[enemyPlayer.Name] = tick()
+    end
+end
+
+local function updateEnemyAttackPattern(enemyPlayer)
+    if not enemyPlayer then return end
+    local last = State.EnemyLastAbilityTime[enemyPlayer.Name]
+    if last then
+        local interval = tick() - last
+        if interval > 0.1 and interval < 30 then
+            State.EnemyAttackIntervals[enemyPlayer.Name] = (State.EnemyAttackIntervals[enemyPlayer.Name] or 0) * 0.9 + interval * 0.1
+        end
+    end
+end
+
+local function getEnemyAbilityCooldownRemaining(enemyPlayer)
+    if not enemyPlayer then return 0 end
+    local last = State.EnemyLastAbilityTime[enemyPlayer.Name]
+    if not last then return 0 end
+    local interval = State.EnemyAttackIntervals[enemyPlayer.Name] or Settings.EnemyAbilityCooldown
+    local elapsed = tick() - last
+    return math.max(0, interval - elapsed)
+end
+
+local function recordCombatEvent(player, event, dist)
+    if not Settings.RealTimeAdaptation then return end
+    table.insert(State.CombatLog, {player = player and player.Name, event = event, dist = dist, time = tick()})
+    if #State.CombatLog > 100 then table.remove(State.CombatLog, 1) end
+end
+
+local function getHighestThreat()
+    if not Settings.ThreatSystemEnabled then return nil end
+    local highest = nil
+    local highestScore = -1
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local score = State.ThreatLevels[player.Name] or 0
+            if score > highestScore then
+                highestScore = score
+                highest = player
+            end
+        end
+    end
+    return highest
+end
+
+local function tryFlank(targetRoot)
+    if not Settings.FlankEnabled then return false end
+    if tick() - State.LastFlankTime < 2.5 then return false end
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid then return false end
+
+    local toTarget = (targetRoot.Position - root.Position).Unit
+    if toTarget.Magnitude == 0 then return false end
+    local right = toTarget:Cross(Vector3.yAxis).Unit
+    local flankDir = right * (math.random() < 0.5 and 1 or -1)
+    local flankPos = root.Position + flankDir * 8
+    flankPos = flankPos + toTarget * 2
+
+    State.LastFlankTime = tick()
+    humanoid:MoveTo(flankPos)
+    task.wait(0.15)
+    humanoid:MoveTo(targetRoot.Position)
+    return true
+end
+
+-- ===================== ВЫБОР ЦЕЛИ (с дуэлями) =====================
+local function getTargetCharacter()
+    local myChar = LocalPlayer.Character; if not myChar then return nil end
+    local myRoot = myChar:FindFirstChild("HumanoidRootPart"); if not myRoot then return nil end
+
+    if Settings.DuelTrainingMode and Settings.DuelOpponent ~= "" then
+        local opponent = Players:FindFirstChild(Settings.DuelOpponent)
+        if opponent and opponent.Character and not isPlayerFalling(opponent) then
+            local hum = opponent.Character:FindFirstChildOfClass("Humanoid")
+            local hrp = opponent.Character:FindFirstChild("HumanoidRootPart")
+            if hum and hrp and hum.Health > 0 and isGroundBelow(hrp.Position) then
+                State.LastTargetName = opponent.Name; State.LastTargetPlayer = opponent; State.LastTargetIsNpc = false
+                return opponent.Character
+            end
+        end
+    end
+    if Settings.ThreatSystemEnabled then
+        local primary = getHighestThreat()
+        if primary and not isPlayerFalling(primary) then
+            local char = primary.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hum and hrp and hum.Health > 0 and isOnGround(primary) and isGroundBelow(hrp.Position) then
+                    State.PrimaryThreat = primary
+                    State.LastTargetName = primary.Name; State.LastTargetPlayer = primary; State.LastTargetIsNpc = false
+                    return char
+                end
+            end
+        end
+    end
+    local candidates = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and not isPlayerFalling(player) then
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+            if hum and hrp and hum.Health > 0 and isGroundBelow(hrp.Position) then
+                if isWhitelisted(player) then continue end
+                if isAlly(player) then continue end
+                if Settings.Blacklist ~= "" and not isBlacklisted(player) then continue end
+                if Settings.AvoidDangerous and isDangerousGlove(player) then continue end
+                if not isOnGround(player) then continue end
+                table.insert(candidates, player)
+            end
+        end
+    end
+    if #candidates == 0 then
+        if Settings.ZoneControlEnabled and State.ZoneCenter then
+            State.PatrolTarget = State.ZoneCenter + Vector3.new(math.random(-10,10), 0, math.random(-10,10))
+        else
+            State.PatrolTarget = nil
+        end
+        return nil
+    end
+    State.PatrolTarget = nil
+    local bestScore = -math.huge; local bestTarget, bestPlayer = nil, nil
+    for _, player in ipairs(candidates) do
+        local score = evaluateTarget(player, myRoot)
+        if score > bestScore then bestScore = score; bestTarget = player.Character; bestPlayer = player end
+    end
+    if bestTarget then
+        State.LastTargetName = bestPlayer.Name; State.LastTargetPlayer = bestPlayer; State.LastTargetIsNpc = false
+        return bestTarget
+    end
+end
+
+-- ===================== ОЦЕНКА СИТУАЦИИ =====================
+local function evaluateSituation(targetRoot, targetPlayer)
+    local char = LocalPlayer.Character
+    if not char then return "balanced" end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return "balanced" end
+
+    local myPos = root.Position
+    local enemyPos = targetRoot and targetRoot.Position
+
+    local botNearEdge = isEdgeAhead(3)
+    local enemyNearEdge = enemyPos and isPointNearEdge(enemyPos, 4)
+
+    local enemyAttacking = false
+    if targetPlayer and targetPlayer.Character then
+        local tool = targetPlayer.Character:FindFirstChildOfClass("Tool")
+        if tool and tool.Enabled then enemyAttacking = true end
+    end
+
+    if botNearEdge and enemyAttacking and enemyPos and (myPos - enemyPos).Magnitude < 10 then
+        return "edge_jump_counter"
+    elseif botNearEdge then
+        return "avoid_edge"
+    elseif enemyNearEdge and enemyPos and (myPos - enemyPos).Magnitude < 15 then
+        local distToEnemy = (myPos - enemyPos).Magnitude
+        if distToEnemy > (Settings.MinDistance + 3) then
+            return "edge_cautious"
+        else
+            return "edge_control"
+        end
+    elseif isEdgeAhead(6) and enemyPos and (myPos - enemyPos).Magnitude < 15 and math.random() < 0.3 and Settings.BaitEdgeEnabled then
+        return "bait_edge"
+    else
+        return "balanced"
+    end
+end
+
+-- ===================== РЕЖИМЫ БОЯ =====================
+local function executeEdgeJumpCounter(targetRoot, targetPlayer)
+    if not Settings.EdgeJumpCounterEnabled then return false end
+    if tryEdgeJumpCounter(targetRoot, targetPlayer) then
+        State.TacticMode = "edge_jump_counter"
+        return true
+    end
+    return false
+end
+
+local function executeAvoidEdge(targetRoot, targetPlayer)
+    local char = LocalPlayer.Character; if not char then return false end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid then return false end
+    local right = root.CFrame.RightVector
+    local safePos = root.Position + right * 8
+    if targetRoot then
+        safePos = safePos + (root.Position - targetRoot.Position).Unit * 3
+    end
+    humanoid:MoveTo(safePos)
+    State.TacticMode = "avoid_edge"
+    if targetRoot and (root.Position - targetRoot.Position).Magnitude < Settings.AttackRange then
+        local tool = char:FindFirstChildOfClass("Tool")
+        if tool then tool:Activate() end
+        Stats.Slaps = Stats.Slaps + 1; Stats.HitsLanded = Stats.HitsLanded + 1
+    end
+    return true
+end
+
+local function executeEdgeCautious(targetRoot, targetPlayer)
+    local char = LocalPlayer.Character; if not char then return false end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid then return false end
+
+    local targetPos = targetRoot.Position
+    local dist = (root.Position - targetPos).Magnitude
+    local minDist = Settings.MinDistance + 2
+
+    if dist <= minDist then
+        return false
+    end
+
+    humanoid.WalkSpeed = Settings.WalkSpeed * 0.6
+
+    local strafeOld = Settings.StrafeEnabled
+    Settings.StrafeEnabled = true
+    performStrafe(targetPos, root, humanoid, targetRoot)
+    Settings.StrafeEnabled = strafeOld
+
+    local toTarget = (targetPos - root.Position).Unit
+    local right = toTarget:Cross(Vector3.yAxis).Unit
+    local offset = right * (math.random() < 0.5 and 3 or -3)
+    humanoid:MoveTo(targetPos + offset)
+
+    if dist <= Settings.AttackRange and tick() - State.LastSlapTime > 1.0 then
+        local tool = char:FindFirstChildOfClass("Tool")
+        if tool then tool:Activate() end
+        Stats.Slaps = Stats.Slaps + 1; Stats.HitsLanded = Stats.HitsLanded + 1
+        State.LastSlapTime = tick()
+    end
+
+    State.TacticMode = "edge_cautious"
+    return true
+end
+
+local function executeEdgeControl(targetRoot, targetPlayer)
+    local char = LocalPlayer.Character; if not char then return false end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid then return false end
+
+    local enemyPos = targetRoot.Position
+    local toEnemy = (enemyPos - root.Position).Unit
+    local dist = (root.Position - enemyPos).Magnitude
+
+    local right = toEnemy:Cross(Vector3.yAxis).Unit
+    local sideOffset = right * 4
+    local flankPos = enemyPos + toEnemy * 3 + sideOffset * (math.random() < 0.5 and 1 or -1)
+
+    humanoid:MoveTo(flankPos)
+    State.TacticMode = "edge_control"
+
+    if dist < Settings.AttackRange + 2 then
+        if tryEdgePush(targetRoot, targetPlayer) then
+            return true
+        end
+    end
+    return false
+end
+
+-- ===================== АДАПТАЦИЯ ПО ВРЕМЕНИ =====================
+local function applyTimeBoost()
+    if not Settings.AdaptationEnabled then return end
+    if tick() - State.LastStatBoost < 15 then return end
+    State.LastStatBoost = tick()
+    local speed = Settings.AdaptationSpeed or 1
+    Settings.PredictionFactor = math.min(1.0, Settings.PredictionFactor + 0.03 * speed)
+    Settings.AttackRange = math.min(25, Settings.AttackRange + 0.3 * speed)
+    if Settings.Difficulty == "Эксперт" then
+        Settings.WalkSpeed = math.min(40, Settings.WalkSpeed + 1 * speed)
+    end
+end
+
+-- ===================== БОЙ ====================
+local abilityTimer = 0
+local function tryActivateAbility()
+    if not (Settings.AutoAbility or Settings.UseAbility) then return end
+    if tick() - abilityTimer < Settings.AbilityInterval then return end
+    local char = LocalPlayer.Character; if not char then return end
+    local tool = char:FindFirstChild("Ability") or char:FindFirstChildOfClass("Tool")
+    if tool then tool:Activate() end; abilityTimer = tick()
+end
+local function getMyHealthPercent()
+    local char = LocalPlayer.Character; if not char then return 100 end
+    local hum = char:FindFirstChildOfClass("Humanoid"); if not hum then return 100 end
+    return (hum.Health / hum.MaxHealth) * 100
+end
+
+-- ГЛАВНЫЙ БОЕВОЙ ЦИКЛ (с навигацией)
+local function fightLoop()
+    local char = LocalPlayer.Character; if not char then State.Phase = "ToPoint"; return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid"); local root = char:FindFirstChild("HumanoidRootPart"); local tool = char:FindFirstChildOfClass("Tool")
+    if not humanoid or not root or not tool then return end
+
+    -- Применяем скорость
+    if Settings.BerserkMode and getMyHealthPercent() < 30 then
+        humanoid.WalkSpeed = Settings.WalkSpeed + 6
+    else
+        humanoid.WalkSpeed = Settings.WalkSpeed
+    end
+
+    -- Защита от падения лицом в землю
+    if humanoid.FloorMaterial == Enum.Material.Air and humanoid.Sit == false and (root.Velocity.Y < -5) then
+        humanoid:Move(Vector3.zero, true)
+        humanoid.Jump = true
+        task.wait(0.1)
+        return
+    end
+
+    autoSave()
+    updateZoneControl()
+    applyTimeBoost()
+
+    local targetChar = getTargetCharacter()
+    if not targetChar then
+        if State.PatrolTarget then smartMoveTo(State.PatrolTarget, Settings.SafeEdgeCheck)
+        else humanoid:Move(Vector3.zero, true) end
+        return
+    end
+
+    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Torso") or targetChar:FindFirstChild("Head")
+    if not targetRoot then return end
+
+    if Settings.CameraLock and Workspace.CurrentCamera then
+        Workspace.CurrentCamera.CFrame = CFrame.lookAt(root.Position, targetRoot.Position)
+    end
+
+    local enemyPlayer = State.LastTargetPlayer
+    if enemyPlayer then
+        updateEnemyAbilityState(enemyPlayer)
+        updateEnemyAttackPattern(enemyPlayer)
+    end
+
+    local targetVel = targetRoot.Velocity or targetRoot.AssemblyLinearVelocity or Vector3.zero
+    local isTargetAFK = targetVel.Magnitude < 2
+
+    if tick() - State.LastEvaluation > 0.2 then
+        State.LastEvaluation = tick()
+        local newMode = evaluateSituation(targetRoot, enemyPlayer)
+        if State.TacticMode ~= "edge_jump_counter" and State.TacticMode ~= "avoid_edge" and State.TacticMode ~= "edge_control" and State.TacticMode ~= "edge_cautious" then
+            State.TacticMode = newMode
+        end
+    end
+
+    local currentMode = State.TacticMode
+
+    if currentMode == "edge_jump_counter" then
+        if executeEdgeJumpCounter(targetRoot, enemyPlayer) then return end
+    elseif currentMode == "avoid_edge" then
+        executeAvoidEdge(targetRoot, enemyPlayer)
+        State.TacticMode = "balanced"
+        return
+    elseif currentMode == "edge_cautious" then
+        if executeEdgeCautious(targetRoot, enemyPlayer) then return end
+        State.TacticMode = "edge_control"
+        if executeEdgeControl(targetRoot, enemyPlayer) then return end
+        State.TacticMode = "balanced"
+        return
+    elseif currentMode == "edge_control" then
+        if executeEdgeControl(targetRoot, enemyPlayer) then return end
+        State.TacticMode = "balanced"
+    elseif currentMode == "bait_edge" and Settings.BaitEdgeEnabled then
+        if tryBaitEdge(targetRoot.Position, targetRoot, enemyPlayer) then return end
+    end
+
+    local myHP = getMyHealthPercent()
+    if Settings.BerserkMode and myHP < 30 then Settings.DodgeEnabled = false; humanoid.WalkSpeed = Settings.WalkSpeed + 6
+    else Settings.DodgeEnabled = true; humanoid.WalkSpeed = Settings.WalkSpeed end
+
+    if enemyPlayer and Settings.PatternInterruptEnabled and tryInterruptAttack(targetRoot, enemyPlayer) then return end
+    if enemyPlayer and Settings.FeintEnabled and tryFeint(targetRoot.Position, enemyPlayer) then return end
+    if Settings.EdgePushEnabled and tryEdgePush(targetRoot, State.LastTargetPlayer) then return end
+
+    if enemyPlayer and Settings.MimicMode then
+        local mimicDir = getMimicDodge(enemyPlayer)
+        if mimicDir then humanoid:Move(Vector3.new(tonumber(mimicDir) or 0, 0, 0), false) end
+    end
+
+    if enemyPlayer and Settings.AdaptiveCooldownEnabled then
+        local cdRemain = getEnemyAbilityCooldownRemaining(enemyPlayer)
+        humanoid.WalkSpeed = (cdRemain > 2) and Settings.WalkSpeed + 4 or Settings.WalkSpeed
+    end
+
+    if Settings.ZoneControlEnabled and not isInZone(root.Position) then
+        local zonePos = getZonePosition()
+        if zonePos then State.TacticMode = "zonecontrol"; smartMoveTo(zonePos, Settings.SafeEdgeCheck); return end
+    end
+
+    humanizeAction("ability")
+    if Settings.SmartAbilitiesEnabled then trySmartAbility()
+    else tryActivateAbility() end
+
+    if Settings.AdvancedDodgeEnabled then
+        if tryAdvancedDodge() then return end
+    else
+        if Settings.DodgeEnabled and tryDodge() then return end
+    end
+
+    local predictedPos = getPredictedPosition(targetRoot)
+    local dist = (root.Position - predictedPos).Magnitude
+    local minDist = Settings.MinDistance or 5
+
+    if enemyPlayer and Settings.HitAndRunEnabled and shouldHitAndRun(enemyPlayer) and dist <= Settings.AttackRange and tick() - State.LastHitAndRun > 2 then
+        State.TacticMode = "hitandrun"
+        task.spawn(function() executeHitAndRun(predictedPos) end)
+        return
+    end
+
+    State.TacticMode = "balanced"
+
+    -- ГАРАНТИРОВАННАЯ АТАКА
+    if dist <= Settings.AttackRange and tick() - State.LastSlapTime > 1.0 and not shouldMakeMistake(0.08) then
+        humanizeAction("attack")
+        tool:Activate()
+        Stats.Slaps = Stats.Slaps + 1; Stats.HitsLanded = Stats.HitsLanded + 1; State.LastSlapTime = tick()
+        if State.LastTargetPlayer then
+            updateEnemyMemory(State.LastTargetPlayer, "attacked")
+            if Settings.RealTimeAdaptation then recordCombatEvent(State.LastTargetPlayer, "hit", dist) end
+            local enemyHum = targetChar:FindFirstChildOfClass("Humanoid")
+            if enemyHum and enemyHum.Health <= 0 then learnFromExperience("we_killed_enemy", {enemy = State.LastTargetPlayer.Name}) end
+        end
+        if Settings.AbilityComboEnabled and not Settings.SmartAbilitiesEnabled then
+            task.spawn(function() task.wait(0.1); tryActivateAbility() end)
+        end
+    elseif dist <= Settings.AttackRange and State.LastTargetPlayer and Settings.RealTimeAdaptation then
+        recordCombatEvent(State.LastTargetPlayer, "miss", dist)
+    end
+
+    -- ДВИЖЕНИЕ
+    if dist > Settings.AttackRange then
+        local moveTarget = getStealthMoveTarget(predictedPos)
+        navigateTo(moveTarget)   -- УМНАЯ НАВИГАЦИЯ
+    elseif dist < minDist then
+        local retreatDir = (root.Position - predictedPos).Unit
+        if retreatDir.Magnitude < 0.1 then retreatDir = Vector3.new(1,0,0) end
+        local retreatPos = root.Position + retreatDir * (minDist - dist + 0.5)
+        humanoid:MoveTo(retreatPos)
+    else
+        humanoid:Move(Vector3.zero, true)
+        if Settings.FlankEnabled and tick() - State.LastFlankTime > 2.5 then
+            tryFlank(targetRoot)
+        end
+        if Settings.StrafeEnabled then
+            performStrafe(predictedPos, root, humanoid, targetRoot)
+        else
+            root.CFrame = CFrame.lookAt(root.Position, predictedPos)
+        end
+    end
+end
+
+-- ==================== СМЕРТЬ И ОБУЧЕНИЕ ====================
+LocalPlayer.CharacterAdded:Connect(function(char)
+    State.LastSlapTime = 0
+    State.LastFlankTime = 0
+    State.StrafeNextChange = 0
+    State.StrafeDirection = Vector3.new(1,0,0)
+    State.StrafeJumpCooldown = 0
+    State.RoundStartTime = tick()
+    State.LastStatBoost = tick()
+    State.TacticMode = "balanced"
+    local hum = char:WaitForChild("Humanoid")
+    hum.Died:Connect(function()
+        Stats.Deaths = Stats.Deaths + 1; Stats.RoundsPlayed = Stats.RoundsPlayed + 1
+        local killer = nil
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local tool = player.Character:FindFirstChildOfClass("Tool")
+                if tool and tool.Enabled then killer = player; break end
+            end
+        end
+        if killer then
+            updateEnemyMemory(killer, "killed")
+            Stats.LastKiller = killer.Name
+            learnFromExperience("enemy_killed_us", {killer = killer.Name})
+            Settings.LearningRate = math.min(1.0, Settings.LearningRate + 0.1)
+            if EnemyMemory[killer.Name] and EnemyMemory[killer.Name].deathsFrom["Killstreak"] then
+                Settings.AttackRange = math.min(20, Settings.AttackRange + 2)
+                Settings.HitAndRunEnabled = true
+            end
+        end
+        BrainStorage.save()
+    end)
+    hum.HealthChanged:Connect(function(health) if health <= 0 then Stats.HitsReceived = Stats.HitsReceived + 1 end end)
+    char:SetAttribute("LastSpawn", tick())
+end)
+
+-- ===================== ГЛАВНЫЙ GUI (без изменений) =====================
+local guiObject = nil
+local mainToggleBtn = nil
+
+local function createGUI()
+    if guiDestroyed then return end
+    if sg and sg.Parent then sg:Destroy() end
+
+    sg = Instance.new("ScreenGui")
+    sg.Name = "MahoragaBot"
+    sg.ResetOnSpawn = false
+    sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    guiObject = sg
+
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 600, 0, 750)
+    mainFrame.Position = UDim2.new(0.5, -300, 0.5, -375)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(15, 10, 20)
+    mainFrame.BackgroundTransparency = 0.05
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Active = true
+    mainFrame.Draggable = true
+    mainFrame.Parent = sg
+    Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 12)
+
+    local stroke = Instance.new("UIStroke", mainFrame)
+    stroke.Color = Color3.fromRGB(180, 0, 255)
+    stroke.Thickness = 2
+    stroke.Transparency = 0.3
+    task.spawn(function()
+        local hue = 0
+        while guiObject and mainFrame.Parent do
+            hue = (hue + 0.01) % 1
+            local r,g,b = Color3.fromHSV(hue,0.8,1).R, Color3.fromHSV(hue,0.8,1).G, Color3.fromHSV(hue,0.8,1).B
+            stroke.Color = Color3.fromRGB(r*255,g*255,b*255)
+            task.wait(0.02)
+        end
+    end)
+
+    local header = Instance.new("Frame")
+    header.Size = UDim2.new(1,0,0,40)
+    header.BackgroundColor3 = Color3.fromRGB(120,0,180)
+    header.Parent = mainFrame
+    Instance.new("UICorner", header).CornerRadius = UDim.new(0,12)
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1,-50,1,0)
+    title.Position = UDim2.new(0,15,0,0)
+    title.BackgroundTransparency = 1
+    title.TextColor3 = Color3.new(1,1,1)
+    title.Text = "Махорага v5.1"
+    title.Font = Enum.Font.SourceSansBold
+    title.TextSize = 14
+    title.Parent = header
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0,28,0,28)
+    closeBtn.Position = UDim2.new(1,-34,0.5,-14)
+    closeBtn.Text = "X"
+    closeBtn.TextColor3 = Color3.new(1,1,1)
+    closeBtn.TextSize = 16
+    closeBtn.BackgroundColor3 = Color3.new(0.8,0.2,0.2)
+    closeBtn.BackgroundTransparency = 0.2
+    closeBtn.BorderSizePixel = 0
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,6)
+    closeBtn.Parent = header
+    closeBtn.MouseButton1Click:Connect(function() mainFrame.Visible = false end)
+
+    local tabBar = Instance.new("Frame")
+    tabBar.Size = UDim2.new(1,-16,0,28)
+    tabBar.Position = UDim2.new(0,8,0,44)
+    tabBar.BackgroundTransparency = 1
+    tabBar.Parent = mainFrame
+
+    local function makeTab(x, text, width)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0, width or 55, 1, 0)
+        btn.Position = UDim2.new(0, x, 0, 0)
+        btn.Text = text
+        btn.TextColor3 = Color3.new(1,1,1)
+        btn.TextSize = 11
+        btn.Font = Enum.Font.GothamBold
+        btn.BackgroundColor3 = Color3.fromRGB(70,70,130)
+        btn.BackgroundTransparency = 0.25
+        btn.BorderSizePixel = 0
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+        btn.Parent = tabBar
+        return btn
+    end
+
+    local tabMain = makeTab(0, "Осн.", 50)
+    local tabPro = makeTab(55, "PRO", 50)
+    local tabIntel = makeTab(110, "Интел.", 60)
+    local tabAI = makeTab(175, "ИИ", 40)
+    local tabTactic = makeTab(220, "Такт.", 60)
+    local tabAntibot = makeTab(285, "Антиб.", 60)
+    local tabDiff = makeTab(350, "Сложн.", 60)
+    local tabDuel = makeTab(415, "Дуэли", 55)
+    local tabAllies = makeTab(475, "Союзн.", 60)
+    local tabSave = makeTab(540, "Сохр.", 60)
+
+    local contentArea = Instance.new("Frame")
+    contentArea.Size = UDim2.new(1,-16,1,-78)
+    contentArea.Position = UDim2.new(0,8,0,74)
+    contentArea.BackgroundTransparency = 1
+    contentArea.ClipsDescendants = true
+    contentArea.Parent = mainFrame
+
+    local contents = {}
+    for i=1,10 do
+        local f = Instance.new("Frame")
+        f.Size = UDim2.new(1,0,1,0)
+        f.BackgroundTransparency = 1
+        f.Visible = false
+        f.Parent = contentArea
+        table.insert(contents, f)
+    end
+
+    local function addToggle(parent, yRef, name, initial, callback)
+        local y = yRef[1]
+        local row = Instance.new("Frame")
+        row.Size = UDim2.new(1,-10,0,32)
+        row.Position = UDim2.new(0,5,0,y)
+        row.BackgroundColor3 = Color3.fromRGB(30,20,40)
+        row.BorderSizePixel = 0
+        row.Parent = parent
+        Instance.new("UICorner", row).CornerRadius = UDim.new(0,6)
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(0,220,1,0)
+        label.Position = UDim2.new(0,8,0,0)
+        label.BackgroundTransparency = 1
+        label.Text = name
+        label.TextColor3 = Color3.new(1,1,1)
+        label.Font = Enum.Font.SourceSansSemibold
+        label.TextSize = 12
+        label.Parent = row
+
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0,48,0,22)
+        btn.Position = UDim2.new(1,-56,0.5,-11)
+        btn.BackgroundColor3 = initial and Color3.fromRGB(100,200,100) or Color3.fromRGB(200,50,50)
+        btn.Text = initial and "ВКЛ" or "ВЫКЛ"
+        btn.TextColor3 = Color3.new(1,1,1)
+        btn.Font = Enum.Font.SourceSansBold
+        btn.TextSize = 11
+        btn.BorderSizePixel = 0
+        btn.AutoButtonColor = false
+        btn.Parent = row
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
+
+        local state = initial
+        local function update()
+            btn.BackgroundColor3 = state and Color3.fromRGB(100,200,100) or Color3.fromRGB(200,50,50)
+            btn.Text = state and "ВКЛ" or "ВЫКЛ"
+        end
+        btn.MouseButton1Click:Connect(function()
+            state = not state
+            update()
+            callback(state)
+        end)
+        yRef[1] = y + 38
+    end
+
+    -- ===== Вкладка ОСН =====
+    local yMain = {5}
+    addToggle(contents[1], yMain, "Включить бота", Settings.Enabled, function(v) Settings.Enabled = v end)
+    mainToggleBtn = {turnOn = function() Settings.Enabled = true end, turnOff = function() Settings.Enabled = false end, isOn = function() return Settings.Enabled end}
+    addToggle(contents[1], yMain, "Поиск пути", Settings.UsePathfinding, function(v) Settings.UsePathfinding = v end)
+    addToggle(contents[1], yMain, "Проверка края", Settings.SafeEdgeCheck, function(v) Settings.SafeEdgeCheck = v end)
+    local y = yMain[1]
+    local lbl = Instance.new("TextLabel"); lbl.Size = UDim2.new(1,-10,0,16); lbl.Position = UDim2.new(0,5,0,y); lbl.BackgroundTransparency = 1; lbl.Text = "Скорость ходьбы"; lbl.TextColor3 = Color3.new(1,1,1); lbl.Font = Enum.Font.SourceSans; lbl.TextSize = 12; lbl.Parent = contents[1]
+    y = y + 18
+    local box = Instance.new("TextBox"); box.Size = UDim2.new(1,-10,0,24); box.Position = UDim2.new(0,5,0,y); box.BackgroundColor3 = Color3.fromRGB(40,30,55); box.TextColor3 = Color3.new(1,1,1); box.Text = tostring(Settings.WalkSpeed); box.Font = Enum.Font.SourceSans; box.TextSize = 12; box.Parent = contents[1]
+    box.FocusLost:Connect(function() local n = tonumber(box.Text); if n then Settings.WalkSpeed = n end end)
+    yMain[1] = y + 30
+
+    -- ===== Вкладка PRO =====
+    local yPro = {5}
+    addToggle(contents[2], yPro, "CapsLock", Settings.CapsLockControl, function(v) Settings.CapsLockControl = v end)
+    addToggle(contents[2], yPro, "Фиксация камеры", Settings.CameraLock, function(v) Settings.CameraLock = v end)
+    addToggle(contents[2], yPro, "Стрейф (A/D)", Settings.StrafeEnabled, function(v) Settings.StrafeEnabled = v end)
+    addToggle(contents[2], yPro, "Предсказание", Settings.PredictionEnabled, function(v) Settings.PredictionEnabled = v end)
+    addToggle(contents[2], yPro, "Улучш. уклонение", Settings.ImprovedDodge, function(v) Settings.ImprovedDodge = v end)
+    addToggle(contents[2], yPro, "Комбо-способность", Settings.AbilityComboEnabled, function(v) Settings.AbilityComboEnabled = v end)
+    addToggle(contents[2], yPro, "Исп. способность", Settings.UseAbility, function(v) Settings.UseAbility = v end)
+    y = yPro[1]
+    lbl = Instance.new("TextLabel"); lbl.Size = UDim2.new(1,-10,0,16); lbl.Position = UDim2.new(0,5,0,y); lbl.BackgroundTransparency = 1; lbl.Text = "Мин. дистанция"; lbl.TextColor3 = Color3.new(1,1,1); lbl.Font = Enum.Font.SourceSans; lbl.TextSize = 12; lbl.Parent = contents[2]
+    y = y + 18
+    box = Instance.new("TextBox"); box.Size = UDim2.new(1,-10,0,24); box.Position = UDim2.new(0,5,0,y); box.BackgroundColor3 = Color3.fromRGB(40,30,55); box.TextColor3 = Color3.new(1,1,1); box.Text = tostring(Settings.MinDistance); box.Font = Enum.Font.SourceSans; box.TextSize = 12; box.Parent = contents[2]
+    box.FocusLost:Connect(function() local n = tonumber(box.Text); if n then Settings.MinDistance = n end end)
+    y = yPro[1] + 38
+    lbl = Instance.new("TextLabel"); lbl.Size = UDim2.new(1,-10,0,16); lbl.Position = UDim2.new(0,5,0,y); lbl.BackgroundTransparency = 1; lbl.Text = "Радиус аггра"; lbl.TextColor3 = Color3.new(1,1,1); lbl.Font = Enum.Font.SourceSans; lbl.TextSize = 12; lbl.Parent = contents[2]
+    y = y + 18
+    box = Instance.new("TextBox"); box.Size = UDim2.new(1,-10,0,24); box.Position = UDim2.new(0,5,0,y); box.BackgroundColor3 = Color3.fromRGB(40,30,55); box.TextColor3 = Color3.new(1,1,1); box.Text = tostring(Settings.AggroRange); box.Font = Enum.Font.SourceSans; box.TextSize = 12; box.Parent = contents[2]
+    box.FocusLost:Connect(function() local n = tonumber(box.Text); if n then Settings.AggroRange = n end end)
+
+    -- ===== Вкладка ИНТЕЛ =====
+    local yIntel = {5}
+    addToggle(contents[3], yIntel, "Память врагов", Settings.EnemyMemoryEnabled, function(v) Settings.EnemyMemoryEnabled = v end)
+    addToggle(contents[3], yIntel, "Человеческие ошибки", Settings.HumanMistakes, function(v) Settings.HumanMistakes = v end)
+    addToggle(contents[3], yIntel, "Адаптивная агрессия", Settings.AdaptiveAggression, function(v) Settings.AdaptiveAggression = v end)
+    addToggle(contents[3], yIntel, "Не бить новичков", Settings.NoSpawnKill, function(v) Settings.NoSpawnKill = v end)
+    addToggle(contents[3], yIntel, "Добивать слабых", Settings.FinishLowHP, function(v) Settings.FinishLowHP = v end)
+    addToggle(contents[3], yIntel, "Режим берсерка", Settings.BerserkMode, function(v) Settings.BerserkMode = v end)
+    addToggle(contents[3], yIntel, "Мимикрия", Settings.MimicMode, function(v) Settings.MimicMode = v end)
+    addToggle(contents[3], yIntel, "Система угроз", Settings.ThreatSystemEnabled, function(v) Settings.ThreatSystemEnabled = v end)
+    addToggle(contents[3], yIntel, "Адаптация (реальное время)", Settings.RealTimeAdaptation, function(v) Settings.RealTimeAdaptation = v end)
+
+    -- ===== Вкладка ИИ =====
+    local yAI = {5}
+    addToggle(contents[4], yAI, "Адаптация вкл.", Settings.AdaptationEnabled, function(v) Settings.AdaptationEnabled = v end)
+    y = yAI[1]
+    lbl = Instance.new("TextLabel"); lbl.Size = UDim2.new(1,-10,0,16); lbl.Position = UDim2.new(0,5,0,y); lbl.BackgroundTransparency = 1; lbl.Text = "Скорость адаптации"; lbl.TextColor3 = Color3.new(1,1,1); lbl.Font = Enum.Font.SourceSans; lbl.TextSize = 12; lbl.Parent = contents[4]
+    y = y + 18
+    box = Instance.new("TextBox"); box.Size = UDim2.new(1,-10,0,24); box.Position = UDim2.new(0,5,0,y); box.BackgroundColor3 = Color3.fromRGB(40,30,55); box.TextColor3 = Color3.new(1,1,1); box.Text = tostring(Settings.AdaptationSpeed); box.Font = Enum.Font.SourceSans; box.TextSize = 12; box.Parent = contents[4]
+    box.FocusLost:Connect(function() local n = tonumber(box.Text); if n then Settings.AdaptationSpeed = n end end)
+
+    -- ===== Вкладка ТАКТ =====
+    local yTactic = {5}
+    addToggle(contents[5], yTactic, "Удар-отход", Settings.HitAndRunEnabled, function(v) Settings.HitAndRunEnabled = v end)
+    addToggle(contents[5], yTactic, "Зональный контроль", Settings.ZoneControlEnabled, function(v) Settings.ZoneControlEnabled = v end)
+    addToggle(contents[5], yTactic, "Умные способности", Settings.SmartAbilitiesEnabled, function(v) Settings.SmartAbilitiesEnabled = v end)
+    addToggle(contents[5], yTactic, "Режим дуэли", Settings.DuelTrainingMode, function(v) Settings.DuelTrainingMode = v end)
+    y = yTactic[1]
+    lbl = Instance.new("TextLabel"); lbl.Size = UDim2.new(1,-10,0,16); lbl.Position = UDim2.new(0,5,0,y); lbl.BackgroundTransparency = 1; lbl.Text = "Противник (ник)"; lbl.TextColor3 = Color3.new(1,1,1); lbl.Font = Enum.Font.SourceSans; lbl.TextSize = 12; lbl.Parent = contents[5]
+    y = y + 18
+    box = Instance.new("TextBox"); box.Size = UDim2.new(1,-10,0,24); box.Position = UDim2.new(0,5,0,y); box.BackgroundColor3 = Color3.fromRGB(40,30,55); box.TextColor3 = Color3.new(1,1,1); box.Text = Settings.DuelOpponent; box.Font = Enum.Font.SourceSans; box.TextSize = 12; box.Parent = contents[5]
+    box.FocusLost:Connect(function() Settings.DuelOpponent = box.Text end)
+    yTactic[1] = y + 30
+    addToggle(contents[5], yTactic, "Сброс с края", Settings.EdgePushEnabled, function(v) Settings.EdgePushEnabled = v end)
+    addToggle(contents[5], yTactic, "Продвинутое уклонение", Settings.AdvancedDodgeEnabled, function(v) Settings.AdvancedDodgeEnabled = v end)
+    addToggle(contents[5], yTactic, "Фланг", Settings.FlankEnabled, function(v) Settings.FlankEnabled = v end)
+
+    -- ===== Вкладка АНТИБ =====
+    local yAntibot = {5}
+    addToggle(contents[6], yAntibot, "Финт", Settings.FeintEnabled, function(v) Settings.FeintEnabled = v end)
+    addToggle(contents[6], yAntibot, "Заманить к краю", Settings.BaitEdgeEnabled, function(v) Settings.BaitEdgeEnabled = v end)
+    addToggle(contents[6], yAntibot, "Адаптивный кулдаун", Settings.AdaptiveCooldownEnabled, function(v) Settings.AdaptiveCooldownEnabled = v end)
+    addToggle(contents[6], yAntibot, "Прерывание атаки", Settings.PatternInterruptEnabled, function(v) Settings.PatternInterruptEnabled = v end)
+    addToggle(contents[6], yAntibot, "Контр-прыжок у края", Settings.EdgeJumpCounterEnabled, function(v) Settings.EdgeJumpCounterEnabled = v end)
+
+    -- ===== Сложность =====
+    local diffFrame = Instance.new("Frame")
+    diffFrame.Size = UDim2.new(1,-10,0,100)
+    diffFrame.Position = UDim2.new(0,5,0,5)
+    diffFrame.BackgroundColor3 = Color3.fromRGB(25,15,35)
+    diffFrame.Parent = contents[7]
+    Instance.new("UICorner", diffFrame).CornerRadius = UDim.new(0,6)
+    local diffLabel = Instance.new("TextLabel")
+    diffLabel.Size = UDim2.new(1,0,0,20)
+    diffLabel.Position = UDim2.new(0,8,0,4)
+    diffLabel.BackgroundTransparency = 1
+    diffLabel.Text = "Сложность"
+    diffLabel.TextColor3 = Color3.new(1,1,1)
+    diffLabel.Font = Enum.Font.SourceSansBold
+    diffLabel.TextSize = 13
+    diffLabel.Parent = diffFrame
+    local diffs = {"Слабо","Средне","Сильно","Эксперт"}
+    for i, diff in ipairs(diffs) do
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0,80,0,24)
+        btn.Position = UDim2.new(0,10+(i-1)*78,0,28)
+        btn.Text = diff
+        btn.BackgroundColor3 = Settings.Difficulty == diff and Color3.fromRGB(140,80,200) or Color3.fromRGB(70,70,130)
+        btn.TextColor3 = Color3.new(1,1,1)
+        btn.Font = Enum.Font.SourceSansBold
+        btn.TextSize = 12
+        btn.BorderSizePixel = 0
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
+        btn.Parent = diffFrame
+        btn.MouseButton1Click:Connect(function()
+            Settings.Difficulty = diff
+            for _, b in ipairs(diffFrame:GetChildren()) do if b:IsA("TextButton") then b.BackgroundColor3 = Color3.fromRGB(70,70,130) end end
+            btn.BackgroundColor3 = Color3.fromRGB(140,80,200)
+            applyDifficulty()
+        end)
+    end
+
+    -- ===== Дуэли =====
+    local yDuel = {5}
+    addToggle(contents[8], yDuel, "Режим дуэли", Settings.DuelTrainingMode, function(v) Settings.DuelTrainingMode = v end)
+    y = yDuel[1]
+    lbl = Instance.new("TextLabel"); lbl.Size = UDim2.new(1,-10,0,16); lbl.Position = UDim2.new(0,5,0,y); lbl.BackgroundTransparency = 1; lbl.Text = "Противник"; lbl.TextColor3 = Color3.new(1,1,1); lbl.Font = Enum.Font.SourceSans; lbl.TextSize = 12; lbl.Parent = contents[8]
+    y = y + 18
+    box = Instance.new("TextBox"); box.Size = UDim2.new(1,-10,0,24); box.Position = UDim2.new(0,5,0,y); box.BackgroundColor3 = Color3.fromRGB(40,30,55); box.TextColor3 = Color3.new(1,1,1); box.Text = Settings.DuelOpponent; box.Font = Enum.Font.SourceSans; box.TextSize = 12; box.Parent = contents[8]
+    box.FocusLost:Connect(function() Settings.DuelOpponent = box.Text end)
+
+    -- ===== Союзники =====
+    local alliesLabel = Instance.new("TextLabel")
+    alliesLabel.Size = UDim2.new(1,-10,0,18)
+    alliesLabel.Position = UDim2.new(0,5,0,5)
+    alliesLabel.BackgroundTransparency = 1
+    alliesLabel.Text = "Союзники (через запятую)"
+    alliesLabel.TextColor3 = Color3.new(1,1,1)
+    alliesLabel.Font = Enum.Font.SourceSansBold
+    alliesLabel.TextSize = 12
+    alliesLabel.Parent = contents[9]
+    local alliesBox = Instance.new("TextBox")
+    alliesBox.Size = UDim2.new(1,-10,0,60)
+    alliesBox.Position = UDim2.new(0,5,0,26)
+    alliesBox.BackgroundColor3 = Color3.fromRGB(40,30,55)
+    alliesBox.TextColor3 = Color3.new(1,1,1)
+    alliesBox.Text = Settings.Allies
+    alliesBox.Font = Enum.Font.SourceSans
+    alliesBox.TextSize = 12
+    alliesBox.BorderSizePixel = 0
+    alliesBox.ClearTextOnFocus = false
+    alliesBox.Parent = contents[9]
+    alliesBox.FocusLost:Connect(function() Settings.Allies = alliesBox.Text end)
+
+    -- ===== Сохранения =====
+    local slotLabel = Instance.new("TextLabel")
+    slotLabel.Size = UDim2.new(1,-10,0,18)
+    slotLabel.Position = UDim2.new(0,5,0,5)
+    slotLabel.BackgroundTransparency = 1
+    slotLabel.Text = "Активный слот: "..currentSaveSlot
+    slotLabel.TextColor3 = Color3.new(1,1,1)
+    slotLabel.Font = Enum.Font.SourceSansBold
+    slotLabel.TextSize = 12
+    slotLabel.Parent = contents[10]
+    for i=1,3 do
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0,50,0,22)
+        btn.Position = UDim2.new(0,10+(i-1)*70,0,28)
+        btn.Text = "Слот "..i
+        btn.BackgroundColor3 = Color3.fromRGB(70,70,130)
+        btn.TextColor3 = Color3.new(1,1,1)
+        btn.Font = Enum.Font.SourceSansBold
+        btn.TextSize = 11
+        btn.Parent = contents[10]
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
+        btn.MouseButton1Click:Connect(function() currentSaveSlot = i; slotLabel.Text = "Активный слот: "..i end)
+    end
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(0,140,0,22)
+    saveBtn.Position = UDim2.new(0,5,0,230)
+    saveBtn.Text = "Сохранить мозг"
+    saveBtn.BackgroundColor3 = Color3.fromRGB(100,100,200)
+    saveBtn.TextColor3 = Color3.new(1,1,1)
+    saveBtn.Font = Enum.Font.SourceSansBold
+    saveBtn.TextSize = 12
+    saveBtn.Parent = contents[10]
+    Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0,4)
+    saveBtn.MouseButton1Click:Connect(function() BrainStorage.save(currentSaveSlot) end)
+    local loadBtn = Instance.new("TextButton")
+    loadBtn.Size = UDim2.new(0,140,0,22)
+    loadBtn.Position = UDim2.new(0,155,0,230)
+    loadBtn.Text = "Загрузить мозг"
+    loadBtn.BackgroundColor3 = Color3.fromRGB(100,200,100)
+    loadBtn.TextColor3 = Color3.new(1,1,1)
+    loadBtn.Font = Enum.Font.SourceSansBold
+    loadBtn.TextSize = 12
+    loadBtn.Parent = contents[10]
+    Instance.new("UICorner", loadBtn).CornerRadius = UDim.new(0,4)
+    loadBtn.MouseButton1Click:Connect(function() BrainStorage.load(currentSaveSlot) end)
+
+    -- Переключение вкладок
+    local function switchTab(index)
+        for i, f in ipairs(contents) do f.Visible = i == index end
+        local tabsList = {tabMain, tabPro, tabIntel, tabAI, tabTactic, tabAntibot, tabDiff, tabDuel, tabAllies, tabSave}
+        for i, t in ipairs(tabsList) do
+            t.BackgroundColor3 = i == index and Color3.fromRGB(140,80,200) or Color3.fromRGB(70,70,130)
+        end
+    end
+    tabMain.MouseButton1Click:Connect(function() switchTab(1) end)
+    tabPro.MouseButton1Click:Connect(function() switchTab(2) end)
+    tabIntel.MouseButton1Click:Connect(function() switchTab(3) end)
+    tabAI.MouseButton1Click:Connect(function() switchTab(4) end)
+    tabTactic.MouseButton1Click:Connect(function() switchTab(5) end)
+    tabAntibot.MouseButton1Click:Connect(function() switchTab(6) end)
+    tabDiff.MouseButton1Click:Connect(function() switchTab(7) end)
+    tabDuel.MouseButton1Click:Connect(function() switchTab(8) end)
+    tabAllies.MouseButton1Click:Connect(function() switchTab(9) end)
+    tabSave.MouseButton1Click:Connect(function() switchTab(10) end)
+    switchTab(1)
+
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode == Enum.KeyCode.P and guiObject then
+            guiDestroyed = true
+            sg:Destroy()
+            guiObject = nil
+        end
+    end)
+
+    guiDestroyed = false
+end
+
+-- ===================== ПРИМЕНЕНИЕ СЛОЖНОСТИ =====================
+local function applyDifficulty()
+    local diff = Settings.Difficulty
+    if diff == "Слабо" then
+        Settings.AttackRange = 8; Settings.WalkSpeed = 16
+        Settings.AutoAbility = false; Settings.AbilityComboEnabled = false
+        Settings.DodgeEnabled = false; Settings.HumanMistakes = true
+        Settings.AdaptiveAggression = false; Settings.NoSpawnKill = false
+        Settings.FeintEnabled = false; Settings.BaitEdgeEnabled = false
+        Settings.EdgeJumpCounterEnabled = false; Settings.PatternInterruptEnabled = false
+        Settings.AdaptiveCooldownEnabled = false; Settings.AdvancedDodgeEnabled = false
+        Settings.BerserkMode = false; Settings.MimicMode = false
+        Settings.LearningRate = 0.2; Settings.PredictionEnabled = false
+        Settings.SmartAbilitiesEnabled = false; Settings.HitAndRunEnabled = false
+        Settings.ZoneControlEnabled = false; Settings.ImprovedDodge = false
+        Settings.StrafeEnabled = false; Settings.FlankEnabled = false
+        Settings.UseAbility = false
+        Settings.AdaptationEnabled = false
+    elseif diff == "Средне" then
+        Settings.AttackRange = 12; Settings.WalkSpeed = 24
+        Settings.AutoAbility = false; Settings.AbilityComboEnabled = true
+        Settings.DodgeEnabled = true; Settings.HumanMistakes = false
+        Settings.AdaptiveAggression = false; Settings.NoSpawnKill = false
+        Settings.FeintEnabled = false; Settings.BaitEdgeEnabled = false
+        Settings.EdgeJumpCounterEnabled = false; Settings.PatternInterruptEnabled = true
+        Settings.AdaptiveCooldownEnabled = true; Settings.AdvancedDodgeEnabled = false
+        Settings.BerserkMode = false; Settings.MimicMode = false
+        Settings.LearningRate = 0.4; Settings.PredictionEnabled = true
+        Settings.SmartAbilitiesEnabled = true; Settings.HitAndRunEnabled = true
+        Settings.ZoneControlEnabled = true; Settings.ImprovedDodge = true
+        Settings.StrafeEnabled = true; Settings.FlankEnabled = true
+        Settings.UseAbility = true
+        Settings.AdaptationEnabled = true
+        Settings.AdaptationSpeed = 1.0
+    elseif diff == "Сильно" then
+        Settings.AttackRange = 16; Settings.WalkSpeed = 30
+        Settings.AutoAbility = true; Settings.AbilityComboEnabled = true
+        Settings.DodgeEnabled = true; Settings.HumanMistakes = false
+        Settings.AdaptiveAggression = true; Settings.NoSpawnKill = false
+        Settings.FeintEnabled = true; Settings.BaitEdgeEnabled = true
+        Settings.EdgeJumpCounterEnabled = true; Settings.PatternInterruptEnabled = true
+        Settings.AdaptiveCooldownEnabled = true; Settings.AdvancedDodgeEnabled = true
+        Settings.BerserkMode = true; Settings.MimicMode = true
+        Settings.LearningRate = 0.6; Settings.PredictionEnabled = true
+        Settings.SmartAbilitiesEnabled = true; Settings.HitAndRunEnabled = true
+        Settings.ZoneControlEnabled = true; Settings.ImprovedDodge = true
+        Settings.StrafeEnabled = true; Settings.FlankEnabled = true
+        Settings.UseAbility = true
+        Settings.AdaptationEnabled = true
+        Settings.AdaptationSpeed = 1.2
+    elseif diff == "Эксперт" then
+        Settings.AttackRange = 20; Settings.WalkSpeed = 35
+        Settings.AutoAbility = true; Settings.AbilityComboEnabled = true
+        Settings.DodgeEnabled = true; Settings.HumanMistakes = false
+        Settings.AdaptiveAggression = true; Settings.NoSpawnKill = false
+        Settings.FeintEnabled = true; Settings.BaitEdgeEnabled = true
+        Settings.EdgeJumpCounterEnabled = true; Settings.PatternInterruptEnabled = true
+        Settings.AdaptiveCooldownEnabled = true; Settings.AdvancedDodgeEnabled = true
+        Settings.BerserkMode = true; Settings.MimicMode = true
+        Settings.LearningRate = 0.9; Settings.PredictionEnabled = true
+        Settings.SmartAbilitiesEnabled = true; Settings.HitAndRunEnabled = true
+        Settings.ZoneControlEnabled = true; Settings.ImprovedDodge = true
+        Settings.StrafeEnabled = true; Settings.FlankEnabled = true
+        Settings.UseAbility = true
+        Settings.AdaptationEnabled = true
+        Settings.AdaptationSpeed = 1.5
+    end
+end
+
+-- ==================== ГЛАВНЫЙ ЦИКЛ ====================
+local botConnection = nil
+local function startBot()
+    if botConnection then return end
+    print("🔴 Махорага v5.1 ADAPTIVE EDGE запускается...")
+    local waitStart = tick()
+    while not (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")) do
+        if tick() - waitStart > 15 then warn("❌ Персонаж не загрузился"); return end
+        task.wait(0.5)
+    end
+    local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if humanoid then humanoid.Sit = false end
+    State.Phase = isOnArena() and "Fighting" or "ToPoint"
+    State.RoundStartTime = tick()
+    State.LastStatBoost = tick()
+
+    botConnection = RunService.Heartbeat:Connect(function()
+        if not Settings.Enabled then stopBot(); return end
+        if State.Phase == "Fighting" and not isOnArena() then State.Phase = "ToPoint"
+        elseif State.Phase == "ToPoint" and isOnArena() then State.Phase = "Fighting" end
+        if State.Phase == "ToPoint" then walkToPortal()
+        elseif State.Phase == "Fighting" then fightLoop() end
+    end)
+    print("✅ Махорага активирован")
+end
+local function stopBot()
+    if botConnection then botConnection:Disconnect(); botConnection = nil end
+    local char = LocalPlayer.Character
+    if char then local humanoid = char:FindFirstChildOfClass("Humanoid"); if humanoid then humanoid:Move(Vector3.zero, true) end end
+    State.LastTargetPlayer = nil; State.LastTargetName = nil
+end
+
+-- ==================== ЗАПУСК ====================
+BrainStorage.load(currentSaveSlot)
+applyDifficulty()
+
+State.LastSlapTime = 0
+State.LastFlankTime = 0
+
+createGUI()
+
+task.spawn(function()
+    while true do
+        if Settings.Enabled then if not botConnection then startBot() end
+        else if botConnection then stopBot() end end
+        task.wait(Settings.UpdateDelay)
+    end
+end)
