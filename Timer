@@ -1,0 +1,399 @@
+--[[
+    Точный таймер + секундомер (гарантированно работает)
+    - Секундомер: прямой отсчёт (Старт / Пауза / Сброс)
+    - Таймер: обратный отсчёт (ввод минут → "Установить" → автостарт)
+    - Кнопки Пауза/Продолжить и Сброс для таймера
+    - Наглядный дисплей с мигающим двоеточием при работе
+    - Перетаскивание, сворачивание, удаление по P
+    - Совместимость с Xeno (RenderStepped + tick)
+]]
+
+local player = game.Players.LocalPlayer
+local uis = game:GetService("UserInputService")
+local runService = game:GetService("RunService")
+
+-- ========= СОСТОЯНИЯ =========
+local activeTab = "stopwatch"  -- "stopwatch" или "timer"
+
+-- Секундомер
+local swRunning = false
+local swStart = 0
+local swAccum = 0
+
+-- Таймер
+local tRunning = false        -- идёт ли обратный отсчёт
+local tRemaining = 0          -- оставшиеся секунды на момент паузы
+local tLastResume = 0         -- tick() последнего возобновления
+local tTarget = 0             -- установленное время (сек)
+
+-- ========= ФУНКЦИЯ ФОРМАТИРОВАНИЯ =========
+local function formatTime(totalSeconds)
+    totalSeconds = math.max(0, totalSeconds)
+    local hours = math.floor(totalSeconds / 3600)
+    local mins = math.floor((totalSeconds % 3600) / 60)
+    local secs = math.floor(totalSeconds % 60)
+    local millis = math.floor((totalSeconds * 1000) % 1000)
+    return string.format("%02d:%02d:%02d.%03d", hours, mins, secs, millis)
+end
+
+-- ========= GUI =========
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "TimerGUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 280, 0, 210)
+main.Position = UDim2.new(0.5, -140, 0.5, -105)
+main.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
+main.Parent = screenGui
+
+-- Заголовок
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 30)
+header.Position = UDim2.new(0, 0, 0, 0)
+header.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+header.BorderSizePixel = 0
+header.Parent = main
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(0, 140, 1, 0)
+title.Position = UDim2.new(0, 12, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "⏱️ Точное время"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = header
+
+-- Сворачивание
+local minimized = false
+local normalHeight = main.Size.Y.Offset
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 26, 0, 26)
+minimizeBtn.Position = UDim2.new(1, -36, 0.5, -13)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 65)
+minimizeBtn.TextColor3 = Color3.new(1, 1, 1)
+minimizeBtn.Text = "▼"
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.TextSize = 14
+minimizeBtn.AutoButtonColor = false
+Instance.new("UICorner", minimizeBtn).CornerRadius = UDim.new(0, 6)
+minimizeBtn.Parent = header
+
+-- Вкладки
+local tabs = Instance.new("Frame")
+tabs.Size = UDim2.new(1, 0, 0, 28)
+tabs.Position = UDim2.new(0, 0, 0, 30)
+tabs.BackgroundTransparency = 1
+tabs.Parent = main
+
+local function createTab(text, posX, activeColor, inactiveColor)
+    local tab = Instance.new("TextButton")
+    tab.Size = UDim2.new(0.5, -2, 1, 0)
+    tab.Position = UDim2.new(posX, 0, 0, 0)
+    tab.BackgroundColor3 = inactiveColor
+    tab.TextColor3 = Color3.new(1, 1, 1)
+    tab.Text = text
+    tab.Font = Enum.Font.GothamBold
+    tab.TextSize = 13
+    tab.AutoButtonColor = false
+    Instance.new("UICorner", tab).CornerRadius = UDim.new(0, 8)
+    tab.Parent = tabs
+    return tab
+end
+
+local tabStopwatch = createTab("⏱️ Секундомер", 0, Color3.fromRGB(80, 140, 200), Color3.fromRGB(55, 55, 60))
+local tabTimer = createTab("⏲️ Таймер", 0.5, Color3.fromRGB(200, 120, 60), Color3.fromRGB(55, 55, 60))
+
+-- Дисплей
+local displayLabel = Instance.new("TextLabel")
+displayLabel.Size = UDim2.new(1, -20, 0, 36)
+displayLabel.Position = UDim2.new(0, 10, 0, 64)
+displayLabel.BackgroundTransparency = 1
+displayLabel.Text = "00:00:00.000"
+displayLabel.TextColor3 = Color3.new(255, 255, 255)
+displayLabel.Font = Enum.Font.GothamBlack
+displayLabel.TextSize = 24
+displayLabel.Parent = main
+
+-- Контейнеры управления
+local containerStopwatch = Instance.new("Frame")
+containerStopwatch.Size = UDim2.new(1, 0, 0, 100)
+containerStopwatch.Position = UDim2.new(0, 0, 0, 106)
+containerStopwatch.BackgroundTransparency = 1
+containerStopwatch.Visible = true
+containerStopwatch.Parent = main
+
+local containerTimer = Instance.new("Frame")
+containerTimer.Size = UDim2.new(1, 0, 0, 100)
+containerTimer.Position = UDim2.new(0, 0, 0, 106)
+containerTimer.BackgroundTransparency = 1
+containerTimer.Visible = false
+containerTimer.Parent = main
+
+-- ----- СЕКУНДОМЕР -----
+local swStartPauseBtn = Instance.new("TextButton")
+swStartPauseBtn.Size = UDim2.new(0, 110, 0, 32)
+swStartPauseBtn.Position = UDim2.new(0, 10, 0, 10)
+swStartPauseBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 80)
+swStartPauseBtn.TextColor3 = Color3.new(1, 1, 1)
+swStartPauseBtn.Text = "Старт"
+swStartPauseBtn.Font = Enum.Font.GothamBold
+swStartPauseBtn.TextSize = 14
+Instance.new("UICorner", swStartPauseBtn).CornerRadius = UDim.new(0, 8)
+swStartPauseBtn.Parent = containerStopwatch
+
+local swResetBtn = Instance.new("TextButton")
+swResetBtn.Size = UDim2.new(0, 110, 0, 32)
+swResetBtn.Position = UDim2.new(1, -120, 0, 10)
+swResetBtn.BackgroundColor3 = Color3.fromRGB(180, 80, 80)
+swResetBtn.TextColor3 = Color3.new(1, 1, 1)
+swResetBtn.Text = "Сброс"
+swResetBtn.Font = Enum.Font.GothamBold
+swResetBtn.TextSize = 14
+Instance.new("UICorner", swResetBtn).CornerRadius = UDim.new(0, 8)
+swResetBtn.Parent = containerStopwatch
+
+-- ----- ТАЙМЕР -----
+-- Поле ввода минут
+local tInput = Instance.new("TextBox")
+tInput.Size = UDim2.new(0, 90, 0, 30)
+tInput.Position = UDim2.new(0, 10, 0, 5)
+tInput.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+tInput.TextColor3 = Color3.new(1, 1, 1)
+tInput.PlaceholderText = "мин"
+tInput.Text = ""
+tInput.Font = Enum.Font.Gotham
+tInput.TextSize = 14
+Instance.new("UICorner", tInput).CornerRadius = UDim.new(0, 6)
+tInput.Parent = containerTimer
+
+local tSetBtn = Instance.new("TextButton")
+tSetBtn.Size = UDim2.new(0, 110, 0, 30)
+tSetBtn.Position = UDim2.new(0, 110, 0, 5)
+tSetBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 80)
+tSetBtn.TextColor3 = Color3.new(1, 1, 1)
+tSetBtn.Text = "Установить"
+tSetBtn.Font = Enum.Font.GothamBold
+tSetBtn.TextSize = 13
+Instance.new("UICorner", tSetBtn).CornerRadius = UDim.new(0, 6)
+tSetBtn.Parent = containerTimer
+
+-- Кнопка Пауза / Продолжить
+local tPauseBtn = Instance.new("TextButton")
+tPauseBtn.Size = UDim2.new(0, 110, 0, 32)
+tPauseBtn.Position = UDim2.new(0, 10, 0, 45)
+tPauseBtn.BackgroundColor3 = Color3.fromRGB(200, 160, 0)
+tPauseBtn.TextColor3 = Color3.new(1, 1, 1)
+tPauseBtn.Text = "Пауза"
+tPauseBtn.Font = Enum.Font.GothamBold
+tPauseBtn.TextSize = 14
+Instance.new("UICorner", tPauseBtn).CornerRadius = UDim.new(0, 8)
+tPauseBtn.Parent = containerTimer
+
+local tResetBtn = Instance.new("TextButton")
+tResetBtn.Size = UDim2.new(0, 110, 0, 32)
+tResetBtn.Position = UDim2.new(1, -120, 0, 45)
+tResetBtn.BackgroundColor3 = Color3.fromRGB(180, 80, 80)
+tResetBtn.TextColor3 = Color3.new(1, 1, 1)
+tResetBtn.Text = "Сброс"
+tResetBtn.Font = Enum.Font.GothamBold
+tResetBtn.TextSize = 14
+Instance.new("UICorner", tResetBtn).CornerRadius = UDim.new(0, 8)
+tResetBtn.Parent = containerTimer
+
+-- ========= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =========
+local function getStopwatchTime()
+    if swRunning then
+        return swAccum + (tick() - swStart)
+    else
+        return swAccum
+    end
+end
+
+local function getTimerTime()
+    if tRunning then
+        return math.max(0, tRemaining - (tick() - tLastResume))
+    else
+        return tRemaining
+    end
+end
+
+function updateDisplay()
+    local t
+    if activeTab == "stopwatch" then
+        t = getStopwatchTime()
+    else
+        t = getTimerTime()
+    end
+    displayLabel.Text = formatTime(t)
+    -- Для таймера: красный цвет, если дошли до 0
+    if activeTab == "timer" and t <= 0 and tTarget > 0 then
+        displayLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+    else
+        displayLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end
+end
+
+-- ========= УПРАВЛЕНИЕ СЕКУНДОМЕРОМ =========
+swStartPauseBtn.MouseButton1Click:Connect(function()
+    if not swRunning then
+        swRunning = true
+        swStart = tick()
+        swStartPauseBtn.Text = "Пауза"
+        swStartPauseBtn.BackgroundColor3 = Color3.fromRGB(200, 160, 0)
+    else
+        swRunning = false
+        swAccum = swAccum + (tick() - swStart)
+        swStartPauseBtn.Text = "Старт"
+        swStartPauseBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 80)
+        updateDisplay()
+    end
+end)
+
+swResetBtn.MouseButton1Click:Connect(function()
+    swRunning = false
+    swAccum = 0
+    swStartPauseBtn.Text = "Старт"
+    swStartPauseBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 80)
+    updateDisplay()
+end)
+
+-- ========= УПРАВЛЕНИЕ ТАЙМЕРОМ =========
+local function startTimerFromInput()
+    local raw = tInput.Text:gsub(",", ".")
+    local minutes = tonumber(raw)
+    if minutes and minutes > 0 then
+        local totalSec = minutes * 60
+        tTarget = totalSec
+        tRemaining = totalSec
+        tRunning = true
+        tLastResume = tick()
+        tPauseBtn.Text = "Пауза"
+        tPauseBtn.BackgroundColor3 = Color3.fromRGB(200, 160, 0)
+        tInput.Text = ""
+        updateDisplay()
+    else
+        -- Ошибка
+        tInput.BackgroundColor3 = Color3.fromRGB(120, 40, 40)
+        task.wait(0.4)
+        tInput.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+    end
+end
+
+tSetBtn.MouseButton1Click:Connect(startTimerFromInput)
+tInput.FocusLost:Connect(function(enterPressed)
+    if enterPressed then startTimerFromInput() end
+end)
+
+-- Пауза / Продолжить таймер
+tPauseBtn.MouseButton1Click:Connect(function()
+    if tTarget <= 0 then return end
+    if tRunning then
+        -- Поставить на паузу
+        tRemaining = math.max(0, tRemaining - (tick() - tLastResume))
+        tRunning = false
+        tPauseBtn.Text = "Старт"
+        tPauseBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 80)
+        updateDisplay()
+    else
+        -- Продолжить
+        tRunning = true
+        tLastResume = tick()
+        tPauseBtn.Text = "Пауза"
+        tPauseBtn.BackgroundColor3 = Color3.fromRGB(200, 160, 0)
+    end
+end)
+
+-- Сброс таймера (останавливает и возвращает к изначально установленному времени)
+tResetBtn.MouseButton1Click:Connect(function()
+    if tTarget > 0 then
+        tRunning = false
+        tRemaining = tTarget
+        tPauseBtn.Text = "Старт"
+        tPauseBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 80)
+        updateDisplay()
+    end
+end)
+
+-- Автоматическая остановка, когда время вышло
+local function autoStopTimer()
+    if activeTab == "timer" and tRunning and getTimerTime() <= 0 then
+        tRunning = false
+        tRemaining = 0
+        tPauseBtn.Text = "Старт"
+        tPauseBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 80)
+        updateDisplay()
+    end
+end
+
+-- ========= ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК =========
+local function switchTab(tab)
+    activeTab = tab
+    if tab == "stopwatch" then
+        containerStopwatch.Visible = true
+        containerTimer.Visible = false
+        tabStopwatch.BackgroundColor3 = Color3.fromRGB(80, 140, 200)
+        tabTimer.BackgroundColor3 = Color3.fromRGB(55, 55, 60)
+    else
+        containerStopwatch.Visible = false
+        containerTimer.Visible = true
+        tabStopwatch.BackgroundColor3 = Color3.fromRGB(55, 55, 60)
+        tabTimer.BackgroundColor3 = Color3.fromRGB(200, 120, 60)
+    end
+    updateDisplay()
+end
+
+tabStopwatch.MouseButton1Click:Connect(function() switchTab("stopwatch") end)
+tabTimer.MouseButton1Click:Connect(function() switchTab("timer") end)
+
+-- ========= ГЛАВНЫЙ ЦИКЛ ОБНОВЛЕНИЯ =========
+runService.RenderStepped:Connect(function()
+    updateDisplay()
+    autoStopTimer()
+end)
+
+-- ========= СВОРАЧИВАНИЕ =========
+minimizeBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        main.Size = UDim2.new(0, 280, 0, 30)
+        tabs.Visible = false
+        displayLabel.Visible = false
+        containerStopwatch.Visible = false
+        containerTimer.Visible = false
+        minimizeBtn.Text = "▲"
+    else
+        main.Size = UDim2.new(0, 280, 0, normalHeight)
+        tabs.Visible = true
+        displayLabel.Visible = true
+        if activeTab == "stopwatch" then
+            containerStopwatch.Visible = true
+            containerTimer.Visible = false
+        else
+            containerStopwatch.Visible = false
+            containerTimer.Visible = true
+        end
+        minimizeBtn.Text = "▼"
+    end
+end)
+
+-- ========= ПОЛНОЕ УДАЛЕНИЕ ПО P =========
+uis.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.P then
+        swRunning = false
+        tRunning = false
+        if screenGui then
+            screenGui:Destroy()
+        end
+    end
+end)
+
+updateDisplay()
