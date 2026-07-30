@@ -1,0 +1,538 @@
+--[[
+    Универсальный скрипт v1.1: Авто-E + Авто-удар
+    By: Probothotspot
+    ✅ Анимированное сворачивание до заголовка
+    ✅ Плавающая иконка, тёмно-фиолетовый дизайн
+    ✅ Мгновенное первое действие, плавный таймер
+    ✅ Крестик ❌ и кнопки "Все" в нижней панели
+    ✅ Подпись автора между кнопками и панелью управления
+]]
+
+local player = game.Players.LocalPlayer
+local uis = game:GetService("UserInputService")
+local vim = game:GetService("VirtualInputManager")
+local TweenService = game:GetService("TweenService")
+
+local intervalE = 1.0
+local intervalClick = 0.5
+local autoEEnabled = false
+local autoClickEnabled = false
+local lastE = 0
+local lastClick = 0
+
+local function pressE()
+    vim:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    task.wait(0.05)
+    vim:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+end
+
+local function pressClick()
+    vim:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+    task.wait(0.05)
+    vim:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+end
+
+-- GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AutoActionsGUI_v1.1"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- Плавающая иконка
+local floatIcon = Instance.new("TextButton")
+floatIcon.Size = UDim2.new(0, 48, 0, 48)
+floatIcon.Position = UDim2.new(0, 10, 0.5, -24)
+floatIcon.BackgroundColor3 = Color3.fromRGB(50, 20, 70)
+floatIcon.Text = "⚡"
+floatIcon.TextColor3 = Color3.new(1,1,1)
+floatIcon.Font = Enum.Font.GothamBold
+floatIcon.TextSize = 24
+floatIcon.AutoButtonColor = false
+floatIcon.Active = true
+floatIcon.Draggable = true
+Instance.new("UICorner", floatIcon).CornerRadius = UDim.new(1,0)
+local stroke = Instance.new("UIStroke")
+stroke.Thickness = 2
+stroke.Color = Color3.fromRGB(180, 130, 255)
+stroke.Parent = floatIcon
+floatIcon.Parent = screenGui
+
+-- Основное окно (высота увеличена до 310 для размещения подписи)
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 280, 0, 310)
+main.Position = UDim2.new(0.5, -140, 0.5, -155)
+main.BackgroundColor3 = Color3.fromRGB(30, 15, 45)
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+main.Visible = true
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
+main.Parent = screenGui
+
+-- Заголовок
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 36)
+header.Position = UDim2.new(0, 0, 0, 0)
+header.BackgroundColor3 = Color3.fromRGB(50, 25, 70)
+header.BorderSizePixel = 0
+header.Parent = main
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(0, 130, 1, 0)
+title.Position = UDim2.new(0, 12, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "⚡ Авто-действия"
+title.TextColor3 = Color3.new(1,1,1)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = header
+
+-- Сворачивание
+local isMinimized = false
+local fullHeight = 310
+local minimizedHeight = 36
+
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 28, 0, 28)
+minimizeBtn.Position = UDim2.new(1, -68, 0.5, -14)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(100, 60, 150)
+minimizeBtn.TextColor3 = Color3.new(1,1,1)
+minimizeBtn.Text = "–"
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.TextSize = 18
+minimizeBtn.AutoButtonColor = false
+Instance.new("UICorner", minimizeBtn).CornerRadius = UDim.new(0, 6)
+minimizeBtn.Parent = header
+
+-- Крестик
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 28, 0, 28)
+closeBtn.Position = UDim2.new(1, -34, 0.5, -14)
+closeBtn.BackgroundColor3 = Color3.fromRGB(180, 60, 60)
+closeBtn.TextColor3 = Color3.new(1,1,1)
+closeBtn.Text = "❌"
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 14
+closeBtn.AutoButtonColor = false
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
+closeBtn.Parent = header
+
+-- Нижняя панель
+local footer = Instance.new("Frame")
+footer.Size = UDim2.new(1, 0, 0, 40)
+footer.Position = UDim2.new(0, 0, 1, -40)
+footer.BackgroundColor3 = Color3.fromRGB(35, 20, 50)
+footer.BorderSizePixel = 0
+footer.Parent = main
+
+local launchAllBtn = Instance.new("TextButton")
+launchAllBtn.Size = UDim2.new(0, 110, 0, 28)
+launchAllBtn.Position = UDim2.new(0, 10, 0.5, -14)
+launchAllBtn.BackgroundColor3 = Color3.fromRGB(120, 60, 180)
+launchAllBtn.TextColor3 = Color3.new(1,1,1)
+launchAllBtn.Text = "▶ Все"
+launchAllBtn.Font = Enum.Font.GothamBold
+launchAllBtn.TextSize = 12
+Instance.new("UICorner", launchAllBtn).CornerRadius = UDim.new(0, 6)
+launchAllBtn.Parent = footer
+
+local stopAllBtn = Instance.new("TextButton")
+stopAllBtn.Size = UDim2.new(0, 110, 0, 28)
+stopAllBtn.Position = UDim2.new(1, -120, 0.5, -14)
+stopAllBtn.BackgroundColor3 = Color3.fromRGB(160, 50, 70)
+stopAllBtn.TextColor3 = Color3.new(1,1,1)
+stopAllBtn.Text = "⏹ Все"
+stopAllBtn.Font = Enum.Font.GothamBold
+stopAllBtn.TextSize = 12
+Instance.new("UICorner", stopAllBtn).CornerRadius = UDim.new(0, 6)
+stopAllBtn.Parent = footer
+
+-- Подпись автора (отдельная строка над нижней панелью)
+local creditFrame = Instance.new("Frame")
+creditFrame.Size = UDim2.new(1, 0, 0, 20)
+creditFrame.Position = UDim2.new(0, 0, 1, -60)  -- прямо над footer'ом
+creditFrame.BackgroundColor3 = Color3.fromRGB(35, 20, 50)
+creditFrame.BorderSizePixel = 0
+creditFrame.Parent = main
+
+local creditLabel = Instance.new("TextLabel")
+creditLabel.Size = UDim2.new(1, 0, 1, 0)
+creditLabel.Position = UDim2.new(0, 0, 0, 0)
+creditLabel.BackgroundTransparency = 1
+creditLabel.Text = "By: Probothotspot"
+creditLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+creditLabel.Font = Enum.Font.Gotham
+creditLabel.TextSize = 10
+creditLabel.TextXAlignment = Enum.TextXAlignment.Center
+creditLabel.Parent = creditFrame
+
+-- Вкладки
+local tabFrame = Instance.new("Frame")
+tabFrame.Size = UDim2.new(1, 0, 0, 30)
+tabFrame.Position = UDim2.new(0, 0, 0, 36)
+tabFrame.BackgroundTransparency = 1
+tabFrame.Parent = main
+
+local tabE = Instance.new("TextButton")
+tabE.Size = UDim2.new(0.5, -2, 1, 0)
+tabE.Position = UDim2.new(0, 0, 0, 0)
+tabE.BackgroundColor3 = Color3.fromRGB(120, 70, 200)
+tabE.Text = "⚡ E"
+tabE.TextColor3 = Color3.new(1,1,1)
+tabE.Font = Enum.Font.GothamBold
+tabE.TextSize = 13
+tabE.AutoButtonColor = false
+Instance.new("UICorner", tabE).CornerRadius = UDim.new(0, 8)
+tabE.Parent = tabFrame
+
+local tabClick = Instance.new("TextButton")
+tabClick.Size = UDim2.new(0.5, -2, 1, 0)
+tabClick.Position = UDim2.new(0.5, 0, 0, 0)
+tabClick.BackgroundColor3 = Color3.fromRGB(50, 30, 70)
+tabClick.Text = "👊 Удар"
+tabClick.TextColor3 = Color3.new(1,1,1)
+tabClick.Font = Enum.Font.GothamBold
+tabClick.TextSize = 13
+tabClick.AutoButtonColor = false
+Instance.new("UICorner", tabClick).CornerRadius = UDim.new(0, 8)
+tabClick.Parent = tabFrame
+
+-- Контейнеры вкладок (теперь с отступом под creditFrame)
+local containerE = Instance.new("Frame")
+containerE.Size = UDim2.new(1, 0, 1, -126)  -- 36+30+40+20 = 126
+containerE.Position = UDim2.new(0, 0, 0, 66)
+containerE.BackgroundColor3 = Color3.fromRGB(30, 15, 45)
+containerE.BorderSizePixel = 0
+containerE.Visible = true
+containerE.Parent = main
+
+local containerClick = Instance.new("Frame")
+containerClick.Size = UDim2.new(1, 0, 1, -126)
+containerClick.Position = UDim2.new(0, 0, 0, 66)
+containerClick.BackgroundColor3 = Color3.fromRGB(30, 15, 45)
+containerClick.BorderSizePixel = 0
+containerClick.Visible = false
+containerClick.Parent = main
+
+-- Переключение вкладок
+local function switchTab(tab)
+    if tab == "E" then
+        containerE.Visible = true
+        containerClick.Visible = false
+        tabE.BackgroundColor3 = Color3.fromRGB(120, 70, 200)
+        tabClick.BackgroundColor3 = Color3.fromRGB(50, 30, 70)
+    else
+        containerE.Visible = false
+        containerClick.Visible = true
+        tabE.BackgroundColor3 = Color3.fromRGB(50, 30, 70)
+        tabClick.BackgroundColor3 = Color3.fromRGB(120, 70, 200)
+    end
+end
+tabE.MouseButton1Click:Connect(function() switchTab("E") end)
+tabClick.MouseButton1Click:Connect(function() switchTab("Click") end)
+
+-- Элементы вкладки E
+local statusE = Instance.new("TextLabel")
+statusE.Size = UDim2.new(1, -20, 0, 18)
+statusE.Position = UDim2.new(0, 10, 0, 8)
+statusE.BackgroundTransparency = 1
+statusE.Text = "Статус: ВЫКЛ"
+statusE.TextColor3 = Color3.fromRGB(255, 100, 100)
+statusE.Font = Enum.Font.Gotham
+statusE.TextSize = 13
+statusE.TextXAlignment = Enum.TextXAlignment.Left
+statusE.Parent = containerE
+
+local intervalE_label = Instance.new("TextLabel")
+intervalE_label.Size = UDim2.new(1, -20, 0, 18)
+intervalE_label.Position = UDim2.new(0, 10, 0, 30)
+intervalE_label.BackgroundTransparency = 1
+intervalE_label.Text = "Интервал: 1 сек"
+intervalE_label.TextColor3 = Color3.fromRGB(220, 200, 255)
+intervalE_label.Font = Enum.Font.Gotham
+intervalE_label.TextSize = 13
+intervalE_label.TextXAlignment = Enum.TextXAlignment.Left
+intervalE_label.Parent = containerE
+
+local timerE = Instance.new("TextLabel")
+timerE.Size = UDim2.new(1, -20, 0, 18)
+timerE.Position = UDim2.new(0, 10, 0, 50)
+timerE.BackgroundTransparency = 1
+timerE.Text = "До нажатия: --"
+timerE.TextColor3 = Color3.fromRGB(180, 150, 220)
+timerE.Font = Enum.Font.Gotham
+timerE.TextSize = 13
+timerE.TextXAlignment = Enum.TextXAlignment.Left
+timerE.Parent = containerE
+
+local inputE = Instance.new("TextBox")
+inputE.Size = UDim2.new(0, 100, 0, 28)
+inputE.Position = UDim2.new(0, 10, 0, 72)
+inputE.BackgroundColor3 = Color3.fromRGB(45, 25, 65)
+inputE.TextColor3 = Color3.new(1,1,1)
+inputE.PlaceholderText = "сек"
+inputE.Text = ""
+inputE.Font = Enum.Font.Gotham
+inputE.TextSize = 14
+Instance.new("UICorner", inputE).CornerRadius = UDim.new(0, 6)
+inputE.Parent = containerE
+
+local setE = Instance.new("TextButton")
+setE.Size = UDim2.new(0, 110, 0, 28)
+setE.Position = UDim2.new(0, 120, 0, 72)
+setE.BackgroundColor3 = Color3.fromRGB(70, 40, 110)
+setE.TextColor3 = Color3.new(1,1,1)
+setE.Text = "Установить"
+setE.Font = Enum.Font.GothamBold
+setE.TextSize = 13
+Instance.new("UICorner", setE).CornerRadius = UDim.new(0, 6)
+setE.Parent = containerE
+
+local toggleE_btn = Instance.new("TextButton")
+toggleE_btn.Size = UDim2.new(0, 250, 0, 36)
+toggleE_btn.Position = UDim2.new(0.5, -125, 0, 115)
+toggleE_btn.BackgroundColor3 = Color3.fromRGB(100, 50, 170)
+toggleE_btn.TextColor3 = Color3.new(1,1,1)
+toggleE_btn.Text = "Включить авто-E"
+toggleE_btn.Font = Enum.Font.GothamBold
+toggleE_btn.TextSize = 14
+Instance.new("UICorner", toggleE_btn).CornerRadius = UDim.new(0, 8)
+toggleE_btn.Parent = containerE
+
+-- Вкладка Удар
+local statusClick = Instance.new("TextLabel")
+statusClick.Size = UDim2.new(1, -20, 0, 18)
+statusClick.Position = UDim2.new(0, 10, 0, 8)
+statusClick.BackgroundTransparency = 1
+statusClick.Text = "Статус: ВЫКЛ"
+statusClick.TextColor3 = Color3.fromRGB(255, 100, 100)
+statusClick.Font = Enum.Font.Gotham
+statusClick.TextSize = 13
+statusClick.TextXAlignment = Enum.TextXAlignment.Left
+statusClick.Parent = containerClick
+
+local intervalClick_label = Instance.new("TextLabel")
+intervalClick_label.Size = UDim2.new(1, -20, 0, 18)
+intervalClick_label.Position = UDim2.new(0, 10, 0, 30)
+intervalClick_label.BackgroundTransparency = 1
+intervalClick_label.Text = "Интервал: 0.5 сек"
+intervalClick_label.TextColor3 = Color3.fromRGB(220, 200, 255)
+intervalClick_label.Font = Enum.Font.Gotham
+intervalClick_label.TextSize = 13
+intervalClick_label.TextXAlignment = Enum.TextXAlignment.Left
+intervalClick_label.Parent = containerClick
+
+local timerClick = Instance.new("TextLabel")
+timerClick.Size = UDim2.new(1, -20, 0, 18)
+timerClick.Position = UDim2.new(0, 10, 0, 50)
+timerClick.BackgroundTransparency = 1
+timerClick.Text = "До нажатия: --"
+timerClick.TextColor3 = Color3.fromRGB(180, 150, 220)
+timerClick.Font = Enum.Font.Gotham
+timerClick.TextSize = 13
+timerClick.TextXAlignment = Enum.TextXAlignment.Left
+timerClick.Parent = containerClick
+
+local inputClick = Instance.new("TextBox")
+inputClick.Size = UDim2.new(0, 100, 0, 28)
+inputClick.Position = UDim2.new(0, 10, 0, 72)
+inputClick.BackgroundColor3 = Color3.fromRGB(45, 25, 65)
+inputClick.TextColor3 = Color3.new(1,1,1)
+inputClick.PlaceholderText = "сек"
+inputClick.Text = ""
+inputClick.Font = Enum.Font.Gotham
+inputClick.TextSize = 14
+Instance.new("UICorner", inputClick).CornerRadius = UDim.new(0, 6)
+inputClick.Parent = containerClick
+
+local setClick = Instance.new("TextButton")
+setClick.Size = UDim2.new(0, 110, 0, 28)
+setClick.Position = UDim2.new(0, 120, 0, 72)
+setClick.BackgroundColor3 = Color3.fromRGB(70, 40, 110)
+setClick.TextColor3 = Color3.new(1,1,1)
+setClick.Text = "Установить"
+setClick.Font = Enum.Font.GothamBold
+setClick.TextSize = 13
+Instance.new("UICorner", setClick).CornerRadius = UDim.new(0, 6)
+setClick.Parent = containerClick
+
+local toggleClick_btn = Instance.new("TextButton")
+toggleClick_btn.Size = UDim2.new(0, 250, 0, 36)
+toggleClick_btn.Position = UDim2.new(0.5, -125, 0, 115)
+toggleClick_btn.BackgroundColor3 = Color3.fromRGB(100, 50, 170)
+toggleClick_btn.TextColor3 = Color3.new(1,1,1)
+toggleClick_btn.Text = "Включить авто-удар"
+toggleClick_btn.Font = Enum.Font.GothamBold
+toggleClick_btn.TextSize = 14
+Instance.new("UICorner", toggleClick_btn).CornerRadius = UDim.new(0, 8)
+toggleClick_btn.Parent = containerClick
+
+-- Анимация сворачивания
+local currentTween = nil
+local function updateMinimized()
+    if currentTween then
+        currentTween:Cancel()
+        currentTween = nil
+    end
+
+    local targetHeight = isMinimized and minimizedHeight or fullHeight
+    local tweenInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local tween = TweenService:Create(main, tweenInfo, { Size = UDim2.new(0, 280, 0, targetHeight) })
+
+    if isMinimized then
+        tabFrame.Visible = false
+        containerE.Visible = false
+        containerClick.Visible = false
+        creditFrame.Visible = false
+        footer.Visible = false
+    else
+        tabFrame.Visible = true
+        if tabE.BackgroundColor3 == Color3.fromRGB(120, 70, 200) then
+            containerE.Visible = true
+            containerClick.Visible = false
+        else
+            containerE.Visible = false
+            containerClick.Visible = true
+        end
+        creditFrame.Visible = true
+        footer.Visible = true
+    end
+
+    minimizeBtn.Text = isMinimized and "+" or "–"
+
+    tween:Play()
+    currentTween = tween
+    tween.Completed:Connect(function()
+        currentTween = nil
+    end)
+end
+
+minimizeBtn.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    updateMinimized()
+end)
+
+-- Закрытие по крестику
+closeBtn.MouseButton1Click:Connect(function()
+    autoEEnabled = false
+    autoClickEnabled = false
+    task.wait(0.15)
+    if screenGui then screenGui:Destroy() end
+end)
+
+-- Иконка переключает видимость окна
+floatIcon.MouseButton1Click:Connect(function()
+    main.Visible = not main.Visible
+end)
+
+-- Интервалы
+local function setIntervalFromInput(inputBox, label, flag)
+    local text = inputBox.Text:gsub(",", ".")
+    local num = tonumber(text)
+    if num and num > 0 then
+        if flag == "E" then
+            intervalE = num
+            label.Text = "Интервал: " .. intervalE .. " сек"
+            if autoEEnabled then lastE = 0 end
+        else
+            intervalClick = num
+            label.Text = "Интервал: " .. intervalClick .. " сек"
+            if autoClickEnabled then lastClick = 0 end
+        end
+        inputBox.Text = ""
+    else
+        inputBox.BackgroundColor3 = Color3.fromRGB(120, 40, 40)
+        task.wait(0.4)
+        inputBox.BackgroundColor3 = Color3.fromRGB(45, 25, 65)
+    end
+end
+
+setE.MouseButton1Click:Connect(function() setIntervalFromInput(inputE, intervalE_label, "E") end)
+inputE.FocusLost:Connect(function(enterPressed)
+    if enterPressed then setIntervalFromInput(inputE, intervalE_label, "E") end
+end)
+
+setClick.MouseButton1Click:Connect(function() setIntervalFromInput(inputClick, intervalClick_label, "Click") end)
+inputClick.FocusLost:Connect(function(enterPressed)
+    if enterPressed then setIntervalFromInput(inputClick, intervalClick_label, "Click") end
+end)
+
+-- Циклы с плавным таймером
+local function autoLoop(interval, timerLabel, actionFn, activeFlag)
+    local lastPress = (activeFlag == "E" and lastE) or lastClick
+    while (activeFlag == "E" and autoEEnabled) or (activeFlag == "Click" and autoClickEnabled) do
+        if not screenGui or not screenGui.Parent then return end
+        local remaining = interval - (tick() - lastPress)
+        while remaining > 0.05 do
+            if not screenGui or not screenGui.Parent then return end
+            remaining = interval - (tick() - lastPress)
+            timerLabel.Text = string.format("До нажатия: %.1f сек", math.max(0, remaining))
+            task.wait(0.05)
+        end
+        if remaining > 0 then
+            task.wait(remaining)
+        end
+        if not ((activeFlag == "E" and autoEEnabled) or (activeFlag == "Click" and autoClickEnabled)) then break end
+        if not screenGui or not screenGui.Parent then return end
+        actionFn()
+        lastPress = tick()
+        if activeFlag == "E" then lastE = lastPress else lastClick = lastPress end
+        timerLabel.Text = string.format("До нажатия: %.1f сек", interval)
+    end
+    timerLabel.Text = "До нажатия: --"
+end
+
+-- Вкл/выкл
+local function toggleAction(flag, statusLabel, toggleBtn, loopFunc)
+    local enabled
+    if flag == "E" then
+        autoEEnabled = not autoEEnabled
+        enabled = autoEEnabled
+        if enabled then lastE = 0 end
+    else
+        autoClickEnabled = not autoClickEnabled
+        enabled = autoClickEnabled
+        if enabled then lastClick = 0 end
+    end
+
+    if enabled then
+        statusLabel.Text = "Статус: ВКЛ"
+        statusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+        toggleBtn.Text = "Выключить " .. (flag == "E" and "авто-E" or "авто-удар")
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(160, 50, 70)
+        task.spawn(loopFunc)
+    else
+        statusLabel.Text = "Статус: ВЫКЛ"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        toggleBtn.Text = "Включить " .. (flag == "E" and "авто-E" or "авто-удар")
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 170)
+    end
+end
+
+toggleE_btn.MouseButton1Click:Connect(function()
+    toggleAction("E", statusE, toggleE_btn, function() autoLoop(intervalE, timerE, pressE, "E") end)
+end)
+toggleClick_btn.MouseButton1Click:Connect(function()
+    toggleAction("Click", statusClick, toggleClick_btn, function() autoLoop(intervalClick, timerClick, pressClick, "Click") end)
+end)
+
+launchAllBtn.MouseButton1Click:Connect(function()
+    if not autoEEnabled then toggleAction("E", statusE, toggleE_btn, function() autoLoop(intervalE, timerE, pressE, "E") end) end
+    if not autoClickEnabled then toggleAction("Click", statusClick, toggleClick_btn, function() autoLoop(intervalClick, timerClick, pressClick, "Click") end) end
+end)
+stopAllBtn.MouseButton1Click:Connect(function()
+    if autoEEnabled then toggleAction("E", statusE, toggleE_btn, function() end) end
+    if autoClickEnabled then toggleAction("Click", statusClick, toggleClick_btn, function() end) end
+end)
+
+-- Удаление по клавише P
+uis.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.P then
+        autoEEnabled = false
+        autoClickEnabled = false
+        task.wait(0.15)
+        if screenGui then screenGui:Destroy() end
+    end
+end)
