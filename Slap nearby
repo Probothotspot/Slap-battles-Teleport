@@ -1,0 +1,297 @@
+--[[
+    Auto Slap v1.2 - No Limits Edition for Slap Battles (Xeno)
+    Запускается всегда, даже если уже есть другие скрипты.
+    Автоудар по ближайшему врагу, поддержка Extended.
+--]]
+
+local uniqueID = "AS_" .. tostring(math.random(1000000, 9999999))  -- уникальный идентификатор экземпляра
+
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+local UserInput = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local stopScript = false
+
+-- ==================== НАСТРОЙКИ (индивидуальны для каждого экземпляра) ====================
+local Settings = {
+    Enabled = true,
+    SlapRadius = 15,
+    SlapInterval = 1,
+    AutoRange = true,
+}
+
+-- Попытка загрузить сохранённые настройки (из общей переменной, но это не страшно)
+pcall(function()
+    if _G.AutoSlapSettings then
+        for k, v in pairs(_G.AutoSlapSettings) do
+            if Settings[k] ~= nil then
+                Settings[k] = v
+            end
+        end
+    end
+end)
+
+local lastSlapTime = 0
+local currentAutoRadius = Settings.SlapRadius
+
+-- ==================== ОПРЕДЕЛЕНИЕ РАДИУСА АТАКИ ПЕРЧАТКИ ====================
+local function CalculateGloveRange(tool)
+    local handle = tool:FindFirstChild("Handle")
+    local refPos = handle and handle.Position or tool:GetPivot().Position
+    local maxDist = 0
+    for _, part in ipairs(tool:GetDescendants()) do
+        if part:IsA("BasePart") then
+            local dist = (part.Position - refPos).Magnitude
+            if dist > maxDist then
+                maxDist = dist
+            end
+        end
+    end
+    return maxDist + 10  -- запас
+end
+
+local function GetCurrentRadius()
+    if not Settings.AutoRange then
+        return Settings.SlapRadius
+    end
+    local char = LP.Character
+    if not char then return Settings.SlapRadius end
+    local tool = char:FindFirstChildOfClass("Tool")
+    if not tool then return Settings.SlapRadius end
+    local calculated = CalculateGloveRange(tool)
+    if calculated > 0 then
+        currentAutoRadius = calculated
+        return calculated
+    else
+        return Settings.SlapRadius
+    end
+end
+
+-- ==================== ПОИСК БЛИЖАЙШЕГО ВРАГА ====================
+local function GetNearestEnemy(radius)
+    local char = LP.Character
+    if not char then return nil end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+    local nearest = nil
+    local nearestDist = radius
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP and plr.Character then
+            local hum = plr.Character:FindFirstChild("Humanoid")
+            local enemyRoot = plr.Character:FindFirstChild("HumanoidRootPart")
+            if hum and enemyRoot and hum.Health > 0 then
+                local dist = (root.Position - enemyRoot.Position).Magnitude
+                if dist < nearestDist then
+                    nearestDist = dist
+                    nearest = plr
+                end
+            end
+        end
+    end
+    return nearest, nearestDist
+end
+
+-- ==================== АВТОУДАР ====================
+local function ProcessAutoSlap()
+    if stopScript or not Settings.Enabled then return end
+    local char = LP.Character
+    if not char then return end
+    local tool = char:FindFirstChildOfClass("Tool")
+    if not tool then return end
+
+    local radius = GetCurrentRadius()
+    local enemy, dist = GetNearestEnemy(radius)
+    if not enemy then return end
+
+    local now = tick()
+    if now - lastSlapTime >= Settings.SlapInterval then
+        lastSlapTime = now
+        tool:Activate()
+        AddLog(string.format("Удар по %s (дист: %.1f, радиус: %.1f)", enemy.Name, dist, radius))
+    end
+end
+
+-- ==================== ОСТАНОВКА ====================
+local function StopAll()
+    stopScript = true
+    AddLog("Auto Slap остановлен.")
+end
+
+-- ==================== ЛОГ ====================
+local logLines = {}
+local logLabel = nil
+function AddLog(msg)
+    local fullMsg = os.date("%X") .. " - " .. msg
+    table.insert(logLines, fullMsg)
+    if #logLines > 10 then table.remove(logLines, 1) end
+    print("[AutoSlap " .. uniqueID .. "] " .. msg)
+    if logLabel then pcall(function() logLabel.Text = table.concat(logLines, "\n") end) end
+end
+
+-- ==================== ГЛАВНЫЙ ЦИКЛ ====================
+RunService.Heartbeat:Connect(function()
+    if stopScript then return end
+    ProcessAutoSlap()
+end)
+
+-- ==================== СТИЛИЗОВАННЫЙ GUI ====================
+local playerGui = LP:FindFirstChild("PlayerGui") or LP:WaitForChild("PlayerGui")
+if not playerGui then return end
+
+local sg = Instance.new("ScreenGui", playerGui)
+sg.Name = "AutoSlapGUI_" .. uniqueID
+sg.ResetOnSpawn = false
+
+local main = Instance.new("Frame", sg)
+main.Size = UDim2.new(0, 280, 0, 280)
+main.Position = UDim2.new(0.02 + (#playerGui:GetChildren() * 0.01), 0, 0.5, 0) -- небольшое смещение
+main.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+main.ClipsDescendants = true
+Instance.new("UIStroke", main).Thickness = 2
+
+local title = Instance.new("TextLabel", main)
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundColor3 = Color3.fromRGB(120, 0, 180)
+title.Text = "👋 Auto Slap v1.2 (Unlimited)"
+title.TextColor3 = Color3.new(1,1,1)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+Instance.new("UIGradient", title).Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(140,20,200)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(90,0,140))
+})
+
+local function CreateToggle(parent, text, yPos, settingName)
+    local label = Instance.new("TextLabel", parent)
+    label.Size = UDim2.new(0, 120, 0, 20)
+    label.Position = UDim2.new(0, 12, 0, yPos)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.new(0.9,0.9,1)
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = 13
+
+    local btn = Instance.new("TextButton", parent)
+    btn.Size = UDim2.new(0, 60, 0, 24)
+    btn.Position = UDim2.new(1, -72, 0, yPos-2)
+    btn.BackgroundColor3 = Settings[settingName] and Color3.fromRGB(0,200,0) or Color3.fromRGB(200,0,0)
+    btn.Text = Settings[settingName] and "ON" or "OFF"
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 14
+    btn.AutoButtonColor = false
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+    Instance.new("UIStroke", btn).Thickness = 1.5
+    btn.MouseButton1Click:Connect(function()
+        Settings[settingName] = not Settings[settingName]
+        btn.BackgroundColor3 = Settings[settingName] and Color3.fromRGB(0,200,0) or Color3.fromRGB(200,0,0)
+        btn.Text = Settings[settingName] and "ON" or "OFF"
+        _G.AutoSlapSettings = Settings
+        AddLog(settingName .. " = " .. tostring(Settings[settingName]))
+    end)
+    return btn
+end
+
+local function CreateTextBox(parent, text, yPos, settingName, isNumber, enabled)
+    local label = Instance.new("TextLabel", parent)
+    label.Size = UDim2.new(0, 120, 0, 20)
+    label.Position = UDim2.new(0, 12, 0, yPos)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.new(0.9,0.9,1)
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = 13
+
+    local box = Instance.new("TextBox", parent)
+    box.Size = UDim2.new(0, 90, 0, 24)
+    box.Position = UDim2.new(1, -102, 0, yPos-2)
+    box.Text = tostring(Settings[settingName])
+    box.TextColor3 = Color3.new(0,0,0)
+    box.BackgroundColor3 = enabled and Color3.new(1,1,1) or Color3.fromRGB(180,180,180)
+    box.Font = Enum.Font.GothamMedium
+    box.TextSize = 13
+    box.ClearTextOnFocus = false
+    box.TextEditable = enabled
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,5)
+    box.FocusLost:Connect(function()
+        if not enabled then return end
+        local val = box.Text
+        if isNumber then
+            local num = tonumber(val)
+            if num then
+                Settings[settingName] = num
+                _G.AutoSlapSettings = Settings
+                AddLog(settingName .. " = " .. num)
+            else
+                box.Text = tostring(Settings[settingName])
+            end
+        else
+            Settings[settingName] = val
+            _G.AutoSlapSettings = Settings
+            AddLog(settingName .. " = " .. val)
+        end
+    end)
+    return box
+end
+
+local yPos = 40
+CreateToggle(main, "Enabled", yPos, "Enabled")
+yPos += 35
+local autoBtn = CreateToggle(main, "Auto Range", yPos, "AutoRange")
+yPos += 35
+
+local radiusBox = CreateTextBox(main, "Slap Radius", yPos, "SlapRadius", true, not Settings.AutoRange)
+yPos += 40
+CreateTextBox(main, "Interval (sec)", yPos, "SlapInterval", true, true)
+yPos += 40
+
+logLabel = Instance.new("TextLabel", main)
+logLabel.Size = UDim2.new(1, -20, 0, 60)
+logLabel.Position = UDim2.new(0, 10, 0, yPos)
+logLabel.BackgroundColor3 = Color3.fromRGB(20,20,30)
+logLabel.TextColor3 = Color3.fromRGB(180,180,255)
+logLabel.Font = Enum.Font.Gotham
+logLabel.TextSize = 10
+logLabel.TextXAlignment = Enum.TextXAlignment.Left
+logLabel.TextYAlignment = Enum.TextYAlignment.Top
+logLabel.Text = ""
+logLabel.TextWrapped = true
+Instance.new("UICorner", logLabel).CornerRadius = UDim.new(0,4)
+yPos += 70
+
+local unloadBtn = Instance.new("TextButton", main)
+unloadBtn.Size = UDim2.new(1, -20, 0, 28)
+unloadBtn.Position = UDim2.new(0, 10, 0, yPos)
+unloadBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
+unloadBtn.Text = "⏻ UNLOAD"
+unloadBtn.TextColor3 = Color3.new(1,1,1)
+unloadBtn.Font = Enum.Font.GothamBold
+unloadBtn.TextSize = 13
+Instance.new("UICorner", unloadBtn).CornerRadius = UDim.new(0,6)
+unloadBtn.MouseButton1Click:Connect(function()
+    sg:Destroy()
+    StopAll()
+end)
+
+local function UpdateRadiusField()
+    radiusBox.TextEditable = not Settings.AutoRange
+    radiusBox.BackgroundColor3 = Settings.AutoRange and Color3.fromRGB(180,180,180) or Color3.new(1,1,1)
+end
+autoBtn.MouseButton1Click:Connect(UpdateRadiusField)
+UpdateRadiusField()
+
+UserInput.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.P then
+        sg:Destroy()
+        StopAll()
+    end
+end)
+
+_G.AutoSlapSettings = Settings
+AddLog("Auto Slap v1.2 (No Limits) загружен. ID: " .. uniqueID)
