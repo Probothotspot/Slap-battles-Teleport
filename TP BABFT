@@ -1,0 +1,500 @@
+-- Build a Boat Teleport Hub v1.2 (Xeno) – настройки в шестерёнке, цветные команды игроков
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+local UserInput = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+
+-- ==================== НАСТРОЙКИ ====================
+local guiTransparency = 0.1
+local teleportSpeed = 50000
+local borderColor = Color3.new(1,1,1)
+local currentLang = "ru"
+local currentSizeIdx = 2
+local guiSizes = { {380,480}, {450,580}, {550,680} }
+local currentSpeedIdx = 3
+local teleportSpeeds = {10000, 25000, 50000, 100000, 200000}
+local langElements = {}
+
+local lang = {
+    ru = {
+        tab_players = "Игроки", tab_locations = "Локации",
+        search_placeholder = "Поиск игроков...", sort_name = "По имени", sort_dist = "По дистанции",
+        save_loc = "+ Сохранить текущее место",
+        settings_title = "Настройки", gui_size = "Размер GUI:", small = "Маленький", medium = "Средний", large = "Большой",
+        transparency = "Прозрачность фона:", speed = "Скорость ТП:",
+        language = "Язык:", russian = "Русский", english = "Английский"
+    },
+    en = {
+        tab_players = "Players", tab_locations = "Locations",
+        search_placeholder = "Search players...", sort_name = "ByName", sort_dist = "ByDist",
+        save_loc = "+ Save current location",
+        settings_title = "Settings", gui_size = "GUI Size:", small = "Small", medium = "Medium", large = "Large",
+        transparency = "Background transparency:", speed = "TP speed:",
+        language = "Language:", russian = "Russian", english = "English"
+    }
+}
+local function getText(key) return lang[currentLang][key] end
+
+local function updateAllTexts()
+    for _, el in ipairs(langElements) do
+        if el.obj and el.obj:IsDescendantOf(game) then
+            if el.prop == "PlaceholderText" then
+                el.obj.PlaceholderText = getText(el.langKey)
+            else
+                el.obj.Text = getText(el.langKey)
+            end
+        end
+    end
+end
+
+-- ==================== ЛОКАЦИИ КОМАНД ====================
+local teamLocations = {
+    { name = "Белая команда",   pos = Vector3.new(-51, -10, -504), baseColor = Color3.new(1,1,1), isPermanent = true },
+    { name = "Черная команда",  pos = Vector3.new(-483, -10, -70), baseColor = Color3.new(0.2,0.2,0.2), isPermanent = true },
+    { name = "Зеленая команда", pos = Vector3.new(-485, -10, 293), baseColor = Color3.new(0,1,0), isPermanent = true },
+    { name = "Желтая команда",  pos = Vector3.new(-485, -10, 640), baseColor = Color3.new(1,1,0), isPermanent = true },
+    { name = "Фиолетовая команда", pos = Vector3.new(378, -10, 647), baseColor = Color3.new(0.5,0,1), isPermanent = true },
+    { name = "Синяя команда",   pos = Vector3.new(378, -10, 300), baseColor = Color3.new(0,0,1), isPermanent = true },
+    { name = "Красная команда", pos = Vector3.new(378, -10, -65), baseColor = Color3.new(1,0,0), isPermanent = true },
+}
+
+local locations = {}
+for _, v in ipairs(teamLocations) do table.insert(locations, v) end
+
+local TEAM_RADIUS = 200
+
+-- ==================== ТЕЛЕПОРТАЦИЯ ====================
+local function SmartTP(targetCF)
+    local char = LP.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local dist = (targetCF.Position - hrp.Position).Magnitude
+    if dist < 5 then hrp.CFrame = targetCF; return end
+    local tween = TweenService:Create(hrp, TweenInfo.new(dist/teleportSpeed, Enum.EasingStyle.Linear), {CFrame = targetCF})
+    tween:Play()
+    tween.Completed:Wait()
+    hrp.CFrame = targetCF
+end
+
+-- ==================== GUI ====================
+local function createGUI()
+    local playerGui = LP:WaitForChild("PlayerGui")
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "BoatsTeleport"
+    sg.ResetOnSpawn = false
+    sg.Parent = playerGui
+
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, guiSizes[currentSizeIdx][1], 0, guiSizes[currentSizeIdx][2])
+    mainFrame.Position = UDim2.new(0.5, -guiSizes[currentSizeIdx][1]/2, 0.5, -guiSizes[currentSizeIdx][2]/2)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(25,28,40)
+    mainFrame.BackgroundTransparency = guiTransparency
+    mainFrame.BorderSizePixel = 2
+    mainFrame.BorderColor3 = borderColor
+    mainFrame.Active = true
+    mainFrame.Draggable = true
+    mainFrame.Parent = sg
+    Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0,12)
+
+    -- Заголовок с кнопкой настроек
+    local header = Instance.new("Frame")
+    header.Size = UDim2.new(1,0,0,40)
+    header.BackgroundColor3 = Color3.fromRGB(40,45,60)
+    header.Parent = mainFrame
+    Instance.new("UICorner", header).CornerRadius = UDim.new(0,12)
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1,-50,1,0)
+    title.Position = UDim2.new(0,15,0,0)
+    title.BackgroundTransparency = 1
+    title.Text = "Boats Teleport Hub"
+    title.TextColor3 = Color3.new(1,1,1)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 16
+    title.Parent = header
+
+    -- Кнопка настроек (шестерёнка)
+    local settingsOpenBtn = Instance.new("TextButton")
+    settingsOpenBtn.Size = UDim2.new(0,30,0,30)
+    settingsOpenBtn.Position = UDim2.new(1,-34,0,5)
+    settingsOpenBtn.Text = "⚙"
+    settingsOpenBtn.TextColor3 = Color3.new(1,1,1)
+    settingsOpenBtn.Font = Enum.Font.GothamBold
+    settingsOpenBtn.TextSize = 20
+    settingsOpenBtn.BackgroundColor3 = Color3.fromRGB(0.3,0.3,0.3)
+    settingsOpenBtn.BackgroundTransparency = 0.3
+    settingsOpenBtn.BorderSizePixel = 0
+    settingsOpenBtn.Parent = header
+    Instance.new("UICorner", settingsOpenBtn).CornerRadius = UDim.new(0,6)
+
+    -- Вкладки
+    local tabBar = Instance.new("Frame")
+    tabBar.Size = UDim2.new(1,-10,0,30)
+    tabBar.Position = UDim2.new(0,5,0,45)
+    tabBar.BackgroundTransparency = 1
+    tabBar.Parent = mainFrame
+    local function makeTab(x, text)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0, 110, 1, 0)
+        btn.Position = UDim2.new(0, x, 0, 0)
+        btn.Text = text
+        btn.TextColor3 = Color3.new(1,1,1)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 12
+        btn.BackgroundColor3 = Color3.fromRGB(70,70,130)
+        btn.BorderSizePixel = 0
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+        btn.Parent = tabBar
+        return btn
+    end
+    local tabPlayers = makeTab(0, getText("tab_players"))
+    local tabLocations = makeTab(115, getText("tab_locations"))
+
+    -- Контентная область
+    local content = Instance.new("Frame")
+    content.Size = UDim2.new(1,-10,1,-85)
+    content.Position = UDim2.new(0,5,0,78)
+    content.BackgroundTransparency = 1
+    content.Parent = mainFrame
+
+    -- Вкладка Игроки (без изменений, с цветами команд)
+    local playersFrame = Instance.new("Frame")
+    playersFrame.Size = UDim2.new(1,0,1,0)
+    playersFrame.BackgroundTransparency = 1
+    playersFrame.Parent = content
+
+    local searchBox = Instance.new("TextBox")
+    searchBox.Size = UDim2.new(1,-10,0,28)
+    searchBox.Position = UDim2.new(0,5,0,0)
+    searchBox.BackgroundColor3 = Color3.new(0.1,0.1,0.12)
+    searchBox.TextColor3 = Color3.new(1,1,1)
+    searchBox.PlaceholderText = getText("search_placeholder")
+    searchBox.Parent = playersFrame
+    Instance.new("UICorner", searchBox).CornerRadius = UDim.new(0,4)
+    table.insert(langElements, {obj = searchBox, langKey = "search_placeholder", prop = "PlaceholderText"})
+
+    local sortBtn = Instance.new("TextButton")
+    sortBtn.Size = UDim2.new(0,80,0,24)
+    sortBtn.Position = UDim2.new(1,-85,0,2)
+    sortBtn.Text = getText("sort_name")
+    sortBtn.BackgroundColor3 = Color3.new(0.3,0.3,0.3)
+    sortBtn.TextColor3 = Color3.new(1,1,1)
+    sortBtn.Font = Enum.Font.Gotham
+    sortBtn.TextSize = 11
+    sortBtn.Parent = playersFrame
+    Instance.new("UICorner", sortBtn).CornerRadius = UDim.new(0,4)
+    table.insert(langElements, {obj = sortBtn, langKey = "sort_name"})
+
+    local playerList = Instance.new("ScrollingFrame")
+    playerList.Size = UDim2.new(1,-10,1,-35)
+    playerList.Position = UDim2.new(0,5,0,32)
+    playerList.BackgroundTransparency = 1
+    playerList.CanvasSize = UDim2.new(0,0,0,0)
+    playerList.ScrollBarThickness = 3
+    playerList.Parent = playersFrame
+
+    local searchFilter = ""
+    local sortByDistance = false
+
+    local function getPlayerTeam(player)
+        local char = player.Character
+        if not char then return nil end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return nil end
+        local pos = hrp.Position
+        local bestTeam = nil
+        local bestDist = TEAM_RADIUS
+        for _, loc in ipairs(teamLocations) do
+            local d = (pos - loc.pos).Magnitude
+            if d < bestDist then
+                bestDist = d
+                bestTeam = loc
+            end
+        end
+        return bestTeam
+    end
+
+    local function refreshPlayerList()
+        playerList:ClearAllChildren()
+        local all = {}
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LP and (searchFilter=="" or p.Name:lower():find(searchFilter:lower())) then
+                table.insert(all, p)
+            end
+        end
+        if sortByDistance then
+            table.sort(all, function(a,b)
+                local aRoot = a.Character and a.Character:FindFirstChild("HumanoidRootPart")
+                local bRoot = b.Character and b.Character:FindFirstChild("HumanoidRootPart")
+                local aDist = aRoot and (aRoot.Position - (LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") or Vector3.zero).Position).Magnitude or 9999
+                local bDist = bRoot and (bRoot.Position - (LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") or Vector3.zero).Position).Magnitude or 9999
+                return aDist < bDist
+            end)
+        else
+            table.sort(all, function(a,b) return a.Name < b.Name end)
+        end
+        local y = 0
+        for _, p in ipairs(all) do
+            local team = getPlayerTeam(p)
+            local btnColor = team and (team.baseColor * 0.5) or Color3.fromRGB(0.2,0.3,0.6)
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1,-5,0,34)
+            btn.Position = UDim2.new(0,2,0,y)
+            btn.Text = p.Name
+            btn.BackgroundColor3 = btnColor
+            btn.TextColor3 = Color3.new(1,1,1)
+            btn.Font = Enum.Font.Gotham
+            btn.TextSize = 13
+            btn.Parent = playerList
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+            btn.MouseButton1Click:Connect(function()
+                local root = p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+                if root then SmartTP(root.CFrame * CFrame.new(0,0,2)) end
+            end)
+            y = y + 38
+        end
+        playerList.CanvasSize = UDim2.new(0,0,0,y)
+    end
+
+    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        searchFilter = searchBox.Text
+        refreshPlayerList()
+    end)
+
+    sortBtn.MouseButton1Click:Connect(function()
+        sortByDistance = not sortByDistance
+        sortBtn.Text = sortByDistance and getText("sort_dist") or getText("sort_name")
+        refreshPlayerList()
+    end)
+
+    -- Вкладка Локации (без изменений)
+    local locationsFrame = Instance.new("Frame")
+    locationsFrame.Size = UDim2.new(1,0,1,0)
+    locationsFrame.BackgroundTransparency = 1
+    locationsFrame.Visible = false
+    locationsFrame.Parent = content
+
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(1,-10,0,30)
+    saveBtn.Position = UDim2.new(0,5,0,0)
+    saveBtn.Text = getText("save_loc")
+    saveBtn.BackgroundColor3 = Color3.fromRGB(0.2,0.6,0.2)
+    saveBtn.TextColor3 = Color3.new(1,1,1)
+    saveBtn.Font = Enum.Font.Gotham
+    saveBtn.Parent = locationsFrame
+    Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0,4)
+    table.insert(langElements, {obj = saveBtn, langKey = "save_loc"})
+    saveBtn.MouseButton1Click:Connect(function()
+        local char = LP.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            table.insert(locations, { name = "Место #" .. (#locations+1), pos = hrp.Position, baseColor = Color3.new(0.5,0.5,0.5), isPermanent = false })
+            refreshLocationsList()
+        end
+    end)
+
+    local locScroll = Instance.new("ScrollingFrame")
+    locScroll.Size = UDim2.new(1,-10,1,-40)
+    locScroll.Position = UDim2.new(0,5,0,35)
+    locScroll.BackgroundTransparency = 1
+    locScroll.CanvasSize = UDim2.new(0,0,0,0)
+    locScroll.Parent = locationsFrame
+
+    local locList = Instance.new("Frame")
+    locList.Size = UDim2.new(1,0,1,0)
+    locList.BackgroundTransparency = 1
+    locList.Parent = locScroll
+
+    function refreshLocationsList()
+        locList:ClearAllChildren()
+        local y = 0
+        for i, loc in ipairs(locations) do
+            local btnColor = loc.baseColor * 0.5
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1,-5,0,34)
+            btn.Position = UDim2.new(0,2,0,y)
+            btn.Text = loc.name
+            btn.BackgroundColor3 = btnColor
+            btn.TextColor3 = Color3.new(1,1,1)
+            btn.Font = Enum.Font.Gotham
+            btn.TextSize = 13
+            btn.Parent = locList
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+            btn.MouseButton1Click:Connect(function()
+                SmartTP(CFrame.new(loc.pos) * CFrame.new(0,0,2))
+            end)
+            if not loc.isPermanent then
+                local del = Instance.new("TextButton")
+                del.Size = UDim2.new(0,24,0,24)
+                del.Position = UDim2.new(1,-28,0.5,-12)
+                del.Text = "X"
+                del.BackgroundColor3 = Color3.fromRGB(0.8,0.2,0.2)
+                del.TextColor3 = Color3.new(1,1,1)
+                del.Font = Enum.Font.Gotham
+                del.TextSize = 12
+                del.Parent = btn
+                Instance.new("UICorner", del).CornerRadius = UDim.new(0,4)
+                del.MouseButton1Click:Connect(function()
+                    table.remove(locations, i)
+                    refreshLocationsList()
+                end)
+            end
+            y = y + 38
+        end
+        locScroll.CanvasSize = UDim2.new(0,0,0,y)
+    end
+
+    -- Модальное окно настроек (открывается по кнопке ⚙)
+    local settingsWindow = nil
+    local function openSettings()
+        if settingsWindow and settingsWindow.Parent then
+            settingsWindow:Destroy()
+            settingsWindow = nil
+            return
+        end
+        settingsWindow = Instance.new("Frame")
+        settingsWindow.Size = UDim2.new(0,300,0,220)
+        settingsWindow.Position = UDim2.new(0.5,-150,0.5,-110)
+        settingsWindow.BackgroundColor3 = Color3.fromRGB(30,30,40)
+        settingsWindow.BorderSizePixel = 2
+        settingsWindow.BorderColor3 = Color3.new(0.5,0.5,0.5)
+        settingsWindow.Parent = sg
+
+        local winTitle = Instance.new("TextLabel")
+        winTitle.Size = UDim2.new(1,0,0,30)
+        winTitle.BackgroundTransparency = 1
+        winTitle.Text = getText("settings_title")
+        winTitle.TextColor3 = Color3.new(1,1,1)
+        winTitle.Font = Enum.Font.GothamBold
+        winTitle.TextSize = 14
+        winTitle.Parent = settingsWindow
+
+        local scroll = Instance.new("ScrollingFrame")
+        scroll.Size = UDim2.new(1,-10,1,-40)
+        scroll.Position = UDim2.new(0,5,0,35)
+        scroll.BackgroundTransparency = 1
+        scroll.BorderSizePixel = 0
+        scroll.Parent = settingsWindow
+
+        local layout = Instance.new("UIListLayout")
+        layout.Padding = UDim.new(0,10)
+        layout.Parent = scroll
+
+        local function makeRow(text, btnText, onClick)
+            local fr = Instance.new("Frame")
+            fr.Size = UDim2.new(1,0,0,40)
+            fr.BackgroundTransparency = 1
+            fr.Parent = scroll
+            local lbl = Instance.new("TextLabel")
+            lbl.Size = UDim2.new(0.6,0,1,0)
+            lbl.BackgroundTransparency = 1
+            lbl.Text = text
+            lbl.TextColor3 = Color3.new(1,1,1)
+            lbl.Font = Enum.Font.Gotham
+            lbl.TextSize = 12
+            lbl.Parent = fr
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(0.3,0,1,0)
+            btn.Position = UDim2.new(0.7,0,0,0)
+            btn.Text = btnText
+            btn.TextColor3 = Color3.new(0,0,0)
+            btn.BackgroundColor3 = Color3.new(1,1,1)
+            btn.Font = Enum.Font.GothamBold
+            btn.TextSize = 11
+            btn.BorderSizePixel = 0
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
+            btn.Parent = fr
+            onClick(btn)
+            return btn
+        end
+
+        local sizeText = { getText("small"), getText("medium"), getText("large") }
+        local sizeBtn = makeRow(getText("gui_size"), sizeText[currentSizeIdx], function(btn)
+            btn.MouseButton1Click:Connect(function()
+                currentSizeIdx = currentSizeIdx % 3 + 1
+                local w,h = guiSizes[currentSizeIdx][1], guiSizes[currentSizeIdx][2]
+                mainFrame.Size = UDim2.new(0,w,0,h)
+                mainFrame.Position = UDim2.new(0.5, -w/2, 0.5, -h/2)
+                sizeText = { getText("small"), getText("medium"), getText("large") }
+                btn.Text = sizeText[currentSizeIdx]
+            end)
+        end)
+
+        local transVal = guiTransparency * 100
+        local transBtn = makeRow(getText("transparency"), math.floor(transVal).."%", function(btn)
+            btn.MouseButton1Click:Connect(function()
+                guiTransparency = (guiTransparency + 0.1) % 1.1
+                if guiTransparency > 1 then guiTransparency = 0 end
+                mainFrame.BackgroundTransparency = guiTransparency
+                btn.Text = math.floor(guiTransparency*100).."%"
+            end)
+        end)
+
+        local speedBtn = makeRow(getText("speed"), teleportSpeed .. " stud/s", function(btn)
+            btn.MouseButton1Click:Connect(function()
+                currentSpeedIdx = currentSpeedIdx % #teleportSpeeds + 1
+                teleportSpeed = teleportSpeeds[currentSpeedIdx]
+                btn.Text = teleportSpeed .. " stud/s"
+            end)
+        end)
+
+        local langBtn = makeRow(getText("language"), currentLang == "ru" and getText("russian") or getText("english"), function(btn)
+            btn.MouseButton1Click:Connect(function()
+                currentLang = (currentLang == "ru") and "en" or "ru"
+                btn.Text = (currentLang == "ru") and getText("russian") or getText("english")
+                updateAllTexts()
+                tabPlayers.Text = getText("tab_players")
+                tabLocations.Text = getText("tab_locations")
+                sizeText = { getText("small"), getText("medium"), getText("large") }
+                sizeBtn.Text = sizeText[currentSizeIdx]
+                transBtn.Text = math.floor(guiTransparency*100).."%"
+                speedBtn.Text = teleportSpeed .. " stud/s"
+                winTitle.Text = getText("settings_title")
+            end)
+        end)
+
+        local closeBtn = Instance.new("TextButton")
+        closeBtn.Size = UDim2.new(0,80,0,30)
+        closeBtn.Position = UDim2.new(0.5,-40,1,-55)
+        closeBtn.Text = "Закрыть"
+        closeBtn.BackgroundColor3 = Color3.fromRGB(0.5,0.2,0.2)
+        closeBtn.TextColor3 = Color3.new(1,1,1)
+        closeBtn.Font = Enum.Font.GothamBold
+        closeBtn.TextSize = 12
+        closeBtn.Parent = settingsWindow
+        Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,4)
+        closeBtn.MouseButton1Click:Connect(function()
+            settingsWindow:Destroy()
+            settingsWindow = nil
+        end)
+    end
+
+    settingsOpenBtn.MouseButton1Click:Connect(openSettings)
+
+    -- Переключение вкладок
+    local function switchTab(tab)
+        playersFrame.Visible = (tab == "players")
+        locationsFrame.Visible = (tab == "locations")
+        tabPlayers.BackgroundColor3 = (tab=="players") and Color3.fromRGB(120,120,220) or Color3.fromRGB(70,70,130)
+        tabLocations.BackgroundColor3 = (tab=="locations") and Color3.fromRGB(120,120,220) or Color3.fromRGB(70,70,130)
+        if tab == "players" then refreshPlayerList() elseif tab == "locations" then refreshLocationsList() end
+    end
+    tabPlayers.MouseButton1Click:Connect(function() switchTab("players") end)
+    tabLocations.MouseButton1Click:Connect(function() switchTab("locations") end)
+
+    refreshPlayerList()
+    refreshLocationsList()
+    switchTab("players")
+
+    UserInput.InputBegan:Connect(function(input, gp)
+        if gp then return end
+        if input.KeyCode == Enum.KeyCode.P then
+            sg:Destroy()
+        end
+    end)
+end
+
+createGUI()
