@@ -1,0 +1,909 @@
+--[[
+    🌌 Script Launcher — 23 скрипта (добавлены Remote spam и Spectate)
+    Перетаскивание, сворачивание, настройки, 12 тем, 3 языка.
+    Все тексты белые, радужные кнопки запуска.
+    Удаление по клавише P.
+]]--
+
+local parent = (pcall(function() return gethui() end) and gethui()) or game:GetService("CoreGui")
+
+-- ==================== Языковая система ====================
+local translations = {
+    en = {
+        title = "🚀 Launcher",
+        settings_btn = "⚙️",
+        settings_title = "Settings",
+        close = "❌",
+        author = "By Probothotspot",
+        execute = "▶ Run",
+        language_label = "Lang:",
+        theme_label = "Theme:",
+        tab_name_1 = "Teleport Hub",
+        tab_name_2 = "Coordinats",
+        tab_name_3 = "Anti-Afk",
+        tab_name_4 = "Bot SB",
+        tab_name_5 = "Customer HUB",
+        tab_name_6 = "TP death",
+        tab_name_7 = "Spectator",
+        tab_name_8 = "FullBright",
+        tab_name_9 = "Poltergeist",
+        tab_name_10 = "Redacted Auto",
+        tab_name_11 = "Farm BAB",
+        tab_name_12 = "TP BAB",
+        tab_name_13 = "TP Glove",
+        tab_name_14 = "Nearby Slap",
+        tab_name_15 = "Platform SB",
+        tab_name_16 = "Auto E/Slap",
+        tab_name_17 = "Timer",
+        tab_name_18 = "Wall SB",
+        tab_name_19 = "TP Glove Mob",
+        tab_name_20 = "TP to Cursor",
+        tab_name_21 = "1s Auto Brick SB",
+        tab_name_22 = "Remote spam",
+        tab_name_23 = "Spectate",
+        tab_desc_1 = "Fast TP to players",
+        tab_desc_2 = "Save & TP coords",
+        tab_desc_3 = "Anti AFK kick",
+        tab_desc_4 = "Bot for SB",
+        tab_desc_5 = "Customer hub",
+        tab_desc_6 = "TP on death",
+        tab_desc_7 = "Spectate players",
+        tab_desc_8 = "Full brightness",
+        tab_desc_9 = "Get Poltergeist",
+        tab_desc_10 = "Redacted features",
+        tab_desc_11 = "Farm Build a Boat",
+        tab_desc_12 = "TP Build a Boat",
+        tab_desc_13 = "TP glove tools",
+        tab_desc_14 = "Slap nearby",
+        tab_desc_15 = "SB platform",
+        tab_desc_16 = "Auto E/Slap",
+        tab_desc_17 = "Simple timer",
+        tab_desc_18 = "Build walls SB",
+        tab_desc_19 = "TP glove mobile",
+        tab_desc_20 = "TP to cursor",
+        tab_desc_21 = "1 second auto brick SB",
+        tab_desc_22 = "Remote spam utility",
+        tab_desc_23 = "Spectate players (new)",
+    },
+    ru = {
+        title = "🚀 Лаунчер",
+        settings_btn = "⚙️",
+        settings_title = "Настройки",
+        close = "❌",
+        author = "От Probothotspot",
+        execute = "▶ Запуск",
+        language_label = "Язык:",
+        theme_label = "Тема:",
+        tab_name_1 = "Телепорт Хаб",
+        tab_name_2 = "Координаты",
+        tab_name_3 = "Анти-АФК",
+        tab_name_4 = "Бот SB",
+        tab_name_5 = "Клиентский ХАБ",
+        tab_name_6 = "ТП при смерти",
+        tab_name_7 = "Наблюдатель",
+        tab_name_8 = "Яркость",
+        tab_name_9 = "Полтергейст",
+        tab_name_10 = "Redacted Авто",
+        tab_name_11 = "Фарм Лодку",
+        tab_name_12 = "ТП в Лодке",
+        tab_name_13 = "ТП Перчатка",
+        tab_name_14 = "Шлепок",
+        tab_name_15 = "Платформа SB",
+        tab_name_16 = "Авто E/Шлепок",
+        tab_name_17 = "Таймер",
+        tab_name_18 = "Стена SB",
+        tab_name_19 = "ТП Перч. Моб",
+        tab_name_20 = "ТП к курсору",
+        tab_name_21 = "1с Авто Брик SB",
+        tab_name_22 = "Удалённый спам",
+        tab_name_23 = "Наблюдатель 2",
+        tab_desc_1 = "Быстрая ТП к игрокам",
+        tab_desc_2 = "Сохранение координат",
+        tab_desc_3 = "Защита от AFK",
+        tab_desc_4 = "Бот для SB",
+        tab_desc_5 = "Хаб с инструментами",
+        tab_desc_6 = "Авто ТП при смерти",
+        tab_desc_7 = "Наблюдение за игроками",
+        tab_desc_8 = "Полная яркость",
+        tab_desc_9 = "Перчатка полтергейста",
+        tab_desc_10 = "Функции Redacted",
+        tab_desc_11 = "Фарм в Лодке",
+        tab_desc_12 = "ТП по Лодке",
+        tab_desc_13 = "ТП перчатки",
+        tab_desc_14 = "Шлепок ближнего",
+        tab_desc_15 = "Платформа SB",
+        tab_desc_16 = "Авто E/Шлепок",
+        tab_desc_17 = "Простой таймер",
+        tab_desc_18 = "Стены в SB",
+        tab_desc_19 = "ТП перч. моб.",
+        tab_desc_20 = "ТП к курсору",
+        tab_desc_21 = "Автокирпич каждую секунду SB",
+        tab_desc_22 = "Утилита удалённого спама",
+        tab_desc_23 = "Наблюдение за игроками (новое)",
+    },
+    ua = {
+        title = "🚀 Лаунчер",
+        settings_btn = "⚙️",
+        settings_title = "Налаштування",
+        close = "❌",
+        author = "Від Probothotspot",
+        execute = "▶ Запуск",
+        language_label = "Мова:",
+        theme_label = "Тема:",
+        tab_name_1 = "Телепорт Хаб",
+        tab_name_2 = "Координати",
+        tab_name_3 = "Анти-АФК",
+        tab_name_4 = "Бот SB",
+        tab_name_5 = "Клієнтський ХАБ",
+        tab_name_6 = "ТП при смерті",
+        tab_name_7 = "Спостерігач",
+        tab_name_8 = "Яскравість",
+        tab_name_9 = "Полтергейст",
+        tab_name_10 = "Redacted Авто",
+        tab_name_11 = "Фарм Човен",
+        tab_name_12 = "ТП у Човні",
+        tab_name_13 = "ТП Рукавичка",
+        tab_name_14 = "Ляпас",
+        tab_name_15 = "Платформа SB",
+        tab_name_16 = "Авто E/Ляпас",
+        tab_name_17 = "Таймер",
+        tab_name_18 = "Стіна SB",
+        tab_name_19 = "ТП Рукав. Моб",
+        tab_name_20 = "ТП до курсора",
+        tab_name_21 = "1с Авто Брик SB",
+        tab_name_22 = "Віддалений спам",
+        tab_name_23 = "Спостерігач 2",
+        tab_desc_1 = "Швидка ТП до гравців",
+        tab_desc_2 = "Збереження координат",
+        tab_desc_3 = "Захист від AFK",
+        tab_desc_4 = "Бот для SB",
+        tab_desc_5 = "Хаб з інструментами",
+        tab_desc_6 = "Авто ТП при смерті",
+        tab_desc_7 = "Спостереження",
+        tab_desc_8 = "Повна яскравість",
+        tab_desc_9 = "Рукавичка полтергейсту",
+        tab_desc_10 = "Функції Redacted",
+        tab_desc_11 = "Фарм у Човні",
+        tab_desc_12 = "ТП по Човну",
+        tab_desc_13 = "ТП рукавички",
+        tab_desc_14 = "Ляпас ближнього",
+        tab_desc_15 = "Платформа SB",
+        tab_desc_16 = "Авто E/Ляпас",
+        tab_desc_17 = "Простий таймер",
+        tab_desc_18 = "Стіни в SB",
+        tab_desc_19 = "ТП рукав. моб.",
+        tab_desc_20 = "ТП до курсора",
+        tab_desc_21 = "Автоцеглина щосекунди SB",
+        tab_desc_22 = "Утиліта віддаленого спаму",
+        tab_desc_23 = "Спостереження за гравцями (нове)",
+    }
+}
+
+local currentLang = "en"
+local langBindings = {}
+
+local function t(key)
+    return translations[currentLang] and translations[currentLang][key] or key
+end
+
+local function bindText(obj, key)
+    langBindings[obj] = key
+    obj.Text = t(key)
+end
+
+local function updateAllTexts()
+    for obj, key in pairs(langBindings) do
+        if obj and obj.Parent then
+            obj.Text = t(key)
+        end
+    end
+end
+
+-- ==================== Темы (12 штук) ====================
+local themes = {
+    ["Purple"] = {
+        mainBg = Color3.fromRGB(25, 20, 35),
+        mainGradientStart = Color3.fromRGB(40, 30, 60),
+        mainGradientEnd = Color3.fromRGB(80, 60, 120),
+        strokeBase = Color3.fromRGB(160, 100, 255),
+        titleBg = Color3.fromRGB(30, 25, 40),
+        buttonBg = Color3.fromRGB(50, 40, 70),
+        tabActive = Color3.fromRGB(160, 100, 255),
+        tabInactive = Color3.fromRGB(50, 40, 70),
+    },
+    ["Dark Red"] = {
+        mainBg = Color3.fromRGB(35, 20, 20),
+        mainGradientStart = Color3.fromRGB(60, 30, 30),
+        mainGradientEnd = Color3.fromRGB(120, 60, 60),
+        strokeBase = Color3.fromRGB(255, 100, 100),
+        titleBg = Color3.fromRGB(40, 25, 25),
+        buttonBg = Color3.fromRGB(70, 40, 40),
+        tabActive = Color3.fromRGB(255, 100, 100),
+        tabInactive = Color3.fromRGB(70, 40, 40),
+    },
+    ["Ocean Blue"] = {
+        mainBg = Color3.fromRGB(20, 25, 40),
+        mainGradientStart = Color3.fromRGB(30, 40, 60),
+        mainGradientEnd = Color3.fromRGB(60, 80, 130),
+        strokeBase = Color3.fromRGB(100, 150, 255),
+        titleBg = Color3.fromRGB(25, 30, 45),
+        buttonBg = Color3.fromRGB(40, 50, 70),
+        tabActive = Color3.fromRGB(100, 150, 255),
+        tabInactive = Color3.fromRGB(40, 50, 70),
+    },
+    ["Emerald"] = {
+        mainBg = Color3.fromRGB(20, 35, 25),
+        mainGradientStart = Color3.fromRGB(30, 55, 35),
+        mainGradientEnd = Color3.fromRGB(60, 110, 70),
+        strokeBase = Color3.fromRGB(100, 255, 100),
+        titleBg = Color3.fromRGB(25, 40, 30),
+        buttonBg = Color3.fromRGB(40, 70, 45),
+        tabActive = Color3.fromRGB(100, 255, 100),
+        tabInactive = Color3.fromRGB(40, 70, 45),
+    },
+    ["Monochrome"] = {
+        mainBg = Color3.fromRGB(30, 30, 30),
+        mainGradientStart = Color3.fromRGB(45, 45, 45),
+        mainGradientEnd = Color3.fromRGB(90, 90, 90),
+        strokeBase = Color3.fromRGB(180, 180, 180),
+        titleBg = Color3.fromRGB(35, 35, 35),
+        buttonBg = Color3.fromRGB(55, 55, 55),
+        tabActive = Color3.fromRGB(180, 180, 180),
+        tabInactive = Color3.fromRGB(55, 55, 55),
+    },
+    ["Sunset"] = {
+        mainBg = Color3.fromRGB(35, 25, 20),
+        mainGradientStart = Color3.fromRGB(60, 35, 25),
+        mainGradientEnd = Color3.fromRGB(120, 70, 40),
+        strokeBase = Color3.fromRGB(255, 130, 60),
+        titleBg = Color3.fromRGB(40, 28, 22),
+        buttonBg = Color3.fromRGB(70, 45, 35),
+        tabActive = Color3.fromRGB(255, 130, 60),
+        tabInactive = Color3.fromRGB(70, 45, 35),
+    },
+    ["Neon Pink"] = {
+        mainBg = Color3.fromRGB(35, 20, 35),
+        mainGradientStart = Color3.fromRGB(60, 30, 50),
+        mainGradientEnd = Color3.fromRGB(120, 60, 100),
+        strokeBase = Color3.fromRGB(255, 100, 200),
+        titleBg = Color3.fromRGB(40, 25, 40),
+        buttonBg = Color3.fromRGB(70, 40, 60),
+        tabActive = Color3.fromRGB(255, 100, 200),
+        tabInactive = Color3.fromRGB(70, 40, 60),
+    },
+    ["Cyber Yell"] = {
+        mainBg = Color3.fromRGB(35, 35, 20),
+        mainGradientStart = Color3.fromRGB(60, 60, 30),
+        mainGradientEnd = Color3.fromRGB(120, 120, 60),
+        strokeBase = Color3.fromRGB(255, 255, 100),
+        titleBg = Color3.fromRGB(40, 40, 25),
+        buttonBg = Color3.fromRGB(70, 70, 40),
+        tabActive = Color3.fromRGB(255, 255, 100),
+        tabInactive = Color3.fromRGB(70, 70, 40),
+    },
+    ["Forest"] = {
+        mainBg = Color3.fromRGB(20, 30, 20),
+        mainGradientStart = Color3.fromRGB(30, 50, 30),
+        mainGradientEnd = Color3.fromRGB(60, 100, 60),
+        strokeBase = Color3.fromRGB(50, 200, 50),
+        titleBg = Color3.fromRGB(25, 35, 25),
+        buttonBg = Color3.fromRGB(40, 60, 40),
+        tabActive = Color3.fromRGB(50, 200, 50),
+        tabInactive = Color3.fromRGB(40, 60, 40),
+    },
+    ["Deep Sea"] = {
+        mainBg = Color3.fromRGB(15, 25, 35),
+        mainGradientStart = Color3.fromRGB(25, 40, 55),
+        mainGradientEnd = Color3.fromRGB(50, 80, 110),
+        strokeBase = Color3.fromRGB(70, 180, 255),
+        titleBg = Color3.fromRGB(20, 30, 40),
+        buttonBg = Color3.fromRGB(35, 50, 65),
+        tabActive = Color3.fromRGB(70, 180, 255),
+        tabInactive = Color3.fromRGB(35, 50, 65),
+    },
+    ["Crimson"] = {
+        mainBg = Color3.fromRGB(35, 20, 25),
+        mainGradientStart = Color3.fromRGB(60, 30, 40),
+        mainGradientEnd = Color3.fromRGB(120, 60, 80),
+        strokeBase = Color3.fromRGB(255, 80, 120),
+        titleBg = Color3.fromRGB(40, 25, 30),
+        buttonBg = Color3.fromRGB(70, 40, 50),
+        tabActive = Color3.fromRGB(255, 80, 120),
+        tabInactive = Color3.fromRGB(70, 40, 50),
+    },
+    ["Lavender"] = {
+        mainBg = Color3.fromRGB(30, 25, 40),
+        mainGradientStart = Color3.fromRGB(50, 40, 65),
+        mainGradientEnd = Color3.fromRGB(100, 80, 130),
+        strokeBase = Color3.fromRGB(180, 140, 255),
+        titleBg = Color3.fromRGB(35, 30, 45),
+        buttonBg = Color3.fromRGB(60, 50, 75),
+        tabActive = Color3.fromRGB(180, 140, 255),
+        tabInactive = Color3.fromRGB(60, 50, 75),
+    },
+}
+local currentTheme = "Purple"
+
+-- ==================== GUI ====================
+local sg = Instance.new("ScreenGui")
+sg.Name = "ScriptLauncher"
+sg.ResetOnSpawn = false
+sg.Parent = parent
+
+-- Главное окно (250x175, сдвиг 150px влево)
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 250, 0, 175)
+main.Position = UDim2.new(0.5, -275, 0.5, -87)
+main.BackgroundColor3 = Color3.fromRGB(25, 20, 35)
+main.BackgroundTransparency = 0.1
+main.BorderSizePixel = 0
+main.ClipsDescendants = true
+main.Parent = sg
+
+local corner = Instance.new("UICorner", main)
+corner.CornerRadius = UDim.new(0, 10)
+
+local mainGradient = Instance.new("UIGradient", main)
+mainGradient.Rotation = 90
+
+local stroke = Instance.new("UIStroke", main)
+stroke.Thickness = 1.5
+stroke.Transparency = 0.3
+
+spawn(function()
+    local start = tick()
+    while stroke and stroke.Parent do
+        local t = tick() - start
+        local base = themes[currentTheme].strokeBase
+        local h, s, v = base:ToHSV()
+        local hue = h + 0.06 * math.sin(t * 1.2)
+        stroke.Color = Color3.fromHSV(hue % 1, s, v)
+        task.wait(0.05)
+    end
+end)
+
+-- Заголовок
+local titleBar = Instance.new("Frame", main)
+titleBar.Size = UDim2.new(1, 0, 0, 32)
+titleBar.BorderSizePixel = 0
+
+local titleText = Instance.new("TextLabel", titleBar)
+titleText.Size = UDim2.new(1, -80, 1, 0)
+titleText.Position = UDim2.new(0, 8, 0, 0)
+titleText.BackgroundTransparency = 1
+titleText.Font = Enum.Font.GothamBold
+titleText.TextSize = 15
+titleText.TextXAlignment = Enum.TextXAlignment.Left
+titleText.TextColor3 = Color3.new(1, 1, 1)
+bindText(titleText, "title")
+
+local minimizeBtn = Instance.new("TextButton", titleBar)
+minimizeBtn.Size = UDim2.new(0, 22, 0, 22)
+minimizeBtn.Position = UDim2.new(1, -74, 0.5, -11)
+minimizeBtn.Text = "–"
+minimizeBtn.TextColor3 = Color3.new(1, 1, 1)
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.TextSize = 18
+minimizeBtn.BorderSizePixel = 0
+Instance.new("UICorner", minimizeBtn).CornerRadius = UDim.new(0, 4)
+
+local settingsBtn = Instance.new("TextButton", titleBar)
+settingsBtn.Size = UDim2.new(0, 22, 0, 22)
+settingsBtn.Position = UDim2.new(1, -48, 0.5, -11)
+settingsBtn.Text = "⚙️"
+settingsBtn.TextColor3 = Color3.new(1, 1, 1)
+settingsBtn.Font = Enum.Font.GothamBold
+settingsBtn.TextSize = 16
+settingsBtn.BorderSizePixel = 0
+Instance.new("UICorner", settingsBtn).CornerRadius = UDim.new(0, 4)
+
+local closeBtn = Instance.new("TextButton", titleBar)
+closeBtn.Size = UDim2.new(0, 22, 0, 22)
+closeBtn.Position = UDim2.new(1, -22, 0.5, -11)
+closeBtn.Text = "❌"
+closeBtn.TextColor3 = Color3.new(1, 1, 1)
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 14
+closeBtn.BorderSizePixel = 0
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 4)
+
+-- Контент
+local contentFrame = Instance.new("Frame", main)
+contentFrame.Size = UDim2.new(1, -10, 1, -42)
+contentFrame.Position = UDim2.new(0, 5, 0, 37)
+contentFrame.BackgroundTransparency = 1
+contentFrame.ClipsDescendants = true
+
+local tabBar = Instance.new("ScrollingFrame", contentFrame)
+tabBar.Size = UDim2.new(1, 0, 0, 26)
+tabBar.Position = UDim2.new(0, 0, 0, 0)
+tabBar.BackgroundTransparency = 1
+tabBar.BorderSizePixel = 0
+tabBar.ScrollBarThickness = 2
+tabBar.ScrollingDirection = Enum.ScrollingDirection.X
+tabBar.AutomaticCanvasSize = Enum.AutomaticSize.X
+tabBar.ScrollBarImageTransparency = 0.7
+
+local tabContent = Instance.new("Frame", contentFrame)
+tabContent.Size = UDim2.new(1, 0, 1, -32)
+tabContent.Position = UDim2.new(0, 0, 0, 30)
+tabContent.BackgroundTransparency = 1
+
+local authorLabel = Instance.new("TextLabel", main)
+authorLabel.Size = UDim2.new(1, -10, 0, 16)
+authorLabel.Position = UDim2.new(0, 5, 1, -18)
+authorLabel.BackgroundTransparency = 1
+authorLabel.Font = Enum.Font.Gotham
+authorLabel.TextSize = 10
+authorLabel.TextXAlignment = Enum.TextXAlignment.Center
+authorLabel.TextColor3 = Color3.new(1, 1, 1)
+bindText(authorLabel, "author")
+
+-- ==================== Скрипты (23 штуки) ====================
+local scripts = {
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/wyYpVD58"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/SWf2qLAf"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/mgEReA6Q"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/DzQQA79R"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/0dzkFMKt"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/mYGh5ka2"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/x6ZSaJ5X"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/rCTuDHKi"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/19hhsstQ"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/J3Np89iZ"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/Tnvq3A9B"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/7whDgk1f"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/MheUG4sa"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/QMKqmy8V"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/MaWt3Aei"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/TQy4sV3v"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/cRxzSZwL"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/diXdM47h"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/EtEBNMs2"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/j4H4Hq1q"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/AkMCHJmE"))()]],
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/piMPh8JX"))()]],  -- 22: Remote spam
+    [[loadstring(game:HttpGet("https://pastebin.com/raw/Cp3yyYNm"))()]],  -- 23: Spectate
+}
+
+-- ==================== Радужная кнопка ====================
+local function createRainbowButton(parentFrame, textKey, callback)
+    local btn = Instance.new("TextButton", parentFrame)
+    btn.Size = UDim2.new(0.9, 0, 0, 28)
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    btn.BorderSizePixel = 0
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+
+    if textKey then
+        bindText(btn, textKey)
+    else
+        btn.Text = ""
+    end
+
+    local uiGradient = Instance.new("UIGradient", btn)
+    uiGradient.Rotation = 0
+    uiGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+        ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 165, 0)),
+        ColorSequenceKeypoint.new(0.4, Color3.fromRGB(255, 255, 0)),
+        ColorSequenceKeypoint.new(0.6, Color3.fromRGB(0, 255, 0)),
+        ColorSequenceKeypoint.new(0.8, Color3.fromRGB(0, 0, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0)),
+    })
+
+    local startTime = tick()
+    local connection
+    connection = game:GetService("RunService").Heartbeat:Connect(function()
+        if not btn or not btn.Parent then
+            connection:Disconnect()
+            return
+        end
+        local elapsed = tick() - startTime
+        uiGradient.Offset = Vector2.new((elapsed * 0.1) % 1, 0)
+    end)
+
+    if callback then
+        btn.MouseButton1Click:Connect(callback)
+    end
+    return btn
+end
+
+-- ==================== Вкладки ====================
+local tabButtons = {}
+local currentTab = 1
+
+local function applyTheme(themeName)
+    local theme = themes[themeName]
+    if not theme then return end
+    currentTheme = themeName
+
+    main.BackgroundColor3 = theme.mainBg
+    mainGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, theme.mainGradientStart),
+        ColorSequenceKeypoint.new(1, theme.mainGradientEnd)
+    })
+    titleBar.BackgroundColor3 = theme.titleBg
+    minimizeBtn.BackgroundColor3 = theme.buttonBg
+    closeBtn.BackgroundColor3 = theme.buttonBg
+    settingsBtn.BackgroundColor3 = theme.buttonBg
+    stroke.Color = theme.strokeBase
+    tabBar.ScrollBarImageColor3 = theme.tabActive
+
+    for i, btn in ipairs(tabButtons) do
+        if i == currentTab then
+            btn.BackgroundColor3 = theme.tabActive
+        else
+            btn.BackgroundColor3 = theme.tabInactive
+        end
+        btn.TextColor3 = Color3.new(1, 1, 1)
+    end
+end
+
+local function setActiveTab(index)
+    currentTab = index
+    local theme = themes[currentTheme]
+    for i, btn in ipairs(tabButtons) do
+        btn.BackgroundColor3 = (i == index) and theme.tabActive or theme.tabInactive
+        btn.TextColor3 = Color3.new(1, 1, 1)
+    end
+    for _, frame in ipairs(tabContent:GetChildren()) do
+        if frame:IsA("Frame") then
+            local num = tonumber(frame.Name:match("TabFrame(%d+)"))
+            frame.Visible = (num == index)
+        end
+    end
+end
+
+local function createTabUI()
+    for _, child in pairs(tabBar:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    for _, child in pairs(tabContent:GetChildren()) do
+        child:Destroy()
+    end
+    tabButtons = {}
+
+    local tabWidth = 100
+    local spacing = 4
+
+    for i = 1, #scripts do
+        local tabBtn = Instance.new("TextButton", tabBar)
+        tabBtn.Size = UDim2.new(0, tabWidth, 0, 22)
+        tabBtn.Position = UDim2.new(0, (i-1)*(tabWidth+spacing), 0.5, -11)
+        tabBtn.TextColor3 = Color3.new(1, 1, 1)
+        tabBtn.Font = Enum.Font.GothamSemibold
+        tabBtn.TextSize = 11
+        tabBtn.BorderSizePixel = 0
+        Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 4)
+        bindText(tabBtn, "tab_name_" .. i)
+        tabButtons[i] = tabBtn
+
+        local idx = i
+        tabBtn.MouseButton1Click:Connect(function()
+            setActiveTab(idx)
+        end)
+
+        local frame = Instance.new("Frame", tabContent)
+        frame.Size = UDim2.new(1, 0, 1, 0)
+        frame.BackgroundTransparency = 1
+        frame.Visible = (i == 1)
+        frame.Name = "TabFrame" .. i
+
+        local layout = Instance.new("UIListLayout", frame)
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        layout.Padding = UDim.new(0, 4)
+        layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        layout.VerticalAlignment = Enum.VerticalAlignment.Top
+
+        local title = Instance.new("TextLabel", frame)
+        title.Size = UDim2.new(1, -12, 0, 20)
+        title.LayoutOrder = 1
+        title.Font = Enum.Font.GothamBold
+        title.TextSize = 13
+        title.BackgroundTransparency = 1
+        title.TextXAlignment = Enum.TextXAlignment.Left
+        title.TextColor3 = Color3.new(1, 1, 1)
+        bindText(title, "tab_name_" .. i)
+
+        local desc = Instance.new("TextLabel", frame)
+        desc.Size = UDim2.new(1, -12, 0, 0)
+        desc.LayoutOrder = 2
+        desc.Font = Enum.Font.Gotham
+        desc.TextSize = 10
+        desc.TextWrapped = true
+        desc.BackgroundTransparency = 1
+        desc.TextXAlignment = Enum.TextXAlignment.Left
+        desc.AutomaticSize = Enum.AutomaticSize.Y
+        desc.TextColor3 = Color3.new(1, 1, 1)
+        bindText(desc, "tab_desc_" .. i)
+
+        local execBtn = createRainbowButton(frame, "execute", function()
+            local ok, err = pcall(function()
+                loadstring(scripts[i])()
+            end)
+            if not ok then
+                warn("Script error: " .. tostring(err))
+            end
+        end)
+        execBtn.LayoutOrder = 3
+    end
+
+    local totalWidth = #scripts * (tabWidth + spacing) + spacing
+    tabBar.CanvasSize = UDim2.new(0, totalWidth, 0, 0)
+
+    setActiveTab(1)
+end
+
+createTabUI()
+applyTheme(currentTheme)
+
+-- ==================== Окно настроек ====================
+local settingsWindow = Instance.new("Frame", sg)
+settingsWindow.Size = UDim2.new(0, 250, 0, 175)
+settingsWindow.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+settingsWindow.BorderSizePixel = 0
+settingsWindow.Visible = false
+settingsWindow.BackgroundTransparency = 0.1
+Instance.new("UICorner", settingsWindow).CornerRadius = UDim.new(0, 10)
+Instance.new("UIStroke", settingsWindow).Color = Color3.fromRGB(160, 100, 255)
+
+-- Заголовок настроек
+local settTitleBar = Instance.new("Frame", settingsWindow)
+settTitleBar.Size = UDim2.new(1, 0, 0, 28)
+settTitleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+settTitleBar.BorderSizePixel = 0
+Instance.new("UICorner", settTitleBar).CornerRadius = UDim.new(0, 8)
+
+local settTitle = Instance.new("TextLabel", settTitleBar)
+settTitle.Size = UDim2.new(1, -30, 1, 0)
+settTitle.Position = UDim2.new(0, 10, 0, 0)
+settTitle.BackgroundTransparency = 1
+settTitle.Font = Enum.Font.GothamBold
+settTitle.TextSize = 14
+settTitle.TextColor3 = Color3.new(1, 1, 1)
+bindText(settTitle, "settings_title")
+
+local settCloseBtn = Instance.new("TextButton", settTitleBar)
+settCloseBtn.Size = UDim2.new(0, 18, 0, 18)
+settCloseBtn.Position = UDim2.new(1, -24, 0.5, -9)
+settCloseBtn.Text = "❌"
+settCloseBtn.BackgroundColor3 = Color3.fromRGB(180, 80, 80)
+settCloseBtn.TextColor3 = Color3.new(1, 1, 1)
+settCloseBtn.Font = Enum.Font.GothamBold
+settCloseBtn.TextSize = 12
+settCloseBtn.BorderSizePixel = 0
+Instance.new("UICorner", settCloseBtn).CornerRadius = UDim.new(0, 3)
+settCloseBtn.MouseButton1Click:Connect(function()
+    settingsWindow.Visible = false
+end)
+
+-- Контент настроек
+local settContent = Instance.new("ScrollingFrame", settingsWindow)
+settContent.Size = UDim2.new(1, -8, 1, -33)
+settContent.Position = UDim2.new(0, 4, 0, 33)
+settContent.BackgroundTransparency = 1
+settContent.CanvasSize = UDim2.new(0, 0, 0, 280)
+settContent.ScrollBarThickness = 3
+settContent.ScrollBarImageColor3 = Color3.fromRGB(160, 100, 255)
+
+local settLayout = Instance.new("UIListLayout", settContent)
+settLayout.SortOrder = Enum.SortOrder.LayoutOrder
+settLayout.Padding = UDim.new(0, 4)
+settLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+-- Метка "Язык"
+local langLabel = Instance.new("TextLabel", settContent)
+langLabel.Size = UDim2.new(0.85, 0, 0, 14)
+langLabel.LayoutOrder = 1
+langLabel.BackgroundTransparency = 1
+langLabel.Font = Enum.Font.GothamSemibold
+langLabel.TextSize = 11
+langLabel.TextColor3 = Color3.new(1, 1, 1)
+bindText(langLabel, "language_label")
+
+-- Кнопки языков
+local langNames = {
+    { code = "en", text = "English" },
+    { code = "ru", text = "Русский" },
+    { code = "ua", text = "Українська" },
+}
+for i, lang in ipairs(langNames) do
+    local btn = Instance.new("TextButton", settContent)
+    btn.Size = UDim2.new(0.7, 0, 0, 22)
+    btn.LayoutOrder = i + 1
+    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    btn.Text = lang.text
+    btn.BorderSizePixel = 0
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+    btn.MouseButton1Click:Connect(function()
+        currentLang = lang.code
+        updateAllTexts()
+    end)
+end
+
+local spacer = Instance.new("Frame", settContent)
+spacer.Size = UDim2.new(1, 0, 0, 4)
+spacer.LayoutOrder = 5
+spacer.BackgroundTransparency = 1
+
+-- Метка "Тема"
+local themeLabel = Instance.new("TextLabel", settContent)
+themeLabel.Size = UDim2.new(0.85, 0, 0, 14)
+themeLabel.LayoutOrder = 6
+themeLabel.BackgroundTransparency = 1
+themeLabel.Font = Enum.Font.GothamSemibold
+themeLabel.TextSize = 11
+themeLabel.TextColor3 = Color3.new(1, 1, 1)
+bindText(themeLabel, "theme_label")
+
+local themeOrder = 7
+for name, themeColors in pairs(themes) do
+    local btn = Instance.new("TextButton", settContent)
+    btn.Size = UDim2.new(0.85, 0, 0, 22)
+    btn.LayoutOrder = themeOrder
+    btn.BackgroundColor3 = themeColors.tabActive
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 11
+    btn.Text = name
+    btn.BorderSizePixel = 0
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+    btn.MouseButton1Click:Connect(function()
+        applyTheme(name)
+    end)
+    themeOrder = themeOrder + 1
+end
+
+local totalThemeBtns = 0
+for _ in pairs(themes) do totalThemeBtns = totalThemeBtns + 1 end
+settContent.CanvasSize = UDim2.new(0, 0, 0, 160 + totalThemeBtns * 26)
+
+-- ==================== Перетаскивание окна настроек ====================
+local settIsDragging = false
+local settDragStart = Vector2.new()
+local settStartPos = UDim2.new()
+
+local function findSettInteractiveUnderPoint(point)
+    for _, child in pairs(settingsWindow:GetDescendants()) do
+        if child:IsA("TextButton") or child:IsA("ImageButton") then
+            if child.Active then
+                local absPos = child.AbsolutePosition
+                local absSize = child.AbsoluteSize
+                if point.X >= absPos.X and point.X <= absPos.X + absSize.X and
+                   point.Y >= absPos.Y and point.Y <= absPos.Y + absSize.Y then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+settingsWindow.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        local pos = input.Position
+        if findSettInteractiveUnderPoint(pos) then
+            return
+        end
+        settIsDragging = true
+        settDragStart = pos
+        settStartPos = settingsWindow.Position
+    end
+end)
+
+settingsWindow.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        settIsDragging = false
+    end
+end)
+
+settingsWindow.InputChanged:Connect(function(input)
+    if settIsDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - settDragStart
+        settingsWindow.Position = UDim2.new(
+            settStartPos.X.Scale, settStartPos.X.Offset + delta.X,
+            settStartPos.Y.Scale, settStartPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- ==================== Кнопка открытия настроек ====================
+settingsBtn.MouseButton1Click:Connect(function()
+    if not settingsWindow.Visible then
+        settingsWindow.Position = main.Position
+    end
+    settingsWindow.Visible = not settingsWindow.Visible
+end)
+
+-- ==================== Сворачивание главного окна ====================
+local isMinimized = false
+local originalSize = UDim2.new(0, 250, 0, 175)
+local minimizedSize = UDim2.new(0, 250, 0, 32)
+local tweenService = game:GetService("TweenService")
+local minimizeTween
+
+local function toggleMinimize()
+    isMinimized = not isMinimized
+    if minimizeTween then minimizeTween:Cancel() end
+    if isMinimized then
+        contentFrame.Visible = false
+        minimizeBtn.Text = "+"
+        minimizeTween = tweenService:Create(main, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Size = minimizedSize
+        })
+    else
+        minimizeTween = tweenService:Create(main, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Size = originalSize
+        })
+        contentFrame.Visible = true
+        minimizeBtn.Text = "–"
+    end
+    minimizeTween:Play()
+end
+minimizeBtn.MouseButton1Click:Connect(toggleMinimize)
+
+closeBtn.MouseButton1Click:Connect(function()
+    sg:Destroy()
+end)
+
+-- ==================== Перетаскивание главного окна ====================
+local isDragging = false
+local dragStart = Vector2.new()
+local startPos = UDim2.new()
+
+local function findMainInteractiveUnderPoint(point)
+    for _, child in pairs(main:GetDescendants()) do
+        if child:IsA("TextButton") or child:IsA("ImageButton") then
+            if child.Active then
+                local absPos = child.AbsolutePosition
+                local absSize = child.AbsoluteSize
+                if point.X >= absPos.X and point.X <= absPos.X + absSize.X and
+                   point.Y >= absPos.Y and point.Y <= absPos.Y + absSize.Y then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+main.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        local pos = input.Position
+        if findMainInteractiveUnderPoint(pos) then
+            return
+        end
+        isDragging = true
+        dragStart = pos
+        startPos = main.Position
+    end
+end)
+
+main.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDragging = false
+    end
+end)
+
+main.InputChanged:Connect(function(input)
+    if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        main.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- Удаление по клавише P
+game:GetService("UserInputService").InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.P then
+        sg:Destroy()
+    end
+end)
