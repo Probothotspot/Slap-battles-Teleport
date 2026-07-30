@@ -1,0 +1,1021 @@
+-- Click Teleport v1.0 (Final) – ПК: системный курсор, F – ТП, G – предпросмотр; Mobile: виртуальный курсор, белые кнопки
+
+local Translations = {
+    en = {
+        launcher_title = "🚀 Click Teleport v1.0",
+        language_label = "🌐 Language:",
+        device_label = "📱 Device:",
+        theme_label = "🎨 Theme:",
+        execute_btn = "🚀 Execute",
+        reset_msg = "📌 Settings reset. Launcher will appear on next run.",
+        select_theme_btn = "Select Theme",
+        theme_window_title = "Select Theme",
+        close_btn = "Close",
+        status_on = "🟢 ON",
+        status_off = "🔴 OFF",
+        toggle_on = "Turn Off",
+        toggle_off = "Turn On",
+        load_msg_pc = "PC: point mouse, F to TP, G for preview",
+        load_msg_mobile = "Mobile: tap/drag cursor, 👁 preview, 🌀 TP",
+        load_msg_common = "🖱 Click Teleport v1.0 loaded! ",
+        toggle_key_msg = " - T to toggle",
+        delete_msg = "❌ Script removed. Launcher will appear on next start.",
+        preview_created = "🔮 Preview zone shown (auto-removed in 5s)",
+        preview_removed = "Preview zone removed",
+        author_sign = "By Probothotspot",
+        theme_names = {
+            purple = "🌙 Purple", light = "☀️ Light", pink = "💗 Pink",
+            green = "🌿 Green", blue = "💙 Blue", red = "❤️ Red",
+            gold = "⭐ Gold", gray = "🩶 Gray", cyan = "🌀 Cyan",
+            orange = "🍊 Orange", white = "🤍 White", black = "🖤 Black"
+        }
+    },
+    ru = {
+        launcher_title = "🚀 Click Teleport v1.0",
+        language_label = "🌐 Язык:",
+        device_label = "📱 Устройство:",
+        theme_label = "🎨 Тема:",
+        execute_btn = "🚀 Запустить",
+        reset_msg = "📌 Настройки сброшены. Лаунчер появится при следующем запуске.",
+        select_theme_btn = "Выбор темы",
+        theme_window_title = "Выбор темы",
+        close_btn = "Закрыть",
+        status_on = "🟢 ВКЛ",
+        status_off = "🔴 ВЫКЛ",
+        toggle_on = "Выключить",
+        toggle_off = "Включить",
+        load_msg_pc = "ПК: наведите курсор, F для ТП, G для предпросмотра",
+        load_msg_mobile = "Телефон: коснитесь/тащите курсор, 👁 предпросмотр, 🌀 ТП",
+        load_msg_common = "🖱 Click Teleport v1.0 загружен! ",
+        toggle_key_msg = " - T переключить",
+        delete_msg = "❌ Скрипт удалён. При следующем запуске появится лаунчер.",
+        preview_created = "🔮 Зона предпросмотра показана (автоудаление через 5с)",
+        preview_removed = "Зона предпросмотра убрана",
+        author_sign = "By Probothotspot",
+        theme_names = {
+            purple = "🌙 Фиолетовая", light = "☀️ Светлая", pink = "💗 Розовая",
+            green = "🌿 Зелёная", blue = "💙 Синяя", red = "❤️ Красная",
+            gold = "⭐ Золотая", gray = "🩶 Серая", cyan = "🌀 Голубая",
+            orange = "🍊 Оранжевая", white = "🤍 Белая", black = "🖤 Чёрная"
+        }
+    },
+    ua = {
+        launcher_title = "🚀 Click Teleport v1.0",
+        language_label = "🌐 Мова:",
+        device_label = "📱 Пристрій:",
+        theme_label = "🎨 Тема:",
+        execute_btn = "🚀 Запустити",
+        reset_msg = "📌 Налаштування скинуто. Лаунчер з'явиться при наступному запуску.",
+        select_theme_btn = "Вибір теми",
+        theme_window_title = "Вибір теми",
+        close_btn = "Закрити",
+        status_on = "🟢 УВІМК",
+        status_off = "🔴 ВИМК",
+        toggle_on = "Вимкнути",
+        toggle_off = "Увімкнути",
+        load_msg_pc = "ПК: наведіть курсор, F для ТП, G для перегляду",
+        load_msg_mobile = "Телефон: торкніться/тягніть курсор, 👁 перегляд, 🌀 ТП",
+        load_msg_common = "🖱 Click Teleport v1.0 завантажено! ",
+        toggle_key_msg = " - T перемкнути",
+        delete_msg = "❌ Скрипт видалено. При наступному запуску з'явиться лаунчер.",
+        preview_created = "🔮 Зону перегляду показано (автовидалення через 5с)",
+        preview_removed = "Зону перегляду прибрано",
+        author_sign = "By Probothotspot",
+        theme_names = {
+            purple = "🌙 Фіолетова", light = "☀️ Світла", pink = "💗 Рожева",
+            green = "🌿 Зелена", blue = "💙 Синя", red = "❤️ Червона",
+            gold = "⭐ Золота", gray = "🩶 Сіра", cyan = "🌀 Блакитна",
+            orange = "🍊 Помаранчева", white = "🤍 Біла", black = "🖤 Чорна"
+        }
+    }
+}
+
+local Themes = {
+    purple = { mainBg = Color3.fromRGB(40, 0, 60), textColor = Color3.fromRGB(220, 200, 255), accent = Color3.fromRGB(80, 0, 120), cursorColor = Color3.fromRGB(0, 255, 255) },
+    light  = { mainBg = Color3.fromRGB(240, 240, 245), textColor = Color3.fromRGB(20, 20, 30), accent = Color3.fromRGB(180, 180, 200), cursorColor = Color3.fromRGB(0, 150, 255) },
+    pink   = { mainBg = Color3.fromRGB(60, 20, 40), textColor = Color3.fromRGB(255, 200, 220), accent = Color3.fromRGB(150, 50, 100), cursorColor = Color3.fromRGB(255, 100, 200) },
+    green  = { mainBg = Color3.fromRGB(20, 50, 30), textColor = Color3.fromRGB(200, 255, 210), accent = Color3.fromRGB(50, 130, 70), cursorColor = Color3.fromRGB(100, 255, 100) },
+    blue   = { mainBg = Color3.fromRGB(15, 25, 50), textColor = Color3.fromRGB(200, 220, 255), accent = Color3.fromRGB(40, 80, 160), cursorColor = Color3.fromRGB(80, 180, 255) },
+    red    = { mainBg = Color3.fromRGB(60, 15, 15), textColor = Color3.fromRGB(255, 200, 200), accent = Color3.fromRGB(150, 40, 40), cursorColor = Color3.fromRGB(255, 80, 80) },
+    gold   = { mainBg = Color3.fromRGB(50, 40, 10), textColor = Color3.fromRGB(255, 240, 180), accent = Color3.fromRGB(180, 140, 30), cursorColor = Color3.fromRGB(255, 220, 60) },
+    gray   = { mainBg = Color3.fromRGB(40, 40, 40), textColor = Color3.fromRGB(220, 220, 220), accent = Color3.fromRGB(100, 100, 100), cursorColor = Color3.fromRGB(180, 180, 180) },
+    cyan   = { mainBg = Color3.fromRGB(0, 50, 70), textColor = Color3.fromRGB(200, 255, 255), accent = Color3.fromRGB(0, 100, 140), cursorColor = Color3.fromRGB(0, 255, 200) },
+    orange = { mainBg = Color3.fromRGB(80, 40, 10), textColor = Color3.fromRGB(255, 220, 180), accent = Color3.fromRGB(180, 90, 20), cursorColor = Color3.fromRGB(255, 180, 0) },
+    white  = { mainBg = Color3.fromRGB(220, 220, 230), textColor = Color3.fromRGB(10, 10, 20), accent = Color3.fromRGB(180, 180, 200), cursorColor = Color3.fromRGB(50, 50, 255) },
+    black  = { mainBg = Color3.fromRGB(10, 10, 15), textColor = Color3.fromRGB(200, 200, 200), accent = Color3.fromRGB(50, 50, 50), cursorColor = Color3.fromRGB(255, 255, 255) }
+}
+
+local function getGlobalText(key, lang)
+    lang = lang or (_G.TeleportClickSettings and _G.TeleportClickSettings.language or "en")
+    return Translations[lang] and Translations[lang][key] or Translations.en[key] or key
+end
+
+-- ===================== ОСНОВНАЯ ФУНКЦИЯ =====================
+function StartClickTeleport()
+    local settings = _G.TeleportClickSettings
+    local currentLang = settings.language or "en"
+    local device = settings.device or "PC"
+    local currentTheme = settings.theme or "purple"
+
+    local function L(key) return getGlobalText(key, currentLang) end
+
+    local theme = Themes[currentTheme] or Themes.purple
+    local GuiBackgroundColor = theme.mainBg
+    local GuiTextColor = theme.textColor
+    local AccentColor = theme.accent
+    local CursorColor = theme.cursorColor
+
+    pcall(function()
+        local coreGui = game:GetService("CoreGui")
+        for _, name in ipairs({"ClickTeleportGUI", "MobileTeleportButton", "CursorGUI"}) do
+            local obj = coreGui:FindFirstChild(name)
+            if obj then obj:Destroy() end
+        end
+    end)
+
+    local ScriptSettings = {
+        Enabled = true,
+        ToggleKey = Enum.KeyCode.T,
+        TeleportKey = Enum.KeyCode.F,
+        PreviewKey = Enum.KeyCode.G,
+        SmoothTeleport = false,
+        TeleportDuration = 0.3,
+        TeleportOffset = 2,
+        ShowMarker = true,
+        MarkerColor = Color3.fromRGB(0, 255, 255),
+        MarkerLifetime = 3,
+        MarkerTransparency = 0.2,
+        EnableFlash = true,
+        TeleportSoundId = "",
+        HistoryEnabled = true,
+        HistoryKey = Enum.KeyCode.R,
+        StartMinimized = false,
+    }
+
+    local Players = game:GetService("Players")
+    local UIS = game:GetService("UserInputService")
+    local TweenService = game:GetService("TweenService")
+    local Workspace = game:GetService("Workspace")
+    local Camera = Workspace.CurrentCamera
+    local LP = Players.LocalPlayer
+    local Char = LP.Character or LP.CharacterAdded:Wait()
+    local HRP = Char:WaitForChild("HumanoidRootPart")
+    local Hum = Char:WaitForChild("Humanoid")
+
+    local ModeEnabled = _G.ClickTeleportEnabled ~= nil and _G.ClickTeleportEnabled or ScriptSettings.Enabled
+    local Connections = {}
+    local Markers = {}
+    local History = {}
+    local TeleportQueue = {}
+    local IsTeleporting = false
+    local Destroyed = false
+
+    -- GUI элементы
+    local StatusGui, StatusFrame, StatusLabel, ToggleButton, MinimizeBtn, CloseBtn, IconBtn
+    local isMinimized = false
+    local savedPosition = nil
+
+    -- Виртуальный курсор и мобильные элементы
+    local VirtualCursor, CursorGui
+    local MobileControlFrame, TeleportButton, PreviewButton, MobileButtonGui
+    local previewZone = nil
+
+    local function refreshCharacter()
+        if Destroyed then return end
+        Char = LP.Character
+        if Char then
+            HRP = Char:WaitForChild("HumanoidRootPart")
+            Hum = Char:WaitForChild("Humanoid")
+        end
+    end
+
+    local function createMarker(position)
+        if Destroyed or not ScriptSettings.ShowMarker then return end
+        local marker = Instance.new("Part")
+        marker.Name = "TeleportMarker"
+        marker.Size = Vector3.new(1, 1, 1)
+        marker.Shape = Enum.PartType.Ball
+        marker.Material = Enum.Material.Neon
+        marker.Color = ScriptSettings.MarkerColor
+        marker.Transparency = ScriptSettings.MarkerTransparency
+        marker.Anchored = true
+        marker.CanCollide = false
+        marker.Position = position
+        marker.Parent = Workspace
+        local appearTween = TweenService:Create(marker, TweenInfo.new(0.2), {Size = Vector3.new(1, 1, 1)})
+        marker.Size = Vector3.new(0, 0, 0)
+        appearTween:Play()
+        task.delay(ScriptSettings.MarkerLifetime, function()
+            if Destroyed then return end
+            if marker and marker.Parent then
+                local disappearTween = TweenService:Create(marker, TweenInfo.new(0.3), {Transparency = 1})
+                disappearTween:Play()
+                disappearTween.Completed:Wait()
+                marker:Destroy()
+            end
+        end)
+        table.insert(Markers, marker)
+    end
+
+    local function createFlash(position)
+        if Destroyed or not ScriptSettings.EnableFlash then return end
+        local flash = Instance.new("Part")
+        flash.Size = Vector3.new(0.2, 0.2, 0.2)
+        flash.Transparency = 1
+        flash.Anchored = true
+        flash.CanCollide = false
+        flash.Position = position
+        flash.Parent = Workspace
+        local emitter = Instance.new("ParticleEmitter")
+        emitter.Rate = 200
+        emitter.Lifetime = NumberRange.new(0.5, 1)
+        emitter.Speed = NumberRange.new(5, 10)
+        emitter.SpreadAngle = Vector2.new(360, 360)
+        emitter.Texture = "rbxassetid://244221925"
+        emitter.Color = ColorSequence.new(ScriptSettings.MarkerColor)
+        emitter.VelocityInheritance = 0
+        emitter.Parent = flash
+        emitter:Emit(30)
+        task.delay(1, function()
+            if not Destroyed then flash:Destroy() end
+        end)
+    end
+
+    local function addToHistory(position)
+        if not ScriptSettings.HistoryEnabled then return end
+        table.insert(History, position)
+        if #History > 5 then table.remove(History, 1) end
+    end
+
+    local function goBackHistory()
+        if Destroyed or not ScriptSettings.HistoryEnabled or #History == 0 then return end
+        local prevPos = table.remove(History)
+        queueTeleport(prevPos)
+    end
+
+    local function processQueue()
+        if Destroyed or IsTeleporting then return end
+        IsTeleporting = true
+        while #TeleportQueue > 0 and not Destroyed do
+            local targetPos = table.remove(TeleportQueue, 1)
+            if not Char or not HRP or not HRP.Parent then break end
+            createMarker(targetPos)
+            createFlash(targetPos)
+            addToHistory(HRP.Position)
+            local currentRotation = HRP.CFrame.Rotation
+            if ScriptSettings.SmoothTeleport then
+                local targetCF = CFrame.new(targetPos) * currentRotation
+                local tweenInfo = TweenInfo.new(ScriptSettings.TeleportDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                local tween = TweenService:Create(HRP, tweenInfo, {CFrame = targetCF})
+                tween:Play()
+                tween.Completed:Wait()
+            else
+                HRP.CFrame = CFrame.new(targetPos) * currentRotation
+            end
+            if Hum and Hum:GetState() ~= Enum.HumanoidStateType.Jumping then
+                Hum.Jump = true
+            end
+            task.wait(0.05)
+        end
+        IsTeleporting = false
+    end
+
+    function queueTeleport(position)
+        if Destroyed then return end
+        table.insert(TeleportQueue, position)
+        if not IsTeleporting then processQueue() end
+    end
+
+    local RAY_LENGTH = 1000000
+    local function getTargetPosition(screenX, screenY)
+        local ray = Camera:ScreenPointToRay(screenX, screenY)
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+        raycastParams.FilterDescendantsInstances = {Char}
+        local raycastResult = Workspace:Raycast(ray.Origin, ray.Direction * RAY_LENGTH, raycastParams)
+        if raycastResult then
+            local hitPos = raycastResult.Position
+            local hitNormal = raycastResult.Normal
+            return hitPos + hitNormal * ScriptSettings.TeleportOffset
+        end
+        return nil
+    end
+
+    local function removePreviewZone()
+        if previewZone and previewZone.Parent then
+            previewZone:Destroy()
+            previewZone = nil
+        end
+    end
+
+    -- Телепорт (ПК – системный курсор, Mobile – виртуальный)
+    local function teleportFromCursor()
+        if Destroyed or not ModeEnabled then return end
+        local centerX, centerY
+        if device == "PC" then
+            local mousePos = UIS:GetMouseLocation()
+            centerX, centerY = mousePos.X, mousePos.Y
+        else
+            if not VirtualCursor then return end
+            local absPos = VirtualCursor.AbsolutePosition
+            local size = VirtualCursor.AbsoluteSize
+            centerX = absPos.X + size.X/2
+            centerY = absPos.Y + size.Y/2
+        end
+        local target = getTargetPosition(centerX, centerY)
+        if target then
+            removePreviewZone()
+            local currentRotation = HRP.CFrame.Rotation
+            HRP.CFrame = CFrame.new(target) * currentRotation
+            addToHistory(target)
+        end
+    end
+
+    local function previewTP()
+        if Destroyed or not ModeEnabled then return end
+        local centerX, centerY
+        if device == "PC" then
+            local mousePos = UIS:GetMouseLocation()
+            centerX, centerY = mousePos.X, mousePos.Y
+        else
+            if not VirtualCursor then return end
+            local absPos = VirtualCursor.AbsolutePosition
+            local size = VirtualCursor.AbsoluteSize
+            centerX = absPos.X + size.X/2
+            centerY = absPos.Y + size.Y/2
+        end
+        local targetPos = getTargetPosition(centerX, centerY)
+        if not targetPos then
+            removePreviewZone()
+            game:GetService("StarterGui"):SetCore("ChatMakeSystemMessage", {
+                Text = L("preview_removed"), Color = Color3.fromRGB(255,200,100), Font = Enum.Font.SourceSansBold
+            })
+            return
+        end
+        removePreviewZone()
+        previewZone = Instance.new("Part")
+        previewZone.Name = "PreviewZone"
+        previewZone.Size = Vector3.new(10, 0.5, 10)
+        previewZone.Shape = Enum.PartType.Cylinder
+        previewZone.Material = Enum.Material.Neon
+        previewZone.Color = Color3.fromRGB(255, 255, 0)
+        previewZone.Transparency = 0.4
+        previewZone.Anchored = true
+        previewZone.CanCollide = false
+        previewZone.Position = targetPos
+        previewZone.Parent = Workspace
+        game:GetService("StarterGui"):SetCore("ChatMakeSystemMessage", {
+            Text = L("preview_created"), Color = Color3.fromRGB(100,255,100), Font = Enum.Font.SourceSansBold
+        })
+        task.delay(5, function()
+            if previewZone and previewZone.Parent then
+                previewZone:Destroy()
+                previewZone = nil
+            end
+        end)
+    end
+
+    -- Виртуальный курсор (только для мобильных)
+    local function setupVirtualCursor()
+        if CursorGui then return end
+        CursorGui = Instance.new("ScreenGui")
+        CursorGui.Name = "CursorGUI"
+        CursorGui.ResetOnSpawn = false
+        pcall(function() CursorGui.Parent = game:GetService("CoreGui") end)
+        if not CursorGui.Parent then CursorGui.Parent = LP:WaitForChild("PlayerGui") end
+
+        VirtualCursor = Instance.new("Frame", CursorGui)
+        VirtualCursor.Size = UDim2.new(0, 32, 0, 32)
+        VirtualCursor.Position = UDim2.new(0.5, -16, 0.5, -16)
+        VirtualCursor.BackgroundColor3 = CursorColor
+        VirtualCursor.BackgroundTransparency = 0.3
+        VirtualCursor.BorderSizePixel = 0
+        Instance.new("UICorner", VirtualCursor).CornerRadius = UDim.new(1, 0)
+        VirtualCursor.ZIndex = 100
+
+        if device == "PC" then
+            VirtualCursor.Visible = false  -- На ПК курсор не нужен
+        else
+            -- Мобильная логика: тап + перетаскивание
+            local cursorDrag = false
+            local moved = false
+            VirtualCursor.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.Touch then
+                    cursorDrag = true
+                    moved = false
+                end
+            end)
+            UIS.InputEnded:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.Touch and cursorDrag then
+                    if not moved then
+                        local pos = input.Position
+                        VirtualCursor.Position = UDim2.new(0, pos.X - VirtualCursor.AbsoluteSize.X/2,
+                                                            0, pos.Y - VirtualCursor.AbsoluteSize.Y/2)
+                    end
+                    cursorDrag = false
+                end
+            end)
+            UIS.TouchMoved:Connect(function(input, processed)
+                if processed or not cursorDrag then return end
+                moved = true
+                local pos = input.Position
+                VirtualCursor.Position = UDim2.new(0, pos.X - VirtualCursor.AbsoluteSize.X/2,
+                                                    0, pos.Y - VirtualCursor.AbsoluteSize.Y/2)
+            end)
+
+            -- Защита от касаний кнопок
+            UIS.InputBegan:Connect(function(input, gameProcessed)
+                if Destroyed or gameProcessed then return end
+                if input.UserInputType == Enum.UserInputType.Touch then
+                    local touchPos = input.Position
+                    if MobileControlFrame and MobileControlFrame.Visible then
+                        local absPos = MobileControlFrame.AbsolutePosition
+                        local absSize = MobileControlFrame.AbsoluteSize
+                        if touchPos.X >= absPos.X and touchPos.X <= absPos.X + absSize.X and
+                           touchPos.Y >= absPos.Y and touchPos.Y <= absPos.Y + absSize.Y then
+                            cursorDrag = false
+                            return
+                        end
+                    end
+                end
+            end)
+        end
+    end
+
+    local function createMobileButtons()
+        if MobileButtonGui then return end
+        MobileButtonGui = Instance.new("ScreenGui")
+        MobileButtonGui.Name = "MobileTeleportButton"
+        MobileButtonGui.ResetOnSpawn = false
+        pcall(function() MobileButtonGui.Parent = game:GetService("CoreGui") end)
+        if not MobileButtonGui.Parent then MobileButtonGui.Parent = LP:WaitForChild("PlayerGui") end
+
+        MobileControlFrame = Instance.new("Frame", MobileButtonGui)
+        MobileControlFrame.Size = UDim2.new(0, 150, 0, 80)
+        MobileControlFrame.Position = UDim2.new(1, -160, 1, -160)
+        MobileControlFrame.BackgroundColor3 = GuiBackgroundColor
+        MobileControlFrame.BackgroundTransparency = 0
+        MobileControlFrame.Active = true
+        MobileControlFrame.Draggable = true
+        MobileControlFrame.BorderSizePixel = 0
+        Instance.new("UICorner", MobileControlFrame).CornerRadius = UDim.new(0, 10)
+
+        local whiteColor = Color3.fromRGB(255, 255, 255)
+
+        PreviewButton = Instance.new("TextButton", MobileControlFrame)
+        PreviewButton.Size = UDim2.new(0, 60, 0, 60)
+        PreviewButton.Position = UDim2.new(0, 0, 0.5, -30)
+        PreviewButton.Text = "👁"
+        PreviewButton.TextSize = 28
+        PreviewButton.Font = Enum.Font.GothamBold
+        PreviewButton.BackgroundColor3 = whiteColor
+        PreviewButton.BackgroundTransparency = 0
+        PreviewButton.TextColor3 = Color3.fromRGB(0,0,0)
+        PreviewButton.BorderSizePixel = 0
+        Instance.new("UICorner", PreviewButton).CornerRadius = UDim.new(1, 0)
+
+        TeleportButton = Instance.new("TextButton", MobileControlFrame)
+        TeleportButton.Size = UDim2.new(0, 70, 0, 70)
+        TeleportButton.Position = UDim2.new(0, 75, 0.5, -35)
+        TeleportButton.Text = "🌀"
+        TeleportButton.TextSize = 30
+        TeleportButton.Font = Enum.Font.GothamBold
+        TeleportButton.BackgroundColor3 = whiteColor
+        TeleportButton.BackgroundTransparency = 0
+        TeleportButton.TextColor3 = Color3.fromRGB(0,0,0)
+        TeleportButton.BorderSizePixel = 0
+        Instance.new("UICorner", TeleportButton).CornerRadius = UDim.new(1, 0)
+
+        TeleportButton.MouseButton1Click:Connect(teleportFromCursor)
+        PreviewButton.MouseButton1Click:Connect(previewTP)
+        TeleportButton.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then
+                task.delay(0.1, teleportFromCursor)
+            end
+        end)
+        PreviewButton.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then
+                task.delay(0.1, previewTP)
+            end
+        end)
+    end
+
+    -- ===== GUI СТАТУСА =====
+    local function updateStatusGui()
+        if Destroyed or not StatusLabel or not ToggleButton then return end
+        StatusLabel.Text = ModeEnabled and L("status_on") or L("status_off")
+        ToggleButton.Text = ModeEnabled and L("toggle_on") or L("toggle_off")
+    end
+
+    local function toggleMode()
+        if Destroyed then return end
+        ModeEnabled = not ModeEnabled
+        _G.ClickTeleportEnabled = ModeEnabled
+        updateStatusGui()
+        local msg = ModeEnabled and "🟢 Click Teleport: ON" or "🔴 Click Teleport: OFF"
+        game:GetService("StarterGui"):SetCore("ChatMakeSystemMessage", {
+            Text = msg, Color = Color3.fromRGB(255,255,255),
+            Font = Enum.Font.SourceSansBold, FontSize = Enum.FontSize.Size18
+        })
+    end
+
+    local function toggleMinimize()
+        if Destroyed then return end
+        if isMinimized then
+            local targetPos = savedPosition or UDim2.new(0.5, -130, 0, 10)
+            StatusFrame.Size = UDim2.new(0, 260, 0, 50)
+            StatusFrame.Position = targetPos
+            IconBtn.Visible = false
+            StatusLabel.Visible = true
+            ToggleButton.Visible = true
+            MinimizeBtn.Visible = true
+            CloseBtn.Visible = true
+            MinimizeBtn.Text = "–"
+            isMinimized = false
+        else
+            savedPosition = StatusFrame.Position
+            local tween = TweenService:Create(StatusFrame, TweenInfo.new(0.3), {Size = UDim2.new(0, 44, 0, 44)})
+            tween:Play()
+            tween.Completed:Connect(function()
+                if Destroyed then return end
+                StatusLabel.Visible = false
+                ToggleButton.Visible = false
+                MinimizeBtn.Visible = false
+                CloseBtn.Visible = false
+                IconBtn.Visible = true
+                MinimizeBtn.Text = "+"
+            end)
+            isMinimized = true
+        end
+        _G.ClickTeleportMinimized = isMinimized
+    end
+
+    local function cleanup()
+        if Destroyed then return end
+        Destroyed = true
+        TeleportQueue = {}
+        IsTeleporting = false
+        for _, conn in ipairs(Connections) do conn:Disconnect() end
+        Connections = {}
+        for _, marker in ipairs(Markers) do
+            if marker and marker.Parent then marker:Destroy() end
+        end
+        Markers = {}
+        removePreviewZone()
+        pcall(function()
+            if StatusGui then StatusGui:Destroy() end
+            if MobileButtonGui then MobileButtonGui:Destroy() end
+            if CursorGui then CursorGui:Destroy() end
+        end)
+        _G.ClickTeleportEnabled = nil
+        _G.ClickTeleportMinimized = nil
+        _G.TeleportClickSettings = nil
+        game:GetService("StarterGui"):SetCore("ChatMakeSystemMessage", {
+            Text = L("delete_msg"), Color = Color3.fromRGB(255,100,100), Font = Enum.Font.SourceSansBold
+        })
+    end
+
+    local function createStatusGui()
+        if Destroyed then return end
+        local guiParent = game:GetService("CoreGui")
+        pcall(function() if gethui then guiParent = gethui() end end)
+        if not guiParent then return end
+
+        StatusGui = Instance.new("ScreenGui")
+        StatusGui.Name = "ClickTeleportGUI"
+        StatusGui.ResetOnSpawn = false
+        StatusGui.Parent = guiParent
+
+        StatusFrame = Instance.new("Frame")
+        StatusFrame.Size = UDim2.new(0, 260, 0, 50)
+        StatusFrame.Position = UDim2.new(0.5, -130, 0, 10)
+        StatusFrame.BackgroundColor3 = GuiBackgroundColor
+        StatusFrame.BorderSizePixel = 0
+        StatusFrame.Active = true
+        StatusFrame.Draggable = true
+        StatusFrame.ClipsDescendants = false
+        StatusFrame.Parent = StatusGui
+        Instance.new("UICorner", StatusFrame).CornerRadius = UDim.new(0, 8)
+
+        StatusLabel = Instance.new("TextLabel", StatusFrame)
+        StatusLabel.Size = UDim2.new(0, 80, 1, 0)
+        StatusLabel.Position = UDim2.new(0, 10, 0, 0)
+        StatusLabel.BackgroundTransparency = 1
+        StatusLabel.Font = Enum.Font.SourceSansBold
+        StatusLabel.TextColor3 = GuiTextColor
+        StatusLabel.TextSize = 16
+
+        ToggleButton = Instance.new("TextButton", StatusFrame)
+        ToggleButton.Size = UDim2.new(0, 100, 0, 30)
+        ToggleButton.Position = UDim2.new(0, 85, 0.5, -15)
+        ToggleButton.BackgroundColor3 = AccentColor
+        ToggleButton.TextColor3 = Color3.fromRGB(255,255,255)
+        ToggleButton.Font = Enum.Font.SourceSansBold
+        ToggleButton.TextSize = 14
+        Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(0, 6)
+        ToggleButton.MouseButton1Click:Connect(toggleMode)
+
+        MinimizeBtn = Instance.new("TextButton", StatusFrame)
+        MinimizeBtn.Size = UDim2.new(0, 28, 0, 28)
+        MinimizeBtn.Position = UDim2.new(1, -68, 0.5, -14)
+        MinimizeBtn.Text = "–"
+        MinimizeBtn.Font = Enum.Font.SourceSansBold
+        MinimizeBtn.TextSize = 18
+        MinimizeBtn.TextColor3 = Color3.new(1,1,1)
+        MinimizeBtn.BackgroundColor3 = Color3.fromRGB(60,0,100)
+        Instance.new("UICorner", MinimizeBtn).CornerRadius = UDim.new(0, 14)
+        MinimizeBtn.MouseButton1Click:Connect(toggleMinimize)
+
+        CloseBtn = Instance.new("TextButton", StatusFrame)
+        CloseBtn.Size = UDim2.new(0, 28, 0, 28)
+        CloseBtn.Position = UDim2.new(1, -38, 0.5, -14)
+        CloseBtn.Text = "✖"
+        CloseBtn.Font = Enum.Font.SourceSansBold
+        CloseBtn.TextSize = 16
+        CloseBtn.TextColor3 = Color3.new(1,1,1)
+        CloseBtn.BackgroundColor3 = Color3.fromRGB(60,0,100)
+        Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 14)
+        CloseBtn.MouseButton1Click:Connect(cleanup)
+
+        IconBtn = Instance.new("TextButton", StatusFrame)
+        IconBtn.Size = UDim2.new(0, 40, 0, 40)
+        IconBtn.Position = UDim2.new(0.5, -20, 0.5, -20)
+        IconBtn.Text = "↕"
+        IconBtn.Font = Enum.Font.SourceSansBold
+        IconBtn.TextSize = 24
+        IconBtn.BackgroundColor3 = GuiBackgroundColor
+        IconBtn.TextColor3 = Color3.new(1,1,1)
+        IconBtn.Visible = false
+        Instance.new("UICorner", IconBtn).CornerRadius = UDim.new(0, 20)
+        IconBtn.MouseButton1Click:Connect(toggleMinimize)
+
+        local authorLabel = Instance.new("TextLabel", StatusFrame)
+        authorLabel.Size = UDim2.new(0, 120, 0, 12)
+        authorLabel.Position = UDim2.new(1, -125, 1, -15)
+        authorLabel.BackgroundTransparency = 1
+        authorLabel.Text = L("author_sign")
+        authorLabel.TextColor3 = GuiTextColor
+        authorLabel.TextSize = 10
+        authorLabel.Font = Enum.Font.Gotham
+        authorLabel.TextXAlignment = Enum.TextXAlignment.Right
+        authorLabel.Parent = StatusFrame
+
+        if _G.ClickTeleportMinimized ~= nil then
+            isMinimized = _G.ClickTeleportMinimized
+        else
+            isMinimized = ScriptSettings.StartMinimized
+        end
+        if isMinimized then
+            StatusFrame.Size = UDim2.new(0,44,0,44)
+            StatusLabel.Visible = false
+            ToggleButton.Visible = false
+            MinimizeBtn.Visible = false
+            CloseBtn.Visible = false
+            IconBtn.Visible = true
+            MinimizeBtn.Text = "+"
+        else
+            MinimizeBtn.Text = "–"
+        end
+        _G.ClickTeleportMinimized = isMinimized
+    end
+
+    -- ===== ИНИЦИАЛИЗАЦИЯ =====
+    setupVirtualCursor()
+    if device == "Mobile" then
+        createMobileButtons()
+    end
+
+    local keyConn = UIS.InputBegan:Connect(function(input, gameProcessed)
+        if Destroyed or gameProcessed then return end
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            if input.KeyCode == ScriptSettings.TeleportKey then
+                teleportFromCursor()
+            elseif input.KeyCode == ScriptSettings.PreviewKey then
+                previewTP()
+            elseif input.KeyCode == ScriptSettings.ToggleKey then
+                toggleMode()
+            elseif input.KeyCode == Enum.KeyCode.P then
+                cleanup()
+            elseif input.KeyCode == ScriptSettings.HistoryKey then
+                goBackHistory()
+            end
+        end
+    end)
+    table.insert(Connections, keyConn)
+
+    local charConn = LP.CharacterAdded:Connect(function()
+        if Destroyed then return end
+        refreshCharacter()
+        TeleportQueue = {}
+        IsTeleporting = false
+    end)
+    table.insert(Connections, charConn)
+
+    refreshCharacter()
+    createStatusGui()
+
+    local modeMsg = (device == "PC") and L("load_msg_pc") or L("load_msg_mobile")
+    game:GetService("StarterGui"):SetCore("ChatMakeSystemMessage", {
+        Text = L("load_msg_common") .. modeMsg .. L("toggle_key_msg"),
+        Color = Color3.fromRGB(0, 255, 0),
+        Font = Enum.Font.SourceSansBold
+    })
+
+    if _G.ClickTeleportEnabled == nil then
+        _G.ClickTeleportEnabled = ScriptSettings.Enabled
+    end
+    ModeEnabled = _G.ClickTeleportEnabled
+    updateStatusGui()
+end
+
+-- ======================== ЛАУНЧЕР ========================
+if not _G.TeleportClickSettings or not _G.TeleportClickSettings.language then
+    local Players = game:GetService("Players")
+    local UserInput = game:GetService("UserInputService")
+    local LP = Players.LocalPlayer
+
+    local currentLang = _G.TeleportClickSettings and _G.TeleportClickSettings.language or "en"
+    local currentDevice = _G.TeleportClickSettings and _G.TeleportClickSettings.device or "PC"
+    local currentTheme = _G.TeleportClickSettings and _G.TeleportClickSettings.theme or "purple"
+
+    local launcherGui = Instance.new("ScreenGui")
+    launcherGui.Name = "Launcher"
+    launcherGui.ResetOnSpawn = false
+    pcall(function() launcherGui.Parent = game:GetService("CoreGui") end)
+    if not launcherGui.Parent then launcherGui.Parent = LP:WaitForChild("PlayerGui") end
+
+    local main = Instance.new("Frame", launcherGui)
+    main.Size = UDim2.new(0, 420, 0, 360)
+    main.Position = UDim2.new(0.5, -210, 0.5, -180)
+    main.BackgroundColor3 = Color3.fromRGB(20, 20, 35)
+    main.BorderSizePixel = 0
+    Instance.new("UICorner", main).CornerRadius = UDim.new(0, 16)
+
+    local titleLabel = Instance.new("TextLabel", main)
+    titleLabel.Size = UDim2.new(1, -20, 0, 40)
+    titleLabel.Position = UDim2.new(0, 10, 0, 10)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.TextColor3 = Color3.new(1,1,1)
+    titleLabel.TextSize = 24
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    local langLabel = Instance.new("TextLabel", main)
+    langLabel.Size = UDim2.new(1, -20, 0, 25)
+    langLabel.Position = UDim2.new(0, 10, 0, 65)
+    langLabel.BackgroundTransparency = 1
+    langLabel.TextColor3 = Color3.new(0.9, 0.9, 0.9)
+    langLabel.TextSize = 16
+    langLabel.Font = Enum.Font.Gotham
+    langLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    local devLabel = Instance.new("TextLabel", main)
+    devLabel.Size = UDim2.new(1, -20, 0, 25)
+    devLabel.Position = UDim2.new(0, 10, 0, 145)
+    devLabel.BackgroundTransparency = 1
+    devLabel.TextColor3 = Color3.new(0.9, 0.9, 0.9)
+    devLabel.TextSize = 16
+    devLabel.Font = Enum.Font.Gotham
+    devLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    local themeLabel = Instance.new("TextLabel", main)
+    themeLabel.Size = UDim2.new(1, -20, 0, 25)
+    themeLabel.Position = UDim2.new(0, 10, 0, 225)
+    themeLabel.BackgroundTransparency = 1
+    themeLabel.TextColor3 = Color3.new(0.9, 0.9, 0.9)
+    themeLabel.TextSize = 16
+    themeLabel.Font = Enum.Font.Gotham
+    themeLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    local langButtons = {}
+    local langCodes = {"en", "ru", "ua"}
+    local langNames = {"English", "Русский", "Українська"}
+    for i, code in ipairs(langCodes) do
+        local btn = Instance.new("TextButton", main)
+        btn.Size = UDim2.new(0.3, -5, 0, 36)
+        btn.Position = UDim2.new(0, 10 + (i-1)*130, 0, 95)
+        btn.Text = langNames[i]
+        btn.TextColor3 = Color3.new(1,1,1)
+        btn.TextSize = 14
+        btn.Font = Enum.Font.GothamSemibold
+        btn.BorderSizePixel = 0
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+        btn.MouseButton1Click:Connect(function()
+            currentLang = code
+            for c, b in pairs(langButtons) do
+                b.BackgroundColor3 = c == currentLang and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(60, 60, 120)
+            end
+            titleLabel.Text = getGlobalText("launcher_title", currentLang)
+            langLabel.Text = getGlobalText("language_label", currentLang)
+            devLabel.Text = getGlobalText("device_label", currentLang)
+            themeLabel.Text = getGlobalText("theme_label", currentLang)
+            execBtn.Text = getGlobalText("execute_btn", currentLang)
+            selectThemeBtn.Text = getGlobalText("select_theme_btn", currentLang)
+            themeWinTitle.Text = getGlobalText("theme_window_title", currentLang)
+            themeCloseBtn.Text = getGlobalText("close_btn", currentLang)
+            for tk, tb in pairs(themeBtns) do
+                tb.Text = getGlobalText("theme_names", currentLang)[tk] or tk
+            end
+            for dev, db in pairs(deviceButtons) do
+                db.Text = (dev == "PC") and (currentLang == "ru" and "💻 ПК" or currentLang == "ua" and "💻 ПК" or "💻 PC")
+                                  or (currentLang == "ru" and "📱 Телефон" or currentLang == "ua" and "📱 Телефон" or "📱 Mobile")
+            end
+            authorLabel.Text = getGlobalText("author_sign", currentLang)
+        end)
+        langButtons[code] = btn
+    end
+
+    local deviceButtons = {}
+    for _, dev in ipairs({"PC", "Mobile"}) do
+        local btn = Instance.new("TextButton", main)
+        btn.Size = UDim2.new(0.4, -5, 0, 36)
+        btn.Position = UDim2.new(0, 10 + ((dev == "PC" and 0) or 1)*170, 0, 175)
+        btn.TextColor3 = Color3.new(1,1,1)
+        btn.TextSize = 14
+        btn.Font = Enum.Font.GothamSemibold
+        btn.BorderSizePixel = 0
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+        btn.MouseButton1Click:Connect(function()
+            currentDevice = dev
+            for d, b in pairs(deviceButtons) do
+                b.BackgroundColor3 = d == currentDevice and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(60, 60, 120)
+            end
+        end)
+        deviceButtons[dev] = btn
+    end
+
+    local selectThemeBtn = Instance.new("TextButton", main)
+    selectThemeBtn.Size = UDim2.new(0.8, 0, 0, 36)
+    selectThemeBtn.Position = UDim2.new(0.1, 0, 0, 255)
+    selectThemeBtn.TextColor3 = Color3.new(1,1,1)
+    selectThemeBtn.TextSize = 16
+    selectThemeBtn.Font = Enum.Font.GothamBold
+    selectThemeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 150)
+    selectThemeBtn.BorderSizePixel = 0
+    Instance.new("UICorner", selectThemeBtn).CornerRadius = UDim.new(0, 10)
+
+    local themeWindow = Instance.new("Frame", launcherGui)
+    themeWindow.Size = UDim2.new(0, 340, 0, 350)
+    themeWindow.Position = UDim2.new(0.5, -170, 0.5, -175)
+    themeWindow.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+    themeWindow.BorderSizePixel = 2
+    themeWindow.BorderColor3 = Color3.new(0.6,0.6,0.6)
+    themeWindow.Visible = false
+    Instance.new("UICorner", themeWindow).CornerRadius = UDim.new(0, 12)
+
+    local themeWinTitle = Instance.new("TextLabel", themeWindow)
+    themeWinTitle.Size = UDim2.new(1, -20, 0, 30)
+    themeWinTitle.Position = UDim2.new(0, 10, 0, 5)
+    themeWinTitle.BackgroundTransparency = 1
+    themeWinTitle.TextColor3 = Color3.new(1,1,1)
+    themeWinTitle.TextSize = 18
+    themeWinTitle.Font = Enum.Font.GothamBold
+
+    local themeGrid = Instance.new("Frame", themeWindow)
+    themeGrid.Size = UDim2.new(1, -20, 0, 260)
+    themeGrid.Position = UDim2.new(0, 10, 0, 40)
+    themeGrid.BackgroundTransparency = 1
+
+    local gridLayout = Instance.new("UIGridLayout", themeGrid)
+    gridLayout.CellSize = UDim2.new(0, 145, 0, 40)
+    gridLayout.CellPadding = UDim2.new(0, 5, 0, 5)
+    gridLayout.FillDirection = Enum.FillDirection.Horizontal
+    gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    gridLayout.StartCorner = Enum.StartCorner.TopLeft
+
+    local themeBtns = {}
+    local themeNames = {"purple", "light", "pink", "green", "blue", "red", "gold", "gray", "cyan", "orange", "white", "black"}
+    for _, themeKey in ipairs(themeNames) do
+        local btn = Instance.new("TextButton", themeGrid)
+        btn.Size = UDim2.new(1, 0, 1, 0)
+        btn.TextColor3 = Color3.new(1,1,1)
+        btn.TextSize = 14
+        btn.Font = Enum.Font.GothamSemibold
+        btn.BorderSizePixel = 0
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+        btn.MouseButton1Click:Connect(function()
+            currentTheme = themeKey
+            local t = Themes[currentTheme]
+            if t then
+                main.BackgroundColor3 = t.mainBg
+                titleLabel.TextColor3 = t.textColor
+                langLabel.TextColor3 = t.textColor
+                devLabel.TextColor3 = t.textColor
+                themeLabel.TextColor3 = t.textColor
+                selectThemeBtn.BackgroundColor3 = t.accent
+                authorLabel.TextColor3 = t.textColor
+            end
+            themeWindow.Visible = false
+        end)
+        themeBtns[themeKey] = btn
+    end
+
+    local themeCloseBtn = Instance.new("TextButton", themeWindow)
+    themeCloseBtn.Size = UDim2.new(0, 100, 0, 30)
+    themeCloseBtn.Position = UDim2.new(0.5, -50, 1, -30)
+    themeCloseBtn.TextColor3 = Color3.new(1,1,1)
+    themeCloseBtn.BackgroundColor3 = Color3.fromRGB(120, 60, 60)
+    Instance.new("UICorner", themeCloseBtn).CornerRadius = UDim.new(0, 6)
+    themeCloseBtn.MouseButton1Click:Connect(function() themeWindow.Visible = false end)
+
+    selectThemeBtn.MouseButton1Click:Connect(function()
+        themeWindow.Visible = true
+        for tk, b in pairs(themeBtns) do
+            b.BackgroundColor3 = tk == currentTheme and Color3.fromRGB(200, 200, 255) or Themes[tk].accent
+        end
+    end)
+
+    local execBtn = Instance.new("TextButton", main)
+    execBtn.Size = UDim2.new(0.8, 0, 0, 45)
+    execBtn.Position = UDim2.new(0.1, 0, 1, -55)
+    execBtn.TextColor3 = Color3.new(1, 1, 1)
+    execBtn.TextSize = 18
+    execBtn.Font = Enum.Font.GothamBold
+    execBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 80)
+    execBtn.BorderSizePixel = 0
+    Instance.new("UICorner", execBtn).CornerRadius = UDim.new(0, 12)
+    execBtn.MouseButton1Click:Connect(function()
+        _G.TeleportClickSettings = {
+            language = currentLang,
+            device = currentDevice,
+            theme = currentTheme
+        }
+        launcherGui:Destroy()
+        StartClickTeleport()
+    end)
+
+    local authorLabel = Instance.new("TextLabel", main)
+    authorLabel.Size = UDim2.new(1, -20, 0, 16)
+    authorLabel.Position = UDim2.new(0, 10, 1, -18)
+    authorLabel.BackgroundTransparency = 1
+    authorLabel.Text = getGlobalText("author_sign", currentLang)
+    authorLabel.TextColor3 = Color3.new(0.8, 0.8, 0.8)
+    authorLabel.TextSize = 10
+    authorLabel.Font = Enum.Font.Gotham
+    authorLabel.TextXAlignment = Enum.TextXAlignment.Right
+
+    -- Инициализация текстов и подсветки
+    titleLabel.Text = getGlobalText("launcher_title", currentLang)
+    langLabel.Text = getGlobalText("language_label", currentLang)
+    devLabel.Text = getGlobalText("device_label", currentLang)
+    themeLabel.Text = getGlobalText("theme_label", currentLang)
+    execBtn.Text = getGlobalText("execute_btn", currentLang)
+    selectThemeBtn.Text = getGlobalText("select_theme_btn", currentLang)
+    themeWinTitle.Text = getGlobalText("theme_window_title", currentLang)
+    themeCloseBtn.Text = getGlobalText("close_btn", currentLang)
+    for tk, tb in pairs(themeBtns) do
+        tb.Text = getGlobalText("theme_names", currentLang)[tk] or tk
+    end
+    for dev, db in pairs(deviceButtons) do
+        db.Text = (dev == "PC") and (currentLang == "ru" and "💻 ПК" or currentLang == "ua" and "💻 ПК" or "💻 PC")
+                          or (currentLang == "ru" and "📱 Телефон" or currentLang == "ua" and "📱 Телефон" or "📱 Mobile")
+    end
+    authorLabel.Text = getGlobalText("author_sign", currentLang)
+
+    for c, b in pairs(langButtons) do
+        b.BackgroundColor3 = c == currentLang and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(60, 60, 120)
+    end
+    for d, b in pairs(deviceButtons) do
+        b.BackgroundColor3 = d == currentDevice and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(60, 60, 120)
+    end
+
+    local t0 = Themes[currentTheme]
+    if t0 then
+        main.BackgroundColor3 = t0.mainBg
+        titleLabel.TextColor3 = t0.textColor
+        langLabel.TextColor3 = t0.textColor
+        devLabel.TextColor3 = t0.textColor
+        themeLabel.TextColor3 = t0.textColor
+        selectThemeBtn.BackgroundColor3 = t0.accent
+        authorLabel.TextColor3 = t0.textColor
+    end
+
+    local dragging = false
+    local dragStart, startPos
+    main.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = main.Position
+        end
+    end)
+    main.InputEnded:Connect(function() dragging = false end)
+    UserInput.InputChanged:Connect(function(input, gp)
+        if gp then return end
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    UserInput.InputBegan:Connect(function(input, gp)
+        if gp then return end
+        if input.KeyCode == Enum.KeyCode.P then
+            _G.TeleportClickSettings = nil
+            launcherGui:Destroy()
+            LP:Chat(getGlobalText("reset_msg"))
+        end
+    end)
+else
+    StartClickTeleport()
+end
