@@ -1,0 +1,1450 @@
+--[[ 
+    ╔═══════════════════════════════════════════════════╗
+    ║  🔮 Auto Key Presser v1.0                        ║
+    ║  By Probothotspot                                ║
+    ║  Режимы: 💥 Спам / 🔒 Зажатие / 🔗 Комбо       ║
+    ║  Мгновенная остановка • smartWait                ║
+    ║  Совместим: Xeno / Synapse X / Fluxus            ║
+    ║              Script-Ware / Krnl / Wave            ║
+    ╚═══════════════════════════════════════════════════╝
+--]]
+
+-- ═══════════════════════════════════════
+-- НАСТРОЙКИ (начальные, всё меняется в GUI)
+-- ═══════════════════════════════════════
+local CONFIG = {
+    Key = Enum.KeyCode.E,          -- Основная клавиша
+    Interval = 0.1,                 -- Интервал спама / Кулдаун зажатия (сек)
+    HoldTime = 0.5,                     -- Время зажатия (сек)
+    MaxPresses = 0,                     -- 0 = бесконечно, иначе стоп после N нажатий
+    Mode = "spam",                      -- "spam" / "hold" / "combo"
+    ComboKeys = {},                     -- Клавиши для комбо (заполняются через GUI)
+    ComboCooldown = 0.2,                -- Пауза между клавишами в комбо (сек)
+    ToggleKey = Enum.KeyCode.RightShift, -- Вкл/Выкл
+    DestroyKey = Enum.KeyCode.P, -- Уничтожить GUI
+}
+
+-- ═══════════════════════════════════════
+-- СЕРВИСЫ
+-- ═══════════════════════════════════════
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local VIM = game:GetService("VirtualInputManager")
+local player = Players.LocalPlayer
+
+-- Удаление старого GUI
+pcall(function()
+    if game.CoreGui:FindFirstChild("AKP_GUI") then
+        game.CoreGui:FindFirstChild("AKP_GUI"):Destroy()
+    end
+end)
+pcall(function()
+    if gethui and gethui():FindFirstChild("AKP_GUI") then
+        gethui():FindFirstChild("AKP_GUI"):Destroy()
+    end
+end)
+
+-- ═══════════════════════════════════════
+-- СОСТОЯНИЕ
+-- ═══════════════════════════════════════
+local running = false
+local pressCount = 0
+local minimized = false
+local destroyed = false
+local connections = {}
+local listeningForKey = false
+local listeningCombo = false
+local FULL_HEIGHT = 290
+
+-- ═══════════════════════════════════════
+-- smartWait: мгновенная остановка
+-- Использует os.clock() для точного замера
+-- Проверяет running каждый фрейм
+-- Возвращает false если running стал false
+-- ═══════════════════════════════════════
+local function smartWait(seconds)
+    if seconds <= 0 then
+        task.wait()
+        return running and not destroyed
+    end
+    local startTime = os.clock()
+    while (os.clock() - startTime) < seconds do
+        if not running or destroyed then
+            return false
+        end
+        task.wait() -- ждём 1 фрейм (~0.016с), но проверяем running
+    end
+    return running and not destroyed
+end
+
+-- ═══════════════════════════════════════
+-- GUI SETUP
+-- ═══════════════════════════════════════
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AKP_GUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+pcall(function()
+    if syn and syn.protect_gui then
+        syn.protect_gui(ScreenGui)
+    end
+end)
+pcall(function()
+    if gethui then
+        ScreenGui.Parent = gethui()
+    else
+        ScreenGui.Parent = game.CoreGui
+    end
+end)
+if not ScreenGui.Parent then
+    ScreenGui.Parent = game.CoreGui
+end
+
+-- ═══════════════════════════════════════
+-- УТИЛИТЫ
+-- ═══════════════════════════════════════
+local function makeCorner(parent, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 6)
+    c.Parent = parent
+    return c
+end
+
+local function makeStroke(parent, color, transparency)
+    local s = Instance.new("UIStroke")
+    s.Color = color or Color3.fromRGB(124, 58, 237)
+    s.Transparency = transparency or 0.6
+    s.Parent = parent
+    return s
+end
+
+-- ═══════════════════════════════════════
+-- ГЛАВНЫЙ ФРЕЙМ
+-- ═══════════════════════════════════════
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 320, 0, FULL_HEIGHT)
+MainFrame.Position = UDim2.new(0.5, -160, 0.2, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(12, 8, 24)
+MainFrame.BorderSizePixel = 0
+MainFrame.ClipsDescendants = true
+MainFrame.Parent = ScreenGui
+makeCorner(MainFrame, 12)
+
+local MainStroke = makeStroke(MainFrame, Color3.fromRGB(124, 58, 237), 0)
+MainStroke.Thickness = 2
+
+-- Тень
+local Shadow = Instance.new("ImageLabel")
+Shadow.Size = UDim2.new(1, 30, 1, 30)
+Shadow.Position = UDim2.new(0, -15, 0, -15)
+Shadow.BackgroundTransparency = 1
+Shadow.Image = "rbxassetid://7912134082"
+Shadow.ImageColor3 = Color3.fromRGB(124, 58, 237)
+Shadow.ImageTransparency = 0.7
+Shadow.ScaleType = Enum.ScaleType.Slice
+Shadow.SliceCenter = Rect.new(100, 100, 100, 100)
+Shadow.ZIndex = -1
+Shadow.Parent = MainFrame
+
+-- ═══════════════════════════════════════
+-- HEADER
+-- ═══════════════════════════════════════
+local Header = Instance.new("Frame")
+Header.Size = UDim2.new(1, 0, 0, 36)
+Header.BackgroundColor3 = Color3.fromRGB(18, 12, 35)
+Header.BorderSizePixel = 0
+Header.Parent = MainFrame
+makeCorner(Header, 12)
+
+local HFix = Instance.new("Frame")
+HFix.Size = UDim2.new(1, 0, 0, 12)
+HFix.Position = UDim2.new(0, 0, 1, -12)
+HFix.BackgroundColor3 = Color3.fromRGB(18, 12, 35)
+HFix.BorderSizePixel = 0
+HFix.Parent = Header
+
+local HLine = Instance.new("Frame")
+HLine.Size = UDim2.new(1, 0, 0, 1)
+HLine.Position = UDim2.new(0, 0, 1, 0)
+HLine.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+HLine.BackgroundTransparency = 0.7
+HLine.BorderSizePixel = 0
+HLine.Parent = Header
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -70, 1, 0)
+Title.Position = UDim2.new(0, 12, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "🔮 AKP v1.0"
+Title.TextColor3 = Color3.fromRGB(192, 132, 252)
+Title.TextSize = 12
+Title.Font = Enum.Font.Code
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = Header
+
+-- ❌ Кнопка закрыть — ЯРКАЯ КРАСНАЯ
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 28, 0, 28)
+CloseBtn.Position = UDim2.new(1, -34, 0.5, -14)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(220, 38, 38)
+CloseBtn.BackgroundTransparency = 0.2
+CloseBtn.Text = "❌"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseBtn.TextSize = 13
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.BorderSizePixel = 0
+CloseBtn.Parent = Header
+makeCorner(CloseBtn, 6)
+makeStroke(CloseBtn, Color3.fromRGB(239, 68, 68), 0.3)
+
+-- − Кнопка свернуть
+local MinBtn = Instance.new("TextButton")
+MinBtn.Size = UDim2.new(0, 26, 0, 26)
+MinBtn.Position = UDim2.new(1, -66, 0.5, -13)
+MinBtn.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+MinBtn.BackgroundTransparency = 0.85
+MinBtn.Text = "−"
+MinBtn.TextColor3 = Color3.fromRGB(192, 132, 252)
+MinBtn.TextSize = 16
+MinBtn.Font = Enum.Font.Code
+MinBtn.BorderSizePixel = 0
+MinBtn.Parent = Header
+makeCorner(MinBtn, 6)
+makeStroke(MinBtn)
+
+-- ═══════════════════════════════════════
+-- BODY
+-- ═══════════════════════════════════════
+local Body = Instance.new("Frame")
+Body.Name = "Body"
+Body.Size = UDim2.new(1, 0, 1, -68)
+Body.Position = UDim2.new(0, 0, 0, 37)
+Body.BackgroundTransparency = 1
+Body.ClipsDescendants = true
+Body.Parent = MainFrame
+
+-- ═══════════════════════════════════════
+-- ВКЛАДКИ (3 шт)
+-- ═══════════════════════════════════════
+local TabFrame = Instance.new("Frame")
+TabFrame.Size = UDim2.new(1, -24, 0, 26)
+TabFrame.Position = UDim2.new(0, 12, 0, 4)
+TabFrame.BackgroundColor3 = Color3.fromRGB(10, 5, 20)
+TabFrame.BorderSizePixel = 0
+TabFrame.Parent = Body
+makeCorner(TabFrame, 6)
+makeStroke(TabFrame, Color3.fromRGB(124, 58, 237), 0.75)
+
+local function makeTab(text, xPos)
+    local tab = Instance.new("TextButton")
+    tab.Size = UDim2.new(1/3, 0, 1, 0)
+    tab.Position = UDim2.new(xPos, 0, 0, 0)
+    tab.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+    tab.BackgroundTransparency = 0.9
+    tab.Text = text
+    tab.TextColor3 = Color3.fromRGB(139, 92, 246)
+    tab.TextSize = 10
+    tab.Font = Enum.Font.Code
+    tab.BorderSizePixel = 0
+    tab.Parent = TabFrame
+    makeCorner(tab, 6)
+    return tab
+end
+
+local SpamTab = makeTab("💥 Спам", 0)
+SpamTab.BackgroundTransparency = 0.7
+SpamTab.TextColor3 = Color3.fromRGB(233, 213, 255)
+local HoldTab = makeTab("🔒 Зажатие", 1/3)
+local ComboTab = makeTab("🔗 Комбо", 2/3)
+
+-- ═══════════════════════════════════════
+-- КЛАВИША (общая для Спам и Зажатие)
+-- ═══════════════════════════════════════
+local KL = Instance.new("TextLabel")
+KL.Size = UDim2.new(0.35, 0, 0, 24)
+KL.Position = UDim2.new(0, 12, 0, 36)
+KL.BackgroundTransparency = 1
+KL.Text = "🎯 Клавиша:"
+KL.TextColor3 = Color3.fromRGB(139, 92, 246)
+KL.TextSize = 10
+KL.Font = Enum.Font.Code
+KL.TextXAlignment = Enum.TextXAlignment.Left
+KL.Parent = Body
+
+local KeyValue = Instance.new("TextLabel")
+KeyValue.Name = "KeyValue"
+KeyValue.Size = UDim2.new(0, 44, 0, 24)
+KeyValue.Position = UDim2.new(0.35, 4, 0, 36)
+KeyValue.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+KeyValue.BackgroundTransparency = 0.85
+KeyValue.Text = "E"
+KeyValue.TextColor3 = Color3.fromRGB(233, 213, 255)
+KeyValue.TextSize = 12
+KeyValue.Font = Enum.Font.Code
+KeyValue.BorderSizePixel = 0
+KeyValue.Parent = Body
+makeCorner(KeyValue, 5)
+makeStroke(KeyValue, Color3.fromRGB(124, 58, 237), 0.65)
+
+-- Кнопка 1: Нажать клавишу вручную
+local KCB = Instance.new("TextButton")
+KCB.Size = UDim2.new(0, 24, 0, 24)
+KCB.Position = UDim2.new(1, -82, 0, 36)
+KCB.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+KCB.BackgroundTransparency = 0.8
+KCB.Text = "⌨"
+KCB.TextColor3 = Color3.fromRGB(192, 132, 252)
+KCB.TextSize = 12
+KCB.Font = Enum.Font.Code
+KCB.BorderSizePixel = 0
+KCB.Parent = Body
+makeCorner(KCB, 5)
+makeStroke(KCB, Color3.fromRGB(124, 58, 237), 0.65)
+
+-- Кнопка 2: Выбрать из списка
+local KListBtn = Instance.new("TextButton")
+KListBtn.Size = UDim2.new(0, 24, 0, 24)
+KListBtn.Position = UDim2.new(1, -54, 0, 36)
+KListBtn.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+KListBtn.BackgroundTransparency = 0.8
+KListBtn.Text = "📋"
+KListBtn.TextColor3 = Color3.fromRGB(192, 132, 252)
+KListBtn.TextSize = 12
+KListBtn.Font = Enum.Font.Code
+KListBtn.BorderSizePixel = 0
+KListBtn.Parent = Body
+makeCorner(KListBtn, 5)
+makeStroke(KListBtn, Color3.fromRGB(124, 58, 237), 0.65)
+
+-- ═══════════════════════════════════════
+-- ОКНО ВЫБОРА КЛАВИШИ (оверлей)
+-- ═══════════════════════════════════════
+local keyPickerOpen = false
+local updateComboDisp -- forward declaration (определяется ниже)
+
+local KeyPickerFrame = Instance.new("Frame")
+KeyPickerFrame.Name = "KeyPicker"
+KeyPickerFrame.Size = UDim2.new(1, -8, 0, 200)
+KeyPickerFrame.Position = UDim2.new(0, 4, 0, 34)
+KeyPickerFrame.BackgroundColor3 = Color3.fromRGB(10, 6, 20)
+KeyPickerFrame.BackgroundTransparency = 0.05
+KeyPickerFrame.BorderSizePixel = 0
+KeyPickerFrame.Visible = false
+KeyPickerFrame.ZIndex = 50
+KeyPickerFrame.Parent = Body
+makeCorner(KeyPickerFrame, 8)
+makeStroke(KeyPickerFrame, Color3.fromRGB(168, 85, 247), 0.3)
+
+-- Заголовок пикера
+local KPTitle = Instance.new("TextLabel")
+KPTitle.Size = UDim2.new(1, 0, 0, 20)
+KPTitle.Position = UDim2.new(0, 0, 0, 2)
+KPTitle.BackgroundTransparency = 1
+KPTitle.Text = "📋 Выбери клавишу"
+KPTitle.TextColor3 = Color3.fromRGB(192, 132, 252)
+KPTitle.TextSize = 10
+KPTitle.Font = Enum.Font.Code
+KPTitle.ZIndex = 51
+KPTitle.Parent = KeyPickerFrame
+
+-- Кнопка закрыть пикер
+local KPClose = Instance.new("TextButton")
+KPClose.Size = UDim2.new(0, 20, 0, 20)
+KPClose.Position = UDim2.new(1, -24, 0, 2)
+KPClose.BackgroundColor3 = Color3.fromRGB(239, 68, 68)
+KPClose.BackgroundTransparency = 0.7
+KPClose.Text = "×"
+KPClose.TextColor3 = Color3.fromRGB(252, 165, 165)
+KPClose.TextSize = 14
+KPClose.Font = Enum.Font.GothamBold
+KPClose.BorderSizePixel = 0
+KPClose.ZIndex = 52
+KPClose.Parent = KeyPickerFrame
+makeCorner(KPClose, 4)
+
+-- Поле поиска
+local KPSearch = Instance.new("TextBox")
+KPSearch.Size = UDim2.new(1, -10, 0, 20)
+KPSearch.Position = UDim2.new(0, 5, 0, 23)
+KPSearch.BackgroundColor3 = Color3.fromRGB(20, 12, 40)
+KPSearch.BackgroundTransparency = 0.3
+KPSearch.Text = ""
+KPSearch.PlaceholderText = "🔍 Поиск..."
+KPSearch.PlaceholderColor3 = Color3.fromRGB(100, 80, 160)
+KPSearch.TextColor3 = Color3.fromRGB(233, 213, 255)
+KPSearch.TextSize = 9
+KPSearch.Font = Enum.Font.Code
+KPSearch.BorderSizePixel = 0
+KPSearch.ClearTextOnFocus = false
+KPSearch.ZIndex = 52
+KPSearch.Parent = KeyPickerFrame
+makeCorner(KPSearch, 4)
+makeStroke(KPSearch, Color3.fromRGB(124, 58, 237), 0.7)
+
+-- ScrollFrame для кнопок
+local KPScroll = Instance.new("ScrollingFrame")
+KPScroll.Size = UDim2.new(1, -8, 1, -48)
+KPScroll.Position = UDim2.new(0, 4, 0, 46)
+KPScroll.BackgroundTransparency = 1
+KPScroll.BorderSizePixel = 0
+KPScroll.ScrollBarThickness = 4
+KPScroll.ScrollBarImageColor3 = Color3.fromRGB(124, 58, 237)
+KPScroll.ZIndex = 51
+KPScroll.Parent = KeyPickerFrame
+
+local KPGrid = Instance.new("UIGridLayout")
+KPGrid.CellSize = UDim2.new(0, 42, 0, 24)
+KPGrid.CellPadding = UDim2.new(0, 3, 0, 3)
+KPGrid.SortOrder = Enum.SortOrder.LayoutOrder
+KPGrid.Parent = KPScroll
+
+-- Padding снизу чтобы последние кнопки были видны
+local KPPadding = Instance.new("UIPadding")
+KPPadding.PaddingBottom = UDim.new(0, 8)
+KPPadding.Parent = KPScroll
+
+-- Список всех клавиш
+local allKeys = {
+    "A","B","C","D","E","F","G","H","I","J","K","L","M",
+    "N","O","P","Q","R","S","T","U","V","W","X","Y","Z",
+    "One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Zero",
+    "Space","LeftShift","RightShift","LeftControl","RightControl",
+    "LeftAlt","RightAlt","Tab","Return","Backspace",
+    "F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12",
+    "Up","Down","Left","Right","Insert","Delete","Home","End","PageUp","PageDown",
+}
+
+-- Короткие имена для отображения
+local shortNames = {
+    One="1",Two="2",Three="3",Four="4",Five="5",Six="6",
+    Seven="7",Eight="8",Nine="9",Zero="0",
+    LeftShift="LSh",RightShift="RSh",LeftControl="LCt",RightControl="RCt",
+    LeftAlt="LAlt",RightAlt="RAlt",Space="Spc",
+    Return="Ent",Backspace="Bksp",Insert="Ins",Delete="Del",
+    PageUp="PgU",PageDown="PgD",
+}
+
+local keyPickerTarget = "main" -- "main" или "combo"
+local keyButtons = {} -- хранилище {btn, keyName, displayName}
+
+for i, keyName in ipairs(allKeys) do
+    local displayName = shortNames[keyName] or keyName
+
+    local btn = Instance.new("TextButton")
+    btn.Name = "KB_" .. keyName
+    btn.Size = UDim2.new(0, 42, 0, 24)
+    btn.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+    btn.BackgroundTransparency = 0.85
+    btn.Text = displayName
+    btn.TextColor3 = Color3.fromRGB(233, 213, 255)
+    btn.TextSize = 9
+    btn.Font = Enum.Font.Code
+    btn.BorderSizePixel = 0
+    btn.LayoutOrder = i
+    btn.ZIndex = 52
+    btn.Parent = KPScroll
+    makeCorner(btn, 4)
+
+    table.insert(keyButtons, {btn = btn, keyName = keyName, displayName = displayName})
+
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {
+            BackgroundTransparency = 0.5
+        }):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15), {
+            BackgroundTransparency = 0.85
+        }):Play()
+    end)
+
+    btn.MouseButton1Click:Connect(function()
+        local keyCode = Enum.KeyCode[keyName]
+        if not keyCode then return end
+
+        if keyPickerTarget == "combo" then
+            table.insert(CONFIG.ComboKeys, keyCode)
+            updateComboDisp()
+        else
+            CONFIG.Key = keyCode
+            KeyValue.Text = displayName
+        end
+
+        -- Закрыть пикер
+        KeyPickerFrame.Visible = false
+        keyPickerOpen = false
+        KPSearch.Text = ""
+    end)
+end
+
+-- Фильтрация по поиску
+local function filterKeys(query)
+    query = string.lower(query)
+    for _, entry in ipairs(keyButtons) do
+        local match = query == ""
+            or string.find(string.lower(entry.keyName), query, 1, true)
+            or string.find(string.lower(entry.displayName), query, 1, true)
+        entry.btn.Visible = match
+    end
+    -- Обновить CanvasSize после фильтрации
+    task.defer(function()
+        local contentSize = KPGrid.AbsoluteContentSize
+        KPScroll.CanvasSize = UDim2.new(0, 0, 0, contentSize.Y + 12)
+    end)
+end
+
+KPSearch:GetPropertyChangedSignal("Text"):Connect(function()
+    filterKeys(KPSearch.Text)
+end)
+
+-- Рассчитываем CanvasSize вручную
+task.defer(function()
+    local contentSize = KPGrid.AbsoluteContentSize
+    KPScroll.CanvasSize = UDim2.new(0, 0, 0, contentSize.Y + 12)
+end)
+
+local function openKeyPicker(target)
+    if running then return end
+    keyPickerTarget = target or "main"
+    keyPickerOpen = true
+    KPSearch.Text = ""
+    filterKeys("")
+    KeyPickerFrame.Visible = true
+    KPTitle.Text = (target == "combo") and "📋 Добавь в комбо" or "📋 Выбери клавишу"
+end
+
+local function closeKeyPicker()
+    KeyPickerFrame.Visible = false
+    keyPickerOpen = false
+end
+
+KPClose.MouseButton1Click:Connect(closeKeyPicker)
+
+-- ═══════════════════════════════════════
+-- ДВОЙНОЙ ВВОД ВРЕМЕНИ (секунды целые + мс 0-999)
+-- ═══════════════════════════════════════
+local function makeDualTime(parent, yPos, labelText, defaultMs, onChanged)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.28, 0, 0, 24)
+    lbl.Position = UDim2.new(0, 12, 0, yPos)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = labelText
+    lbl.TextColor3 = Color3.fromRGB(139, 92, 246)
+    lbl.TextSize = 9
+    lbl.Font = Enum.Font.Code
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = parent
+
+    -- Секунды (целые)
+    local secBox = Instance.new("TextBox")
+    secBox.Size = UDim2.new(0, 36, 0, 24)
+    secBox.Position = UDim2.new(0.28, 2, 0, yPos)
+    secBox.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+    secBox.BackgroundTransparency = 0.85
+    secBox.Text = tostring(math.floor(defaultMs / 1000))
+    secBox.TextColor3 = Color3.fromRGB(233, 213, 255)
+    secBox.TextSize = 10
+    secBox.Font = Enum.Font.Code
+    secBox.BorderSizePixel = 0
+    secBox.ClearTextOnFocus = false
+    secBox.Parent = parent
+    makeCorner(secBox, 4)
+    makeStroke(secBox, Color3.fromRGB(124, 58, 237), 0.65)
+
+    local secLabel = Instance.new("TextLabel")
+    secLabel.Size = UDim2.new(0, 14, 0, 24)
+    secLabel.Position = UDim2.new(0.28, 40, 0, yPos)
+    secLabel.BackgroundTransparency = 1
+    secLabel.Text = "с"
+    secLabel.TextColor3 = Color3.fromRGB(100, 80, 160)
+    secLabel.TextSize = 8
+    secLabel.Font = Enum.Font.Code
+    secLabel.Parent = parent
+
+    -- Миллисекунды (0-999)
+    local msBox = Instance.new("TextBox")
+    msBox.Size = UDim2.new(0, 42, 0, 24)
+    msBox.Position = UDim2.new(0.28, 56, 0, yPos)
+    msBox.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+    msBox.BackgroundTransparency = 0.85
+    msBox.Text = tostring(defaultMs % 1000)
+    msBox.TextColor3 = Color3.fromRGB(233, 213, 255)
+    msBox.TextSize = 10
+    msBox.Font = Enum.Font.Code
+    msBox.BorderSizePixel = 0
+    msBox.ClearTextOnFocus = false
+    msBox.Parent = parent
+    makeCorner(msBox, 4)
+    makeStroke(msBox, Color3.fromRGB(124, 58, 237), 0.65)
+
+    local msLabel = Instance.new("TextLabel")
+    msLabel.Size = UDim2.new(0, 18, 0, 24)
+    msLabel.Position = UDim2.new(0.28, 100, 0, yPos)
+    msLabel.BackgroundTransparency = 1
+    msLabel.Text = "мс"
+    msLabel.TextColor3 = Color3.fromRGB(100, 80, 160)
+    msLabel.TextSize = 8
+    msLabel.Font = Enum.Font.Code
+    msLabel.Parent = parent
+
+    -- Синхронизация
+    local function syncBoth(totalMs)
+        totalMs = math.clamp(math.floor(totalMs), 0, 60000)
+        local secs = math.floor(totalMs / 1000)
+        local ms = totalMs % 1000
+        secBox.Text = tostring(secs)
+        msBox.Text = tostring(ms)
+        if onChanged then
+            onChanged(totalMs)
+        end
+    end
+
+    msBox.FocusLost:Connect(function()
+        local s = tonumber(secBox.Text) or 0
+        local m = tonumber(msBox.Text) or 0
+        s = math.max(0, math.floor(s))
+        m = math.clamp(math.floor(m), 0, 999)
+        syncBoth(s * 1000 + m)
+    end)
+
+    secBox.FocusLost:Connect(function()
+        local s = tonumber(secBox.Text) or 0
+        local m = tonumber(msBox.Text) or 0
+        s = math.clamp(math.floor(s), 0, 60)
+        m = math.clamp(math.floor(m), 0, 999)
+        syncBoth(s * 1000 + m)
+    end)
+
+    return { syncBoth = syncBoth }
+end
+
+-- ═══════════════════════════════════════
+-- ВКЛАДКА: СПАМ
+-- ═══════════════════════════════════════
+local SpamFrame = Instance.new("Frame")
+SpamFrame.Name = "SpamFrame"
+SpamFrame.Size = UDim2.new(1, 0, 0, 70)
+SpamFrame.Position = UDim2.new(0, 0, 0, 66)
+SpamFrame.BackgroundTransparency = 1
+SpamFrame.Parent = Body
+
+local intInputs = makeDualTime(SpamFrame, 0, "⏱ Интервал:", math.floor(CONFIG.Interval * 1000), function(ms)
+    CONFIG.Interval = ms / 1000
+end)
+
+local ML = Instance.new("TextLabel")
+ML.Size = UDim2.new(0.28, 0, 0, 24)
+ML.Position = UDim2.new(0, 12, 0, 28)
+ML.BackgroundTransparency = 1
+ML.Text = "🔢 Макс:"
+ML.TextColor3 = Color3.fromRGB(139, 92, 246)
+ML.TextSize = 9
+ML.Font = Enum.Font.Code
+ML.TextXAlignment = Enum.TextXAlignment.Left
+ML.Parent = SpamFrame
+
+local MaxBox = Instance.new("TextBox")
+MaxBox.Size = UDim2.new(0, 42, 0, 24)
+MaxBox.Position = UDim2.new(0.28, 2, 0, 28)
+MaxBox.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+MaxBox.BackgroundTransparency = 0.85
+MaxBox.Text = "0"
+MaxBox.PlaceholderText = "0"
+MaxBox.TextColor3 = Color3.fromRGB(233, 213, 255)
+MaxBox.TextSize = 10
+MaxBox.Font = Enum.Font.Code
+MaxBox.BorderSizePixel = 0
+MaxBox.ClearTextOnFocus = false
+MaxBox.Parent = SpamFrame
+makeCorner(MaxBox, 4)
+makeStroke(MaxBox, Color3.fromRGB(124, 58, 237), 0.65)
+
+local MaxHint = Instance.new("TextLabel")
+MaxHint.Size = UDim2.new(0.4, 0, 0, 24)
+MaxHint.Position = UDim2.new(0.28, 48, 0, 28)
+MaxHint.BackgroundTransparency = 1
+MaxHint.Text = "(0 = бесконечно)"
+MaxHint.TextColor3 = Color3.fromRGB(100, 80, 160)
+MaxHint.TextSize = 8
+MaxHint.Font = Enum.Font.Code
+MaxHint.TextXAlignment = Enum.TextXAlignment.Left
+MaxHint.Parent = SpamFrame
+
+-- ═══════════════════════════════════════
+-- ВКЛАДКА: ЗАЖАТИЕ
+-- ═══════════════════════════════════════
+local HoldFrame = Instance.new("Frame")
+HoldFrame.Name = "HoldFrame"
+HoldFrame.Size = UDim2.new(1, 0, 0, 80)
+HoldFrame.Position = UDim2.new(0, 0, 0, 66)
+HoldFrame.BackgroundTransparency = 1
+HoldFrame.Visible = false
+HoldFrame.Parent = Body
+
+local holdInputs = makeDualTime(HoldFrame, 0, "⏱ Зажатие:", 500, function(ms)
+    CONFIG.HoldTime = ms / 1000
+end)
+
+local cdInputs = makeDualTime(HoldFrame, 28, "⏳ Кулдаун:", math.floor(CONFIG.Interval * 1000), function(ms)
+    CONFIG.Interval = ms / 1000
+end)
+
+local HoldHint = Instance.new("TextLabel")
+HoldHint.Size = UDim2.new(1, -24, 0, 14)
+HoldHint.Position = UDim2.new(0, 12, 0, 58)
+HoldHint.BackgroundTransparency = 1
+HoldHint.Text = "Зажимает → Держит → Отпускает → Кулдаун → Повтор"
+HoldHint.TextColor3 = Color3.fromRGB(100, 80, 160)
+HoldHint.TextSize = 7
+HoldHint.Font = Enum.Font.Code
+HoldHint.Parent = HoldFrame
+
+-- ═══════════════════════════════════════
+-- ВКЛАДКА: КОМБО
+-- ═══════════════════════════════════════
+local ComboFrame = Instance.new("Frame")
+ComboFrame.Name = "ComboFrame"
+ComboFrame.Size = UDim2.new(1, 0, 0, 100)
+ComboFrame.Position = UDim2.new(0, 0, 0, 66)
+ComboFrame.BackgroundTransparency = 1
+ComboFrame.Visible = false
+ComboFrame.Parent = Body
+
+local CKL = Instance.new("TextLabel")
+CKL.Size = UDim2.new(0.28, 0, 0, 24)
+CKL.Position = UDim2.new(0, 12, 0, 0)
+CKL.BackgroundTransparency = 1
+CKL.Text = "🔗 Клавиши:"
+CKL.TextColor3 = Color3.fromRGB(139, 92, 246)
+CKL.TextSize = 9
+CKL.Font = Enum.Font.Code
+CKL.TextXAlignment = Enum.TextXAlignment.Left
+CKL.Parent = ComboFrame
+
+-- Дисплей комбо
+local ComboDisp = Instance.new("TextLabel")
+ComboDisp.Name = "ComboDisp"
+ComboDisp.Size = UDim2.new(0.42, 0, 0, 24)
+ComboDisp.Position = UDim2.new(0.28, 2, 0, 0)
+ComboDisp.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+ComboDisp.BackgroundTransparency = 0.85
+ComboDisp.Text = "(пусто)"
+ComboDisp.TextColor3 = Color3.fromRGB(233, 213, 255)
+ComboDisp.TextSize = 9
+ComboDisp.Font = Enum.Font.Code
+ComboDisp.BorderSizePixel = 0
+ComboDisp.TextTruncate = Enum.TextTruncate.AtEnd
+ComboDisp.Parent = ComboFrame
+makeCorner(ComboDisp, 5)
+makeStroke(ComboDisp, Color3.fromRGB(124, 58, 237), 0.65)
+
+-- ⌨ Добавить клавишу нажатием
+local ComboAddBtn = Instance.new("TextButton")
+ComboAddBtn.Size = UDim2.new(0, 22, 0, 24)
+ComboAddBtn.Position = UDim2.new(1, -82, 0, 0)
+ComboAddBtn.BackgroundColor3 = Color3.fromRGB(34, 197, 94)
+ComboAddBtn.BackgroundTransparency = 0.65
+ComboAddBtn.Text = "⌨"
+ComboAddBtn.TextColor3 = Color3.fromRGB(134, 239, 172)
+ComboAddBtn.TextSize = 11
+ComboAddBtn.Font = Enum.Font.Code
+ComboAddBtn.BorderSizePixel = 0
+ComboAddBtn.Parent = ComboFrame
+makeCorner(ComboAddBtn, 5)
+makeStroke(ComboAddBtn, Color3.fromRGB(34, 197, 94), 0.5)
+
+-- 📋 Добавить клавишу из списка
+local ComboListBtn = Instance.new("TextButton")
+ComboListBtn.Size = UDim2.new(0, 22, 0, 24)
+ComboListBtn.Position = UDim2.new(1, -56, 0, 0)
+ComboListBtn.BackgroundColor3 = Color3.fromRGB(168, 85, 247)
+ComboListBtn.BackgroundTransparency = 0.65
+ComboListBtn.Text = "📋"
+ComboListBtn.TextColor3 = Color3.fromRGB(216, 180, 254)
+ComboListBtn.TextSize = 11
+ComboListBtn.Font = Enum.Font.Code
+ComboListBtn.BorderSizePixel = 0
+ComboListBtn.Parent = ComboFrame
+makeCorner(ComboListBtn, 5)
+makeStroke(ComboListBtn, Color3.fromRGB(168, 85, 247), 0.5)
+
+-- × Очистить
+local ComboClearBtn = Instance.new("TextButton")
+ComboClearBtn.Size = UDim2.new(0, 22, 0, 24)
+ComboClearBtn.Position = UDim2.new(1, -30, 0, 0)
+ComboClearBtn.BackgroundColor3 = Color3.fromRGB(239, 68, 68)
+ComboClearBtn.BackgroundTransparency = 0.65
+ComboClearBtn.Text = "×"
+ComboClearBtn.TextColor3 = Color3.fromRGB(252, 165, 165)
+ComboClearBtn.TextSize = 14
+ComboClearBtn.Font = Enum.Font.GothamBold
+ComboClearBtn.BorderSizePixel = 0
+ComboClearBtn.Parent = ComboFrame
+makeCorner(ComboClearBtn, 5)
+makeStroke(ComboClearBtn, Color3.fromRGB(239, 68, 68), 0.5)
+
+-- КД между клавишами комбо
+local comboCdInputs = makeDualTime(ComboFrame, 28, "⏱ КД:", 200, function(ms)
+    CONFIG.ComboCooldown = ms / 1000
+end)
+
+local ComboHint = Instance.new("TextLabel")
+ComboHint.Size = UDim2.new(1, -24, 0, 24)
+ComboHint.Position = UDim2.new(0, 12, 0, 56)
+ComboHint.BackgroundTransparency = 1
+ComboHint.Text = "Key1 → КД → Key2 → КД → Key1 → ... (цикл)"
+ComboHint.TextColor3 = Color3.fromRGB(100, 80, 160)
+ComboHint.TextSize = 7
+ComboHint.Font = Enum.Font.Code
+ComboHint.Parent = ComboFrame
+
+-- Функция обновления дисплея комбо
+updateComboDisp = function()
+    if #CONFIG.ComboKeys == 0 then
+        ComboDisp.Text = "(пусто)"
+    else
+        local names = {}
+        for _, keyCode in ipairs(CONFIG.ComboKeys) do
+            local name = tostring(keyCode):gsub("Enum.KeyCode.", "")
+            table.insert(names, name)
+        end
+        ComboDisp.Text = table.concat(names, " → ")
+    end
+end
+
+-- ⌨ — нажать клавишу вручную для комбо
+ComboAddBtn.MouseButton1Click:Connect(function()
+    if running then return end
+    if keyPickerOpen then closeKeyPicker() end
+    listeningCombo = true
+    ComboAddBtn.Text = "⏳"
+    ComboAddBtn.BackgroundTransparency = 0.3
+    ComboDisp.Text = "⌨ Нажми клавишу..."
+    TweenService:Create(ComboDisp, TweenInfo.new(0.2), {
+        BackgroundTransparency = 0.5
+    }):Play()
+end)
+
+-- 📋 — открыть список для комбо
+ComboListBtn.MouseButton1Click:Connect(function()
+    if running then return end
+    if keyPickerOpen then
+        closeKeyPicker()
+    else
+        openKeyPicker("combo")
+    end
+end)
+
+-- × — очистить комбо
+ComboClearBtn.MouseButton1Click:Connect(function()
+    if running then return end
+    CONFIG.ComboKeys = {}
+    updateComboDisp()
+end)
+
+-- ═══════════════════════════════════════
+-- НИЖНЯЯ ЧАСТЬ: КРЕДИТ + ПОДСКАЗКА + СТАРТ
+-- ═══════════════════════════════════════
+local Divider1 = Instance.new("Frame")
+Divider1.Size = UDim2.new(1, -24, 0, 1)
+Divider1.Position = UDim2.new(0, 12, 0, 140)
+Divider1.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+Divider1.BackgroundTransparency = 0.75
+Divider1.BorderSizePixel = 0
+Divider1.Parent = Body
+
+-- ✦ By Probothotspot ✦ — по центру, в Body, пропадает при сворачивании
+local CreditLabel = Instance.new("TextLabel")
+CreditLabel.Size = UDim2.new(1, -24, 0, 14)
+CreditLabel.Position = UDim2.new(0, 12, 0, 143)
+CreditLabel.BackgroundTransparency = 1
+CreditLabel.Text = "✦ By Probothotspot ✦"
+CreditLabel.TextColor3 = Color3.fromRGB(168, 85, 247)
+CreditLabel.TextTransparency = 0.3
+CreditLabel.TextSize = 9
+CreditLabel.Font = Enum.Font.Code
+CreditLabel.Parent = Body
+
+local HintLabel = Instance.new("TextLabel")
+HintLabel.Size = UDim2.new(1, -24, 0, 12)
+HintLabel.Position = UDim2.new(0, 12, 0, 158)
+HintLabel.BackgroundTransparency = 1
+HintLabel.Text = "Toggle: RightShift | Destroy: P"
+HintLabel.TextColor3 = Color3.fromRGB(100, 80, 160)
+HintLabel.TextSize = 8
+HintLabel.Font = Enum.Font.Code
+HintLabel.Parent = Body
+
+local Divider2 = Instance.new("Frame")
+Divider2.Size = UDim2.new(1, -24, 0, 1)
+Divider2.Position = UDim2.new(0, 12, 0, 173)
+Divider2.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+Divider2.BackgroundTransparency = 0.75
+Divider2.BorderSizePixel = 0
+Divider2.Parent = Body
+
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Size = UDim2.new(1, -24, 0, 30)
+ToggleButton.Position = UDim2.new(0, 12, 0, 178)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+ToggleButton.BackgroundTransparency = 0.75
+ToggleButton.Text = "▶  СТАРТ"
+ToggleButton.TextColor3 = Color3.fromRGB(216, 180, 254)
+ToggleButton.TextSize = 13
+ToggleButton.Font = Enum.Font.Code
+ToggleButton.BorderSizePixel = 0
+ToggleButton.Parent = Body
+makeCorner(ToggleButton, 8)
+local ToggleBtnStroke = makeStroke(ToggleButton, Color3.fromRGB(124, 58, 237), 0.5)
+
+-- ═══════════════════════════════════════
+-- СТАТУС БАР
+-- ═══════════════════════════════════════
+local StatusBar = Instance.new("Frame")
+StatusBar.Size = UDim2.new(1, 0, 0, 26)
+StatusBar.Position = UDim2.new(0, 0, 1, -26)
+StatusBar.BackgroundColor3 = Color3.fromRGB(8, 5, 16)
+StatusBar.BackgroundTransparency = 0.5
+StatusBar.BorderSizePixel = 0
+StatusBar.Parent = MainFrame
+
+local StatusLine = Instance.new("Frame")
+StatusLine.Size = UDim2.new(1, 0, 0, 1)
+StatusLine.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+StatusLine.BackgroundTransparency = 0.8
+StatusLine.BorderSizePixel = 0
+StatusLine.Parent = StatusBar
+
+local StatusDot = Instance.new("Frame")
+StatusDot.Size = UDim2.new(0, 6, 0, 6)
+StatusDot.Position = UDim2.new(0, 10, 0.5, -3)
+StatusDot.BackgroundColor3 = Color3.fromRGB(107, 114, 128)
+StatusDot.BorderSizePixel = 0
+StatusDot.Parent = StatusBar
+makeCorner(StatusDot, 100)
+
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Size = UDim2.new(0.5, -20, 1, 0)
+StatusLabel.Position = UDim2.new(0, 20, 0, 0)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Text = "Остановлен"
+StatusLabel.TextColor3 = Color3.fromRGB(107, 114, 128)
+StatusLabel.TextSize = 8
+StatusLabel.Font = Enum.Font.Code
+StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+StatusLabel.Parent = StatusBar
+
+local CounterLabel = Instance.new("TextLabel")
+CounterLabel.Size = UDim2.new(0.5, -10, 1, 0)
+CounterLabel.Position = UDim2.new(0.5, 0, 0, 0)
+CounterLabel.BackgroundTransparency = 1
+CounterLabel.Text = "Нажатий: 0"
+CounterLabel.TextColor3 = Color3.fromRGB(124, 58, 237)
+CounterLabel.TextSize = 8
+CounterLabel.Font = Enum.Font.Code
+CounterLabel.TextXAlignment = Enum.TextXAlignment.Right
+CounterLabel.Parent = StatusBar
+
+-- ═══════════════════════════════════════
+-- ПЕРЕТАСКИВАНИЕ
+-- ═══════════════════════════════════════
+local dragging = false
+local dragStart, startPos
+
+Header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or
+       input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+Header.InputChanged:Connect(function(input)
+    if (input.UserInputType == Enum.UserInputType.MouseMovement or
+        input.UserInputType == Enum.UserInputType.Touch) and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- ═══════════════════════════════════════
+-- АНИМАЦИЯ ПЕРЕЛИВАНИЯ РАМКИ
+-- ═══════════════════════════════════════
+local borderColors = {
+    Color3.fromRGB(124, 58, 237),
+    Color3.fromRGB(168, 85, 247),
+    Color3.fromRGB(192, 132, 252),
+    Color3.fromRGB(232, 121, 249),
+    Color3.fromRGB(168, 85, 247),
+}
+task.spawn(function()
+    local idx = 1
+    while not destroyed do
+        local nextIdx = (idx % #borderColors) + 1
+        TweenService:Create(MainStroke, TweenInfo.new(1, Enum.EasingStyle.Sine), {
+            Color = borderColors[nextIdx]
+        }):Play()
+        task.wait(1)
+        idx = nextIdx
+    end
+end)
+
+-- Анимация заголовка
+task.spawn(function()
+    local titleColors = {
+        Color3.fromRGB(192, 132, 252),
+        Color3.fromRGB(216, 180, 254),
+        Color3.fromRGB(240, 171, 252),
+        Color3.fromRGB(192, 132, 252),
+    }
+    local idx = 1
+    while not destroyed do
+        local nextIdx = (idx % #titleColors) + 1
+        TweenService:Create(Title, TweenInfo.new(1.2, Enum.EasingStyle.Sine), {
+            TextColor3 = titleColors[nextIdx]
+        }):Play()
+        task.wait(1.2)
+        idx = nextIdx
+    end
+end)
+
+-- ═══════════════════════════════════════
+-- HOVER ЭФФЕКТЫ
+-- ═══════════════════════════════════════
+local function hoverEffect(btn, hoverColor, normalTransp, hoverTransp)
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {
+            BackgroundColor3 = hoverColor,
+            BackgroundTransparency = hoverTransp
+        }):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.2), {
+            BackgroundTransparency = normalTransp
+        }):Play()
+    end)
+end
+
+hoverEffect(MinBtn, Color3.fromRGB(124, 58, 237), 0.85, 0.65)
+hoverEffect(CloseBtn, Color3.fromRGB(255, 50, 50), 0.2, 0.05)
+hoverEffect(ToggleButton, Color3.fromRGB(124, 58, 237), 0.75, 0.55)
+hoverEffect(KCB, Color3.fromRGB(124, 58, 237), 0.8, 0.6)
+hoverEffect(KListBtn, Color3.fromRGB(168, 85, 247), 0.8, 0.5)
+hoverEffect(ComboAddBtn, Color3.fromRGB(34, 197, 94), 0.65, 0.4)
+hoverEffect(ComboListBtn, Color3.fromRGB(168, 85, 247), 0.65, 0.4)
+hoverEffect(ComboClearBtn, Color3.fromRGB(239, 68, 68), 0.65, 0.4)
+
+-- ═══════════════════════════════════════
+-- ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК
+-- ═══════════════════════════════════════
+local function setTab(mode)
+    CONFIG.Mode = mode
+    SpamTab.BackgroundTransparency = (mode == "spam") and 0.7 or 0.9
+    SpamTab.TextColor3 = (mode == "spam") and Color3.fromRGB(233, 213, 255) or Color3.fromRGB(139, 92, 246)
+    HoldTab.BackgroundTransparency = (mode == "hold") and 0.7 or 0.9
+    HoldTab.TextColor3 = (mode == "hold") and Color3.fromRGB(233, 213, 255) or Color3.fromRGB(139, 92, 246)
+    ComboTab.BackgroundTransparency = (mode == "combo") and 0.7 or 0.9
+    ComboTab.TextColor3 = (mode == "combo") and Color3.fromRGB(233, 213, 255) or Color3.fromRGB(139, 92, 246)
+    SpamFrame.Visible = (mode == "spam")
+    HoldFrame.Visible = (mode == "hold")
+    ComboFrame.Visible = (mode == "combo")
+end
+
+SpamTab.MouseButton1Click:Connect(function()
+    if not running then setTab("spam") end
+end)
+HoldTab.MouseButton1Click:Connect(function()
+    if not running then setTab("hold") end
+end)
+ComboTab.MouseButton1Click:Connect(function()
+    if not running then setTab("combo") end
+end)
+
+-- ═══════════════════════════════════════
+-- СМЕНА КЛАВИШИ
+-- ═══════════════════════════════════════
+-- ⌨ — нажать клавишу вручную
+KCB.MouseButton1Click:Connect(function()
+    if running then return end
+    if keyPickerOpen then closeKeyPicker() end
+    listeningForKey = true
+    KeyValue.Text = "..."
+    KCB.Text = "⏳"
+    TweenService:Create(KeyValue, TweenInfo.new(0.2), {
+        BackgroundTransparency = 0.5
+    }):Play()
+end)
+
+-- 📋 — открыть окно выбора
+KListBtn.MouseButton1Click:Connect(function()
+    if running then return end
+    if keyPickerOpen then
+        closeKeyPicker()
+    else
+        openKeyPicker("main")
+    end
+end)
+
+-- ═══════════════════════════════════════
+-- МАКС НАЖАТИЙ
+-- ═══════════════════════════════════════
+MaxBox.FocusLost:Connect(function()
+    local n = tonumber(MaxBox.Text)
+    CONFIG.MaxPresses = n and math.max(0, math.floor(n)) or 0
+    MaxBox.Text = tostring(CONFIG.MaxPresses)
+end)
+
+-- ═══════════════════════════════════════
+-- СВЕРНУТЬ / РАЗВЕРНУТЬ
+-- ═══════════════════════════════════════
+MinBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        MinBtn.Text = "+"
+        Body.Visible = false
+        StatusBar.Visible = false
+        TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, 320, 0, 36)
+        }):Play()
+    else
+        MinBtn.Text = "−"
+        TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, 320, 0, FULL_HEIGHT)
+        }):Play()
+        task.delay(0.15, function()
+            if not minimized and not destroyed then
+                Body.Visible = true
+                StatusBar.Visible = true
+            end
+        end)
+    end
+end)
+
+-- ═══════════════════════════════════════
+-- УНИЧТОЖЕНИЕ GUI
+-- ═══════════════════════════════════════
+local function destroyAll()
+    if destroyed then return end
+    destroyed = true
+    running = false
+
+    -- Отпустить все клавиши (дважды для гарантии)
+    pcall(function() VIM:SendKeyEvent(false, CONFIG.Key, false, game) end)
+    for _, k in ipairs(CONFIG.ComboKeys) do
+        pcall(function() VIM:SendKeyEvent(false, k, false, game) end)
+    end
+    task.wait(0.05)
+    pcall(function() VIM:SendKeyEvent(false, CONFIG.Key, false, game) end)
+
+    -- Отключить все connections
+    for _, conn in pairs(connections) do
+        pcall(function() conn:Disconnect() end)
+    end
+
+    -- Анимация
+    TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+        Size = UDim2.new(0, 0, 0, 0),
+        Position = UDim2.new(
+            MainFrame.Position.X.Scale,
+            MainFrame.Position.X.Offset + 160,
+            MainFrame.Position.Y.Scale,
+            MainFrame.Position.Y.Offset + 230
+        )
+    }):Play()
+
+    task.wait(0.35)
+    ScreenGui:Destroy()
+    print("🔮 AKP — GUI уничтожен")
+end
+
+CloseBtn.MouseButton1Click:Connect(destroyAll)
+
+-- ═══════════════════════════════════════
+-- ОБНОВЛЕНИЕ СТАТУСА
+-- ═══════════════════════════════════════
+local function updateStatus()
+    if running then
+        ToggleButton.Text = "⏹  СТОП"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(239, 68, 68)
+        ToggleBtnStroke.Color = Color3.fromRGB(239, 68, 68)
+        StatusDot.BackgroundColor3 = Color3.fromRGB(34, 197, 94)
+        StatusLabel.Text = "Активен"
+        StatusLabel.TextColor3 = Color3.fromRGB(34, 197, 94)
+    else
+        ToggleButton.Text = "▶  СТАРТ"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+        ToggleBtnStroke.Color = Color3.fromRGB(124, 58, 237)
+        StatusDot.BackgroundColor3 = Color3.fromRGB(107, 114, 128)
+        StatusLabel.Text = "Остановлен"
+        StatusLabel.TextColor3 = Color3.fromRGB(107, 114, 128)
+    end
+end
+
+-- ═══════════════════════════════════════
+-- ПРИНУДИТЕЛЬНОЕ ОТПУСКАНИЕ КЛАВИШ
+-- ═══════════════════════════════════════
+local function forceRelease()
+    pcall(function()
+        VIM:SendKeyEvent(false, CONFIG.Key, false, game)
+    end)
+    for _, k in ipairs(CONFIG.ComboKeys) do
+        pcall(function()
+            VIM:SendKeyEvent(false, k, false, game)
+        end)
+    end
+    pcall(function()
+        KeyValue.BackgroundTransparency = 0.85
+    end)
+end
+
+-- ═══════════════════════════════════════
+-- ГЛАВНЫЙ ЦИКЛ НАЖАТИЙ
+-- ═══════════════════════════════════════
+local function startLoop()
+    task.spawn(function()
+
+        -- ═══ РЕЖИМ: СПАМ ═══
+        if CONFIG.Mode == "spam" then
+            while running and not destroyed do
+                -- Нажать и отпустить
+                VIM:SendKeyEvent(true, CONFIG.Key, false, game)
+                task.wait(0.001)
+                VIM:SendKeyEvent(false, CONFIG.Key, false, game)
+
+                -- Счётчик
+                pressCount = pressCount + 1
+                pcall(function()
+                    CounterLabel.Text = "Нажатий: " .. pressCount
+                end)
+
+                -- Вспышка
+                pcall(function()
+                    TweenService:Create(KeyValue, TweenInfo.new(0.05), {BackgroundTransparency = 0.5}):Play()
+                end)
+                task.wait(0.03)
+                pcall(function()
+                    TweenService:Create(KeyValue, TweenInfo.new(0.05), {BackgroundTransparency = 0.85}):Play()
+                end)
+
+                -- Лимит
+                if CONFIG.MaxPresses > 0 and pressCount >= CONFIG.MaxPresses then
+                    running = false
+                    updateStatus()
+                    pcall(function() StatusLabel.Text = "Готово ✅" end)
+                    break
+                end
+
+                -- Пауза (мгновенно прерывается)
+                if not smartWait(CONFIG.Interval) then break end
+            end
+            forceRelease()
+
+        -- ═══ РЕЖИМ: ЗАЖАТИЕ ═══
+        -- Зажимает клавишу, отправляя true каждый фрейм
+        -- Потом отпускает, ждёт кулдаун, повторяет
+        elseif CONFIG.Mode == "hold" then
+            while running and not destroyed do
+                -- === ФАЗА ЗАЖАТИЯ ===
+                pcall(function()
+                    KeyValue.BackgroundTransparency = 0.5
+                    StatusLabel.Text = "Зажато 🔒"
+                    StatusLabel.TextColor3 = Color3.fromRGB(250, 204, 21)
+                end)
+
+                -- Держим клавишу: отправляем true каждый фрейм в течение HoldTime
+                local holdStart = os.clock()
+                while (os.clock() - holdStart) < CONFIG.HoldTime do
+                    if not running or destroyed then
+                        -- Мгновенно отпускаем при стопе
+                        VIM:SendKeyEvent(false, CONFIG.Key, false, game)
+                        forceRelease()
+                        break
+                    end
+                    VIM:SendKeyEvent(true, CONFIG.Key, false, game)
+                    task.wait()
+                end
+
+                -- Проверяем не остановлено ли
+                if not running or destroyed then
+                    VIM:SendKeyEvent(false, CONFIG.Key, false, game)
+                    forceRelease()
+                    break
+                end
+
+                -- === ФАЗА ОТПУСКАНИЯ ===
+                VIM:SendKeyEvent(false, CONFIG.Key, false, game)
+                pressCount = pressCount + 1
+                pcall(function()
+                    CounterLabel.Text = "Циклов: " .. pressCount
+                    KeyValue.BackgroundTransparency = 0.85
+                    StatusLabel.Text = "Кулдаун ⏳"
+                    StatusLabel.TextColor3 = Color3.fromRGB(139, 92, 246)
+                end)
+
+                -- === ФАЗА КУЛДАУНА ===
+                if not smartWait(CONFIG.Interval) then break end
+            end
+            -- Гарантия: отпустить при любом выходе
+            VIM:SendKeyEvent(false, CONFIG.Key, false, game)
+            forceRelease()
+
+        -- ═══ РЕЖИМ: КОМБО ═══
+        elseif CONFIG.Mode == "combo" then
+            if #CONFIG.ComboKeys == 0 then
+                running = false
+                updateStatus()
+                pcall(function() StatusLabel.Text = "Добавь клавиши!" end)
+                return
+            end
+
+            local comboIndex = 1
+            while running and not destroyed do
+                local currentKey = CONFIG.ComboKeys[comboIndex]
+                local keyName = tostring(currentKey):gsub("Enum.KeyCode.", "")
+
+                -- Нажать и отпустить текущую клавишу
+                VIM:SendKeyEvent(true, currentKey, false, game)
+                task.wait(0.001)
+                VIM:SendKeyEvent(false, currentKey, false, game)
+
+                -- Обновить счётчик и дисплей
+                pressCount = pressCount + 1
+                pcall(function()
+                    CounterLabel.Text = "Нажатий: " .. pressCount
+                    KeyValue.Text = keyName
+                    StatusLabel.Text = keyName .. " [" .. comboIndex .. "/" .. #CONFIG.ComboKeys .. "]"
+                    StatusLabel.TextColor3 = Color3.fromRGB(34, 197, 94)
+                end)
+
+                -- Вспышка
+                pcall(function()
+                    TweenService:Create(KeyValue, TweenInfo.new(0.05), {BackgroundTransparency = 0.5}):Play()
+                end)
+                task.wait(0.03)
+                pcall(function()
+                    TweenService:Create(KeyValue, TweenInfo.new(0.05), {BackgroundTransparency = 0.85}):Play()
+                end)
+
+                -- Следующая клавиша по циклу
+                comboIndex = comboIndex + 1
+                if comboIndex > #CONFIG.ComboKeys then
+                    comboIndex = 1
+                end
+
+                -- КД между клавишами (мгновенно прерывается)
+                if not smartWait(CONFIG.ComboCooldown) then break end
+            end
+            forceRelease()
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════
+-- КНОПКА СТАРТ/СТОП
+-- ═══════════════════════════════════════
+ToggleButton.MouseButton1Click:Connect(function()
+    if running then
+        running = false
+        forceRelease()
+        updateStatus()
+    else
+        running = true
+        pressCount = 0
+        updateStatus()
+        startLoop()
+    end
+end)
+
+-- ═══════════════════════════════════════
+-- ГОРЯЧИЕ КЛАВИШИ + НАЗНАЧЕНИЕ
+-- ═══════════════════════════════════════
+connections.input = UIS.InputBegan:Connect(function(input, gameProcessed)
+    if destroyed then return end
+
+    -- === Назначение клавиши в Комбо (нажатием) ===
+    if listeningCombo then
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            if input.KeyCode ~= CONFIG.DestroyKey and input.KeyCode ~= CONFIG.ToggleKey then
+                table.insert(CONFIG.ComboKeys, input.KeyCode)
+            end
+            listeningCombo = false
+            ComboAddBtn.Text = "⌨"
+            ComboAddBtn.BackgroundTransparency = 0.65
+            updateComboDisp()
+            TweenService:Create(ComboDisp, TweenInfo.new(0.2), {
+                BackgroundTransparency = 0.85
+            }):Play()
+        end
+        return
+    end
+
+    -- === Назначение основной клавиши (нажатием) ===
+    if listeningForKey then
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            if input.KeyCode == CONFIG.DestroyKey or input.KeyCode == CONFIG.ToggleKey then
+                KeyValue.Text = tostring(CONFIG.Key):gsub("Enum.KeyCode.", "")
+                KCB.Text = "⌨"
+                listeningForKey = false
+                TweenService:Create(KeyValue, TweenInfo.new(0.2), {BackgroundTransparency = 0.85}):Play()
+                return
+            end
+            CONFIG.Key = input.KeyCode
+            KeyValue.Text = tostring(input.KeyCode):gsub("Enum.KeyCode.", "")
+            KCB.Text = "⌨"
+            listeningForKey = false
+            TweenService:Create(KeyValue, TweenInfo.new(0.2), {BackgroundTransparency = 0.85}):Play()
+        end
+        return
+    end
+
+    if gameProcessed then return end
+
+    -- === Toggle (вкл/выкл) ===
+    if input.KeyCode == CONFIG.ToggleKey then
+        if running then
+            running = false
+            forceRelease()
+            updateStatus()
+        else
+            running = true
+            pressCount = 0
+            updateStatus()
+            startLoop()
+        end
+    end
+
+    -- === Destroy GUI ===
+    if input.KeyCode == CONFIG.DestroyKey then
+        destroyAll()
+    end
+end)
+
+-- ═══════════════════════════════════════
+-- АНИМАЦИЯ ПОЯВЛЕНИЯ
+-- ═══════════════════════════════════════
+MainFrame.Size = UDim2.new(0, 0, 0, 0)
+MainFrame.Position = UDim2.new(0.5, 0, 0.2, 230)
+TweenService:Create(MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+    Size = UDim2.new(0, 320, 0, FULL_HEIGHT),
+    Position = UDim2.new(0.5, -160, 0.2, 0)
+}):Play()
+
+print("🔮 Auto Key Presser v1.0 | By Probothotspot")
+print("   Режимы: 💥 Спам / 🔒 Зажатие / 🔗 Комбо")
+print("   Мгновенная остановка (smartWait)")
+print("   Клавиша: " .. tostring(CONFIG.Key))
+print("   Интервал: " .. (CONFIG.Interval * 1000) .. " мс")
+print("   Toggle: " .. tostring(CONFIG.ToggleKey))
+print("   Destroy: " .. tostring(CONFIG.DestroyKey))
