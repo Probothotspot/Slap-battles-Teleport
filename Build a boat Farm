@@ -1,0 +1,456 @@
+-- =============================================================
+-- BUILD A BOAT FLY FARMER v2.2 (XENO) – Прямой полёт, без ремутов
+-- =============================================================
+
+if _G.FlyFarmRunning then return end
+_G.FlyFarmRunning = true
+
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+-- ==================== НАСТРОЙКИ ====================
+local Settings = {
+    Enabled = false,
+    FlySpeed = 250,                -- студий/сек
+    StartX = -51.6,
+    StartZ = 1645.6,
+    FixedY = 65,                  -- высота полёта
+    EndZ = 8450,
+    LobbyZThreshold = -500,       -- Z меньше этого → телепорт в старт
+    CurrentStage = "Ожидание",
+    StopRequested = false,
+    FlightProgress = 0,
+    FlightStartZ = 0,
+    FlightTargetZ = 0,
+}
+
+-- ==================== ЛОГ ====================
+local LogLines = {}
+local function AddLog(msg)
+    local fullMsg = os.date("%X") .. " - " .. msg
+    table.insert(LogLines, fullMsg)
+    if #LogLines > 30 then table.remove(LogLines, 1) end
+    if _G.LogLabel then
+        pcall(function() _G.LogLabel.Text = table.concat(LogLines, "\n") end)
+    end
+    print("[FlyFarm] " .. msg)
+end
+
+-- ==================== ПОЛУЧЕНИЕ КОРНЕВОЙ ЧАСТИ ====================
+local function GetCharacterRoot()
+    local char = LP.Character
+    if not char then return nil end
+    return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+end
+
+-- ==================== РЕСПАВН ====================
+local function RespawnCharacter()
+    local char = LP.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum and hum.Health > 0 then hum.Health = 0 else char:BreakJoints() end
+    end
+    local waited = 0
+    while not GetCharacterRoot() do
+        if waited > 15 then
+            AddLog("Ошибка: персонаж не появился после респавна")
+            return false
+        end
+        task.wait(0.5)
+        waited = waited + 0.5
+    end
+    task.wait(2)  -- даём время на загрузку
+    AddLog("Респавн выполнен")
+    return true
+end
+
+-- ==================== ТЕЛЕПОРТ В СТАРТ ====================
+local function TeleportToStart()
+    local root = GetCharacterRoot()
+    if not root then return false end
+    root.CFrame = CFrame.new(Settings.StartX, Settings.FixedY, Settings.StartZ)
+    AddLog("ТП в старт (Y=" .. Settings.FixedY .. ")")
+    return true
+end
+
+-- ==================== СТАБИЛЬНЫЙ ПОЛЁТ (Heartbeat, Y фиксирован) ====================
+local function FlyToEnd()
+    local root = GetCharacterRoot()
+    if not root then return false end
+
+    local startX = root.Position.X
+    local startZ = root.Position.Z
+    local targetZ = Settings.EndZ
+    local distance = math.abs(targetZ - startZ)
+    if distance < 1 then return true end
+
+    local speed = Settings.FlySpeed
+    local duration = distance / speed
+    local startTime = tick()
+
+    Settings.FlightStartZ = startZ
+    Settings.FlightTargetZ = targetZ
+    Settings.FlightProgress = 0
+    Settings.CurrentStage = "Полёт"
+    AddLog(string.format("Полёт до Z=%.1f (%.1f сек)", targetZ, duration))
+
+    local finished = false
+    local connection
+    connection = RunService.Heartbeat:Connect(function()
+        if not Settings.Enabled or Settings.StopRequested then
+            connection:Disconnect()
+            return
+        end
+        local rootNow = GetCharacterRoot()
+        if not rootNow then
+            connection:Disconnect()
+            AddLog("Потерян персонаж – прерывание")
+            return
+        end
+        local elapsed = tick() - startTime
+        local progress = math.min(elapsed / duration, 1)
+        local currentZ = startZ + (targetZ - startZ) * progress
+        rootNow.CFrame = CFrame.new(startX, Settings.FixedY, currentZ)
+        Settings.FlightProgress = progress
+        if progress >= 1 then
+            finished = true
+            connection:Disconnect()
+        end
+    end)
+
+    -- Ждём завершения полёта
+    while not finished do
+        if not Settings.Enabled or Settings.StopRequested then
+            connection:Disconnect()
+            return false
+        end
+        if not GetCharacterRoot() then
+            connection:Disconnect()
+            AddLog("Персонаж исчез – прерывание полёта")
+            return false
+        end
+        task.wait(0.1)
+    end
+
+    Settings.FlightProgress = 1
+    AddLog("Полёт успешно завершён")
+    return true
+end
+
+-- ==================== ГЛАВНЫЙ ЦИКЛ ====================
+local function MainLoop()
+    AddLog("Главный цикл запущен")
+    while Settings.Enabled and not Settings.StopRequested do
+        pcall(function()
+            -- Ждём персонажа
+            while Settings.Enabled and not GetCharacterRoot() do
+                Settings.CurrentStage = "Ожидание персонажа"
+                task.wait(0.5)
+            end
+            if not Settings.Enabled then return end
+
+            -- Если в лобби – телепорт в старт
+            local root = GetCharacterRoot()
+            if root and root.Position.Z < Settings.LobbyZThreshold then
+                Settings.CurrentStage = "Телепорт в старт (лобби)"
+                TeleportToStart()
+                task.wait(0.5)
+            end
+
+            -- Полёт
+            local flySuccess = FlyToEnd()
+            if not flySuccess then
+                AddLog("Полёт не удался, пауза 1 сек")
+                task.wait(1)
+                return
+            end
+
+            -- Ресет только после успешного завершения полёта
+            Settings.CurrentStage = "Ресет"
+            if not RespawnCharacter() then
+                AddLog("Ресет не удался, пауза 3 сек")
+                task.wait(3)
+            end
+            task.wait(1)
+        end)
+    end
+    Settings.Enabled = false
+    _G.FlyFarmRunning = false
+    AddLog("Фарм остановлен")
+end
+
+-- ==================== GUI (компактный, без изменений) ====================
+local function CreateGUI()
+    local playerGui = LP:WaitForChild("PlayerGui")
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "FlyFarmGUI"
+    sg.ResetOnSpawn = false
+    sg.DisplayOrder = 999
+    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    sg.Parent = playerGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 320, 0, 360)
+    frame.Position = UDim2.new(1, -330, 0, 10)
+    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    frame.BackgroundTransparency = 0.1
+    frame.BorderSizePixel = 0
+    frame.Active = true
+    frame.Draggable = true
+    frame.Parent = sg
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 16)
+
+    local header = Instance.new("Frame")
+    header.Size = UDim2.new(1, 0, 0, 42)
+    header.BackgroundColor3 = Color3.fromRGB(80, 0, 150)
+    header.BorderSizePixel = 0
+    header.Parent = frame
+    Instance.new("UICorner", header).CornerRadius = UDim.new(0, 16)
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -40, 1, 0)
+    title.Position = UDim2.new(0, 16, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "Fly Farmer v2.2"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.Font = Enum.Font.GothamBlack
+    title.TextSize = 18
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = header
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 28, 0, 28)
+    closeBtn.Position = UDim2.new(1, -34, 0, 7)
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 18
+    closeBtn.BackgroundColor3 = Color3.new(1, 0.2, 0.2)
+    closeBtn.BackgroundTransparency = 0.3
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Parent = header
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 8)
+    closeBtn.MouseButton1Click:Connect(function() frame.Visible = false end)
+
+    local content = Instance.new("Frame")
+    content.Size = UDim2.new(1, -20, 1, -52)
+    content.Position = UDim2.new(0, 10, 0, 46)
+    content.BackgroundTransparency = 1
+    content.Parent = frame
+
+    local startBtn = Instance.new("TextButton")
+    startBtn.Size = UDim2.new(0, 120, 0, 32)
+    startBtn.Position = UDim2.new(0, 0, 0, 0)
+    startBtn.Text = "СТАРТ"
+    startBtn.BackgroundColor3 = Color3.fromRGB(30, 180, 30)
+    startBtn.TextColor3 = Color3.new(1, 1, 1)
+    startBtn.Font = Enum.Font.GothamBold
+    startBtn.TextSize = 15
+    startBtn.BorderSizePixel = 0
+    startBtn.Parent = content
+    Instance.new("UICorner", startBtn).CornerRadius = UDim.new(0, 8)
+
+    local stopBtn = Instance.new("TextButton")
+    stopBtn.Size = UDim2.new(0, 120, 0, 32)
+    stopBtn.Position = UDim2.new(0, 180, 0, 0)
+    stopBtn.Text = "СТОП"
+    stopBtn.BackgroundColor3 = Color3.fromRGB(180, 30, 30)
+    stopBtn.TextColor3 = Color3.new(1, 1, 1)
+    stopBtn.Font = Enum.Font.GothamBold
+    stopBtn.TextSize = 15
+    stopBtn.BorderSizePixel = 0
+    stopBtn.Parent = content
+    Instance.new("UICorner", stopBtn).CornerRadius = UDim.new(0, 8)
+
+    local tpBtn = Instance.new("TextButton")
+    tpBtn.Size = UDim2.new(1, 0, 0, 32)
+    tpBtn.Position = UDim2.new(0, 0, 0, 40)
+    tpBtn.Text = "Телепорт в старт"
+    tpBtn.BackgroundColor3 = Color3.fromRGB(60, 100, 200)
+    tpBtn.TextColor3 = Color3.new(1, 1, 1)
+    tpBtn.Font = Enum.Font.GothamBold
+    tpBtn.TextSize = 14
+    tpBtn.BorderSizePixel = 0
+    tpBtn.Parent = content
+    Instance.new("UICorner", tpBtn).CornerRadius = UDim.new(0, 8)
+    tpBtn.MouseButton1Click:Connect(TeleportToStart)
+
+    local speedPanel = Instance.new("Frame")
+    speedPanel.Size = UDim2.new(1, 0, 0, 48)
+    speedPanel.Position = UDim2.new(0, 0, 0, 82)
+    speedPanel.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+    speedPanel.BorderSizePixel = 0
+    speedPanel.Parent = content
+    Instance.new("UICorner", speedPanel).CornerRadius = UDim.new(0, 10)
+
+    local speedLabel = Instance.new("TextLabel")
+    speedLabel.Size = UDim2.new(0, 130, 1, 0)
+    speedLabel.Position = UDim2.new(0, 8, 0, 0)
+    speedLabel.BackgroundTransparency = 1
+    speedLabel.Text = "Скорость (студ/с)"
+    speedLabel.TextColor3 = Color3.new(1, 1, 1)
+    speedLabel.Font = Enum.Font.GothamSemibold
+    speedLabel.TextSize = 13
+    speedLabel.Parent = speedPanel
+
+    local speedBox = Instance.new("TextBox")
+    speedBox.Size = UDim2.new(0, 80, 0, 26)
+    speedBox.Position = UDim2.new(0, 140, 0, 11)
+    speedBox.Text = tostring(Settings.FlySpeed)
+    speedBox.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+    speedBox.TextColor3 = Color3.new(1, 1, 1)
+    speedBox.Font = Enum.Font.GothamBold
+    speedBox.TextSize = 15
+    speedBox.BorderSizePixel = 0
+    speedBox.Parent = speedPanel
+    Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0, 6)
+    speedBox.FocusLost:Connect(function()
+        local n = tonumber(speedBox.Text)
+        if n and n > 0 then
+            Settings.FlySpeed = n
+            AddLog("Скорость изменена на " .. n)
+        else
+            speedBox.Text = tostring(Settings.FlySpeed)
+        end
+    end)
+
+    local progressPanel = Instance.new("Frame")
+    progressPanel.Size = UDim2.new(1, 0, 0, 40)
+    progressPanel.Position = UDim2.new(0, 0, 0, 140)
+    progressPanel.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+    progressPanel.BorderSizePixel = 0
+    progressPanel.Parent = content
+    Instance.new("UICorner", progressPanel).CornerRadius = UDim.new(0, 10)
+
+    local progressLabel = Instance.new("TextLabel")
+    progressLabel.Size = UDim2.new(1, -16, 0, 16)
+    progressLabel.Position = UDim2.new(0, 8, 0, 4)
+    progressLabel.BackgroundTransparency = 1
+    progressLabel.Text = "Прогресс полёта"
+    progressLabel.TextColor3 = Color3.new(1, 1, 1)
+    progressLabel.Font = Enum.Font.GothamSemibold
+    progressLabel.TextSize = 12
+    progressLabel.Parent = progressPanel
+
+    local barFrame = Instance.new("Frame")
+    barFrame.Size = UDim2.new(1, -16, 0, 10)
+    barFrame.Position = UDim2.new(0, 8, 0, 24)
+    barFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+    barFrame.BorderSizePixel = 0
+    barFrame.Parent = progressPanel
+    Instance.new("UICorner", barFrame).CornerRadius = UDim.new(0, 5)
+
+    local barFill = Instance.new("Frame")
+    barFill.Size = UDim2.new(0, 0, 1, 0)
+    barFill.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
+    barFill.BorderSizePixel = 0
+    barFill.Parent = barFrame
+    Instance.new("UICorner", barFill).CornerRadius = UDim.new(0, 5)
+
+    local statusPanel = Instance.new("Frame")
+    statusPanel.Size = UDim2.new(1, 0, 0, 50)
+    statusPanel.Position = UDim2.new(0, 0, 0, 190)
+    statusPanel.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+    statusPanel.BorderSizePixel = 0
+    statusPanel.Parent = content
+    Instance.new("UICorner", statusPanel).CornerRadius = UDim.new(0, 10)
+
+    local stageLabel = Instance.new("TextLabel")
+    stageLabel.Size = UDim2.new(1, -16, 0, 16)
+    stageLabel.Position = UDim2.new(0, 8, 0, 4)
+    stageLabel.BackgroundTransparency = 1
+    stageLabel.Text = "Этап: " .. Settings.CurrentStage
+    stageLabel.TextColor3 = Color3.new(1, 0.9, 0.5)
+    stageLabel.Font = Enum.Font.GothamBold
+    stageLabel.TextSize = 13
+    stageLabel.Parent = statusPanel
+
+    local posLabel = Instance.new("TextLabel")
+    posLabel.Size = UDim2.new(1, -16, 0, 16)
+    posLabel.Position = UDim2.new(0, 8, 0, 24)
+    posLabel.BackgroundTransparency = 1
+    posLabel.Text = "Позиция: ---"
+    posLabel.TextColor3 = Color3.new(0.8, 1, 0.8)
+    posLabel.Font = Enum.Font.Gotham
+    posLabel.TextSize = 11
+    posLabel.Parent = statusPanel
+
+    local logFrame = Instance.new("ScrollingFrame")
+    logFrame.Size = UDim2.new(1, 0, 0, 90)
+    logFrame.Position = UDim2.new(0, 0, 0, 250)
+    logFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    logFrame.BorderSizePixel = 0
+    logFrame.CanvasSize = UDim2.new(0, 0, 0, 200)
+    logFrame.ScrollBarThickness = 2
+    logFrame.Parent = content
+    Instance.new("UICorner", logFrame).CornerRadius = UDim.new(0, 8)
+
+    local logLabel = Instance.new("TextLabel", logFrame)
+    logLabel.Size = UDim2.new(1, 0, 0, 200)
+    logLabel.BackgroundTransparency = 1
+    logLabel.TextColor3 = Color3.new(1, 1, 1)
+    logLabel.Font = Enum.Font.Gotham
+    logLabel.TextSize = 11
+    logLabel.TextWrapped = true
+    logLabel.TextXAlignment = Enum.TextXAlignment.Left
+    logLabel.TextYAlignment = Enum.TextYAlignment.Top
+    logLabel.Text = ""
+    _G.LogLabel = logLabel
+
+    task.spawn(function()
+        while sg and sg.Parent do
+            local root = GetCharacterRoot()
+            if root then
+                local pos = root.Position
+                posLabel.Text = string.format("X=%.0f  Y=%.0f  Z=%.0f", pos.X, pos.Y, pos.Z)
+            else
+                posLabel.Text = "Позиция: ---"
+            end
+            stageLabel.Text = "Этап: " .. Settings.CurrentStage
+            barFill.Size = UDim2.new(Settings.FlightProgress, 0, 1, 0)
+            task.wait(0.05)
+        end
+    end)
+
+    startBtn.MouseButton1Click:Connect(function()
+        if not Settings.Enabled then
+            Settings.Enabled = true
+            Settings.StopRequested = false
+            startBtn.Text = "ПАУЗА"
+            startBtn.BackgroundColor3 = Color3.fromRGB(200, 200, 50)
+            AddLog("Фарм запущен")
+            task.spawn(MainLoop)
+        else
+            Settings.Enabled = false
+            startBtn.Text = "СТАРТ"
+            startBtn.BackgroundColor3 = Color3.fromRGB(30, 180, 30)
+            AddLog("Фарм приостановлен")
+        end
+    end)
+
+    stopBtn.MouseButton1Click:Connect(function()
+        Settings.Enabled = false
+        Settings.StopRequested = true
+        startBtn.Text = "СТАРТ"
+        startBtn.BackgroundColor3 = Color3.fromRGB(30, 180, 30)
+        AddLog("Фарм остановлен")
+    end)
+
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode == Enum.KeyCode.P then
+            Settings.Enabled = false
+            Settings.StopRequested = true
+            if sg then sg:Destroy() end
+            _G.FlyFarmRunning = false
+            AddLog("Скрипт остановлен (P)")
+        end
+    end)
+end
+
+-- ==================== ЗАПУСК ====================
+CreateGUI()
+AddLog("Fly Farmer v2.2 загружен. Прямой полёт без ремутов.")
