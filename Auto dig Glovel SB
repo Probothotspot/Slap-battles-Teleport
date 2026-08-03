@@ -1,0 +1,459 @@
+--[[
+	AutoDig GUI - Финальная версия с неблокирующим ожиданием при таймауте
+	Размещение: StarterPlayerScripts
+	Описание: Создаёт переливающееся фиолетовое окно с кнопкой старт/стоп,
+	счётчиком вызовов и возможностью сворачивать/закрывать/перетаскивать.
+	Логика автоматического вызова GlovelFunc:InvokeServer() с защитой от зависаний и двойного запуска.
+--]]
+
+-- ======================== КОНСТАНТЫ ========================
+local GUI_NAME = "AutoDigGui"
+local INVOKE_TIMEOUT = 3 -- таймаут вызова RemoteFunction (сек)
+-- Примечание: зависшие горутины InvokeServer нельзя отменить в Lua,
+-- поэтому меньший таймаут снижает их накопление.
+
+-- ======================== СЕРВИСЫ ========================
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TS = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Ссылка на RemoteFunction (должна существовать в ReplicatedStorage)
+local GlovelFunc = RS:WaitForChild("GlovelFunc")
+
+-- ======================== ПЕРЕМЕННЫЕ СОСТОЯНИЯ ========================
+local autoDigEnabled = false
+local invokeCount = 0
+local generation = 0 -- счётчик поколений для предотвращения двойных корутин
+
+-- ======================== СОЗДАНИЕ ГЛАВНОГО GUI ========================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = GUI_NAME
+screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 999
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+-- ======================== ЦВЕТОВЫЕ КОНСТАНТЫ ========================
+local BG_COLOR = Color3.fromRGB(15, 5, 30)
+local HEADER_COLOR = Color3.fromRGB(20, 8, 40)
+local BORDER_COLOR1 = Color3.fromRGB(139, 92, 246)
+local BORDER_COLOR2 = Color3.fromRGB(88, 28, 200)
+local TEXT_MAIN = Color3.fromRGB(216, 180, 254)
+local TEXT_SUB = Color3.fromRGB(160, 130, 200)
+local STATUS_ACTIVE = Color3.fromRGB(100, 255, 130)
+local STATUS_STOP = Color3.fromRGB(255, 100, 100)
+local BTN_START_BG = Color3.fromRGB(34, 139, 34)
+local BTN_STOP_BG = Color3.fromRGB(180, 30, 30)
+local BTN_MINIMIZE_BG = Color3.fromRGB(40, 15, 70)
+local BTN_CLOSE_BG = Color3.fromRGB(60, 10, 30)
+local BTN_CLOSE_TEXT = Color3.fromRGB(255, 120, 120)
+local FLOATING_BTN_BG = Color3.fromRGB(139, 92, 246)
+local SEPARATOR_COLOR = Color3.fromRGB(139, 92, 246)
+
+-- ======================== ОСНОВНАЯ ПАНЕЛЬ ========================
+local mainPanel = Instance.new("Frame")
+mainPanel.Name = "MainPanel"
+mainPanel.Size = UDim2.new(0, 220, 0, 200)
+mainPanel.Position = UDim2.new(0, 20, 0.5, -100)
+mainPanel.BackgroundColor3 = BG_COLOR
+mainPanel.BorderSizePixel = 0
+mainPanel.Active = true
+mainPanel.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = mainPanel
+
+local stroke = Instance.new("UIStroke")
+stroke.Thickness = 1.5
+stroke.LineJoinMode = Enum.LineJoinMode.Round
+stroke.Parent = mainPanel
+
+-- ======================== ЗАГОЛОВОК ========================
+local header = Instance.new("Frame")
+header.Name = "Header"
+header.Size = UDim2.new(1, 0, 0, 32)
+header.BackgroundColor3 = HEADER_COLOR
+header.BorderSizePixel = 0
+header.Parent = mainPanel
+
+local headerCorner = Instance.new("UICorner")
+headerCorner.CornerRadius = UDim.new(0, 10)
+headerCorner.Parent = header
+
+-- Патч для прямых нижних углов заголовка
+local headerPatch = Instance.new("Frame")
+headerPatch.Size = UDim2.new(1, 0, 0, 10)
+headerPatch.Position = UDim2.new(0, 0, 1, -5)
+headerPatch.BackgroundColor3 = HEADER_COLOR
+headerPatch.BorderSizePixel = 0
+headerPatch.Parent = header
+
+-- Заголовок текст
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -70, 1, 0)
+titleLabel.Position = UDim2.new(0, 8, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.Text = "⚡ AutoDig"
+titleLabel.TextColor3 = TEXT_MAIN
+titleLabel.TextSize = 11
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = header
+
+-- Зона перетаскивания (теперь активный Frame для захвата ввода напрямую)
+local dragZone = Instance.new("Frame")
+dragZone.Name = "DragZone"
+dragZone.Size = UDim2.new(1, -70, 1, 0)
+dragZone.Position = UDim2.new(0, 0, 0, 0)
+dragZone.BackgroundTransparency = 1
+dragZone.BorderSizePixel = 0
+dragZone.Active = true -- необходимо для получения событий ввода
+dragZone.Parent = header
+
+-- ======================== КНОПКИ ЗАГОЛОВКА ========================
+-- Кнопка свернуть
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Name = "MinimizeBtn"
+minimizeBtn.Size = UDim2.new(0, 28, 0, 24)
+minimizeBtn.Position = UDim2.new(1, -60, 0, 4)
+minimizeBtn.BackgroundColor3 = BTN_MINIMIZE_BG
+minimizeBtn.TextColor3 = TEXT_MAIN
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.Text = "➖"
+minimizeBtn.TextSize = 14
+minimizeBtn.BorderSizePixel = 0
+minimizeBtn.Parent = header
+
+local minCorner = Instance.new("UICorner")
+minCorner.CornerRadius = UDim.new(0, 6)
+minCorner.Parent = minimizeBtn
+
+-- Кнопка закрыть
+local closeBtn = Instance.new("TextButton")
+closeBtn.Name = "CloseBtn"
+closeBtn.Size = UDim2.new(0, 28, 0, 24)
+closeBtn.Position = UDim2.new(1, -30, 0, 4)
+closeBtn.BackgroundColor3 = BTN_CLOSE_BG
+closeBtn.TextColor3 = BTN_CLOSE_TEXT
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.Text = "✕"
+closeBtn.TextSize = 14
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = header
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 6)
+closeCorner.Parent = closeBtn
+
+-- ======================== КОНТЕНТ ПАНЕЛИ ========================
+local contentFrame = Instance.new("Frame")
+contentFrame.Name = "Content"
+contentFrame.Size = UDim2.new(1, -16, 1, -40)
+contentFrame.Position = UDim2.new(0, 8, 0, 36)
+contentFrame.BackgroundTransparency = 1
+contentFrame.BorderSizePixel = 0
+contentFrame.Parent = mainPanel
+
+-- Функция создания строки с позицией Y
+local function createRow(parent, yOffset, labelText, valueText)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, 0, 0, 20)
+	row.Position = UDim2.new(0, 0, 0, yOffset)
+	row.BackgroundTransparency = 1
+	row.Parent = parent
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(0, 60, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.Gotham
+	label.Text = labelText
+	label.TextColor3 = TEXT_SUB
+	label.TextSize = 11
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = row
+
+	local value = Instance.new("TextLabel")
+	value.Size = UDim2.new(1, -64, 1, 0)
+	value.Position = UDim2.new(0, 64, 0, 0)
+	value.BackgroundTransparency = 1
+	value.Font = Enum.Font.Gotham
+	value.Text = valueText
+	value.TextColor3 = TEXT_MAIN
+	value.TextSize = 11
+	value.TextXAlignment = Enum.TextXAlignment.Left
+	value.Parent = row
+
+	return value
+end
+
+-- Строки статуса с корректными отступами
+local statusValue  = createRow(contentFrame, 0,  "Статус:", "Стоп 🔴")
+local invokesValue = createRow(contentFrame, 24, "Инвоков:", "0")
+
+-- Разделитель
+local separator = Instance.new("Frame")
+separator.Size = UDim2.new(1, 0, 0, 1)
+separator.Position = UDim2.new(0, 0, 0, 48)
+separator.BackgroundColor3 = SEPARATOR_COLOR
+separator.BackgroundTransparency = 0.7
+separator.BorderSizePixel = 0
+separator.Parent = contentFrame
+
+-- Кнопка СТАРТ/СТОП
+local actionBtn = Instance.new("TextButton")
+actionBtn.Name = "ActionBtn"
+actionBtn.Size = UDim2.new(1, 0, 0, 34)
+actionBtn.Position = UDim2.new(0, 0, 0, 56)
+actionBtn.BackgroundColor3 = BTN_START_BG
+actionBtn.TextColor3 = TEXT_MAIN
+actionBtn.Font = Enum.Font.GothamBold
+actionBtn.Text = "▶ СТАРТ"
+actionBtn.TextSize = 13
+actionBtn.BorderSizePixel = 0
+actionBtn.Parent = contentFrame
+
+local actionBtnCorner = Instance.new("UICorner")
+actionBtnCorner.CornerRadius = UDim.new(0, 8)
+actionBtnCorner.Parent = actionBtn
+
+-- ======================== ПЛАВАЮЩАЯ КНОПКА ВОССТАНОВЛЕНИЯ ========================
+local floatingBtn = Instance.new("TextButton")
+floatingBtn.Name = "FloatingBtn"
+floatingBtn.Size = UDim2.new(0, 36, 0, 36)
+floatingBtn.Position = UDim2.new(1, -50, 0.5, -18)
+floatingBtn.BackgroundColor3 = FLOATING_BTN_BG
+floatingBtn.Text = "⚡"
+floatingBtn.TextColor3 = TEXT_MAIN
+floatingBtn.Font = Enum.Font.GothamBold
+floatingBtn.TextSize = 18
+floatingBtn.BorderSizePixel = 0
+floatingBtn.Visible = false
+floatingBtn.Parent = screenGui
+
+local floatingCorner = Instance.new("UICorner")
+floatingCorner.CornerRadius = UDim.new(0, 18)
+floatingCorner.Parent = floatingBtn
+
+local floatingStroke = Instance.new("UIStroke")
+floatingStroke.Thickness = 1.5
+floatingStroke.LineJoinMode = Enum.LineJoinMode.Round
+floatingStroke.Parent = floatingBtn
+
+-- ======================== ПЕРЕТАСКИВАНИЕ ========================
+local isDragging = false
+local dragStartPos = nil
+local panelStartPos = nil
+local connections = {}
+
+-- Движение мыши/пальца (по-прежнему через UIS, чтобы ловить перемещения за пределами dragZone)
+local function onInputChanged(input, gameProcessedEvent)
+	if not isDragging then return end
+	if input.UserInputType == Enum.UserInputType.MouseMovement or
+		input.UserInputType == Enum.UserInputType.Touch then
+		local delta = input.Position - dragStartPos
+		mainPanel.Position = UDim2.new(
+			panelStartPos.X.Scale, panelStartPos.X.Offset + delta.X,
+			panelStartPos.Y.Scale, panelStartPos.Y.Offset + delta.Y
+		)
+	end
+end
+
+-- Окончание перетаскивания
+local function onInputEnded(input, gameProcessedEvent)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or
+		input.UserInputType == Enum.UserInputType.Touch then
+		isDragging = false
+		dragStartPos = nil
+		panelStartPos = nil
+	end
+end
+
+-- Начало перетаскивания — теперь сохраняем соединение в таблицу
+table.insert(connections, dragZone.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or
+		input.UserInputType == Enum.UserInputType.Touch then
+		isDragging = true
+		dragStartPos = input.Position
+		panelStartPos = mainPanel.Position
+	end
+end))
+
+-- Подключаем оставшиеся события ввода
+table.insert(connections, UIS.InputChanged:Connect(onInputChanged))
+table.insert(connections, UIS.InputEnded:Connect(onInputEnded))
+
+-- ======================== ЛОГИКА СВОРАЧИВАНИЯ / РАЗВОРАЧИВАНИЯ ========================
+local isMinimized = false
+local originalSize = mainPanel.Size
+local minimizedSize = UDim2.new(0, 220, 0, 32)
+
+local function minimizePanel()
+	if isMinimized then return end
+	isMinimized = true
+	local goal = {Size = minimizedSize}
+	local tweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local tween = TS:Create(mainPanel, tweenInfo, goal)
+	tween:Play()
+	contentFrame.Visible = false
+	minimizeBtn.Text = "➕"
+end
+
+local function maximizePanel()
+	if not isMinimized then return end
+	isMinimized = false
+	local goal = {Size = originalSize}
+	local tweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local tween = TS:Create(mainPanel, tweenInfo, goal)
+	tween:Play()
+	-- Контент появляется только после завершения анимации разворачивания,
+	-- если панель всё ещё не свёрнута (предотвращает гонку при быстром сворачивании)
+	task.delay(0.25, function()
+		if not isMinimized then
+			contentFrame.Visible = true
+		end
+	end)
+	minimizeBtn.Text = "➖"
+end
+
+-- Подключения кнопок сворачивания/разворачивания, закрытия и восстановления
+table.insert(connections, minimizeBtn.Activated:Connect(function()
+	if isMinimized then
+		maximizePanel()
+	else
+		minimizePanel()
+	end
+end))
+
+table.insert(connections, closeBtn.Activated:Connect(function()
+	mainPanel.Visible = false
+	floatingBtn.Visible = true
+end))
+
+table.insert(connections, floatingBtn.Activated:Connect(function()
+	floatingBtn.Visible = false
+	mainPanel.Visible = true
+	if isMinimized then
+		maximizePanel()
+	end
+end))
+
+-- ======================== БЕЗОПАСНЫЙ ВЫЗОВ REMOTE FUNCTION (с флагом успеха) ========================
+local function safeInvoke(currentGen)
+	local done = false
+	-- Запускаем InvokeServer в отдельной нити
+	task.spawn(function()
+		pcall(function()
+			GlovelFunc:InvokeServer()
+		end)
+		done = true
+	end)
+	-- Ожидание с ограничением по времени и возможностью прервать при остановке
+	local startTime = os.clock()
+	while not done
+		and (os.clock() - startTime) < INVOKE_TIMEOUT
+		and autoDigEnabled
+		and generation == currentGen
+	do
+		task.wait(0.1)
+	end
+	-- Возвращаем true только если сервер успел ответить (done == true)
+	return done
+end
+
+-- ======================== ЛОГИКА AUTODIG ========================
+local function autoDigLoop(currentGen)
+	while autoDigEnabled and generation == currentGen do
+		local success = safeInvoke(currentGen)
+		if not autoDigEnabled or generation ~= currentGen then break end
+		if success then
+			-- Увеличиваем счётчик только при реальном ответе сервера
+			invokeCount = invokeCount + 1
+			task.wait() -- короткая пауза после успешного вызова
+		else
+			-- При таймауте ждём, но не блокируем остановку — разбиваем на шаги
+			local retryStart = os.clock()
+			while (os.clock() - retryStart) < INVOKE_TIMEOUT
+				and autoDigEnabled
+				and generation == currentGen
+			do
+				task.wait(0.1)
+			end
+		end
+	end
+end
+
+-- Обновление кнопки СТАРТ/СТОП
+local function updateActionButton()
+	local targetColor = autoDigEnabled and BTN_STOP_BG or BTN_START_BG
+	local targetText = autoDigEnabled and "⏹ СТОП" or "▶ СТАРТ"
+	actionBtn.Text = targetText
+	local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local tween = TS:Create(actionBtn, tweenInfo, {BackgroundColor3 = targetColor})
+	tween:Play()
+end
+
+local function toggleAutoDig()
+	if autoDigEnabled then
+		autoDigEnabled = false
+	else
+		autoDigEnabled = true
+		generation = generation + 1
+		local currentGen = generation
+		task.spawn(autoDigLoop, currentGen)
+	end
+	updateActionButton()
+end
+
+-- Подключение кнопки старт/стоп
+table.insert(connections, actionBtn.Activated:Connect(toggleAutoDig))
+
+-- ======================== АНИМАЦИЯ ПЕРЕЛИВАНИЯ ОБВОДКИ ========================
+local function updateBorderAnimation()
+	local t = (math.sin(os.clock() * 2) + 1) / 2
+	local r = BORDER_COLOR1.R + (BORDER_COLOR2.R - BORDER_COLOR1.R) * t
+	local g = BORDER_COLOR1.G + (BORDER_COLOR2.G - BORDER_COLOR1.G) * t
+	local b = BORDER_COLOR1.B + (BORDER_COLOR2.B - BORDER_COLOR1.B) * t
+	local color = Color3.new(r, g, b)
+	stroke.Color = color
+	if floatingBtn.Visible then
+		floatingStroke.Color = color
+	end
+end
+
+-- ======================== ОБНОВЛЕНИЕ ИНФОРМАЦИИ В GUI ========================
+local function updateStatusDisplay()
+	local statusText = autoDigEnabled and "Активен 🟢" or "Стоп 🔴"
+	statusValue.Text = statusText
+	statusValue.TextColor3 = autoDigEnabled and STATUS_ACTIVE or STATUS_STOP
+	invokesValue.Text = tostring(invokeCount)
+end
+
+-- ======================== ГЛАВНЫЙ ЦИКЛ ОБНОВЛЕНИЯ ========================
+table.insert(connections, RunService.Heartbeat:Connect(function()
+	updateBorderAnimation()
+	if mainPanel.Visible then
+		updateStatusDisplay()
+	end
+end))
+
+-- ======================== ОЧИСТКА ПРИ УДАЛЕНИИ ========================
+screenGui.Destroying:Connect(function()
+	autoDigEnabled = false
+	generation = generation + 1
+	for _, conn in ipairs(connections) do
+		if conn.Connected then
+			conn:Disconnect()
+		end
+	end
+	connections = {}
+end)
+
+-- ======================== ПЕРВОНАЧАЛЬНОЕ ОБНОВЛЕНИЕ ========================
+updateActionButton()
+updateStatusDisplay()
