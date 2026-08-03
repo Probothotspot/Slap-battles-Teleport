@@ -1,5 +1,5 @@
 --[[
-    🌌 Script Launcher — 22 скрипта (убраны ALL my script и Teleport Slap battles (1).lua)
+    🌌 Script Launcher — 23 скрипта (добавлен Auto dig)
     Перетаскивание, сворачивание, настройки, 12 тем, 3 языка.
     Все тексты белые, радужные кнопки запуска.
     Удаление по клавише P.
@@ -40,6 +40,7 @@ local translations = {
         tab_name_20 = "Timer",
         tab_name_21 = "Tp to glove",
         tab_name_22 = "Wall on platform",
+        tab_name_23 = "Auto dig",
         tab_desc_1 = "Prevents AFK kick",
         tab_desc_2 = "Auto E & Slap",
         tab_desc_3 = "Auto key presser",
@@ -62,6 +63,7 @@ local translations = {
         tab_desc_20 = "Simple timer",
         tab_desc_21 = "Teleport to glove",
         tab_desc_22 = "Build wall on platform",
+        tab_desc_23 = "Auto dig glove SB",
     },
     ru = {
         title = "🚀 Лаунчер",
@@ -94,6 +96,7 @@ local translations = {
         tab_name_20 = "Таймер",
         tab_name_21 = "ТП к перчатке",
         tab_name_22 = "Стена на платформе",
+        tab_name_23 = "Авто копка",
         tab_desc_1 = "Защита от AFK",
         tab_desc_2 = "Авто E и шлепок",
         tab_desc_3 = "Авто нажатие клавиш",
@@ -116,6 +119,7 @@ local translations = {
         tab_desc_20 = "Простой таймер",
         tab_desc_21 = "ТП к перчатке",
         tab_desc_22 = "Стена на платформе",
+        tab_desc_23 = "Авто копка перчаткой SB",
     },
     ua = {
         title = "🚀 Лаунчер",
@@ -148,6 +152,7 @@ local translations = {
         tab_name_20 = "Таймер",
         tab_name_21 = "ТП до рукавички",
         tab_name_22 = "Стіна на платформі",
+        tab_name_23 = "Авто копання",
         tab_desc_1 = "Захист від AFK",
         tab_desc_2 = "Авто E та ляпас",
         tab_desc_3 = "Авто натискання клавіш",
@@ -170,6 +175,7 @@ local translations = {
         tab_desc_20 = "Простий таймер",
         tab_desc_21 = "ТП до рукавички",
         tab_desc_22 = "Стіна на платформі",
+        tab_desc_23 = "Авто копання рукавичкою SB",
     }
 }
 
@@ -433,7 +439,7 @@ authorLabel.TextXAlignment = Enum.TextXAlignment.Center
 authorLabel.TextColor3 = Color3.new(1, 1, 1)
 bindText(authorLabel, "author")
 
--- ==================== Скрипты (22 штуки) ====================
+-- ==================== Скрипты (23 штуки) ====================
 local scripts = {
     [[loadstring(game:HttpGet("https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Anti%20AFK"))()]],
     [[loadstring(game:HttpGet("https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Auto%20E%20%26%20Slap"))()]],
@@ -457,6 +463,7 @@ local scripts = {
     [[loadstring(game:HttpGet("https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Timer"))()]],
     [[loadstring(game:HttpGet("https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Tp%20to%20glove"))()]],
     [[loadstring(game:HttpGet("https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Wall%20on%20platform"))()]],
+    [[loadstring(game:HttpGet("https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Auto%20dig%20Glovel%20SB"))()]],  -- 23: Auto dig
 }
 
 -- ==================== Радужная кнопка ====================
