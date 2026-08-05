@@ -1,0 +1,1243 @@
+--[[
+    ╔═══════════════════════════════════════════════════════════════╗
+    ║     🔮 ДЕТЕКТОР + ИНСПЕКТОР v3.2 ANIMATED                    ║
+    ║     Фиолетовое переливание + анимации + сворачивание         ║
+    ║     LocalScript → StarterPlayer → StarterPlayerScripts       ║
+    ╚═══════════════════════════════════════════════════════════════╝
+--]]
+
+-- ═══════════════════════════════════════
+-- 1. СЕРВИСЫ
+-- ═══════════════════════════════════════
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
+
+-- ═══════════════════════════════════════
+-- 2. ПЕРЕМЕННЫЕ И НАСТРОЙКИ
+-- ═══════════════════════════════════════
+
+local SCAN_RADIUS = 100
+local SCAN_INTERVAL = 2
+local scanning = false
+local inspectorActive = true
+local lastInspectedObj = nil
+local activeTab = "detector"
+local lastInspectedData = {}
+
+-- Сворачивание
+local isCollapsed = false
+local FULL_HEIGHT = 260
+local COLLAPSED_HEIGHT = 20
+
+-- Цветовые палитры для переливания
+local PURPLE_PALETTE = {
+    Color3.fromRGB(30, 15, 50),
+    Color3.fromRGB(50, 20, 80),
+    Color3.fromRGB(70, 30, 110),
+    Color3.fromRGB(40, 10, 70),
+}
+
+local TITLE_PALETTE = {
+    Color3.fromRGB(45, 20, 70),
+    Color3.fromRGB(65, 30, 95),
+    Color3.fromRGB(80, 40, 120),
+    Color3.fromRGB(55, 25, 85),
+}
+
+local SCROLL_PALETTE = {
+    Color3.fromRGB(18, 8, 30),
+    Color3.fromRGB(22, 10, 38),
+    Color3.fromRGB(28, 14, 48),
+    Color3.fromRGB(20, 9, 34),
+}
+
+local STROKE_PALETTE = {
+    Color3.fromRGB(120, 60, 200),
+    Color3.fromRGB(150, 80, 230),
+    Color3.fromRGB(180, 100, 255),
+    Color3.fromRGB(130, 70, 210),
+}
+
+local INDICATOR_COLORS = {
+    Color3.fromRGB(180, 80, 255),
+    Color3.fromRGB(120, 40, 200),
+    Color3.fromRGB(200, 120, 255),
+}
+
+local colorIndex = 1
+local indicatorIndex = 1
+local COLOR_INTERVAL = 3
+
+local GENERIC_NAMES = {
+    ["Part"] = true, ["MeshPart"] = true, ["UnionOperation"] = true,
+    ["Union"] = true, ["Wedge"] = true, ["CornerWedge"] = true,
+    ["TrussPart"] = true, ["SpawnLocation"] = true, ["Terrain"] = true,
+    ["BasePart"] = true, ["NegateOperation"] = true, ["SpecialMesh"] = true,
+    ["Model"] = true, ["Folder"] = true,
+}
+
+-- ═══════════════════════════════════════
+-- 3. ПЕРСОНАЖ
+-- ═══════════════════════════════════════
+
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+end)
+
+-- ═══════════════════════════════════════
+-- 4. SELECTIONBOX
+-- ═══════════════════════════════════════
+
+local selectionBox = Instance.new("SelectionBox")
+selectionBox.Name = "InspectorSelection"
+selectionBox.LineThickness = 0.04
+selectionBox.Color3 = Color3.fromRGB(200, 100, 255)
+selectionBox.SurfaceTransparency = 0.85
+selectionBox.Parent = workspace
+
+-- ═══════════════════════════════════════
+-- 5. GUI — СТРУКТУРА
+-- ═══════════════════════════════════════
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DetectorInspectorGui"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- MainFrame (начальное состояние для анимации появления)
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 0, 0, 0)
+mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+mainFrame.BackgroundColor3 = PURPLE_PALETTE[1]
+mainFrame.BackgroundTransparency = 1
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 6)
+mainCorner.Parent = mainFrame
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = STROKE_PALETTE[1]
+mainStroke.Thickness = 1
+mainStroke.Parent = mainFrame
+
+-- TitleBar
+local titleBar = Instance.new("Frame")
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 20)
+titleBar.BackgroundColor3 = TITLE_PALETTE[1]
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleBarCorner = Instance.new("UICorner")
+titleBarCorner.CornerRadius = UDim.new(0, 6)
+titleBarCorner.Parent = titleBar
+
+local titleBottomCover = Instance.new("Frame")
+titleBottomCover.Size = UDim2.new(1, 0, 0, 6)
+titleBottomCover.Position = UDim2.new(0, 0, 1, -6)
+titleBottomCover.BackgroundColor3 = TITLE_PALETTE[1]
+titleBottomCover.BorderSizePixel = 0
+titleBottomCover.Parent = titleBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "TitleLabel"
+titleLabel.Size = UDim2.new(1, -40, 1, 0)
+titleLabel.Position = UDim2.new(0, 7, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "🔮 ДЕТЕКТОР"
+titleLabel.TextColor3 = Color3.fromRGB(220, 180, 255)
+titleLabel.TextSize = 8
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
+
+-- CollapseButton (НОВАЯ)
+local collapseButton = Instance.new("TextButton")
+collapseButton.Name = "CollapseButton"
+collapseButton.Size = UDim2.new(0, 16, 0, 16)
+collapseButton.Position = UDim2.new(1, -38, 0, 2)
+collapseButton.BackgroundTransparency = 1
+collapseButton.Text = "➖"
+collapseButton.TextColor3 = Color3.fromRGB(200, 150, 255)
+collapseButton.TextSize = 8
+collapseButton.Font = Enum.Font.GothamBold
+collapseButton.AutoButtonColor = false
+collapseButton.BorderSizePixel = 0
+collapseButton.Parent = titleBar
+
+-- CloseButton (❌, прозрачный фон)
+local closeButton = Instance.new("TextButton")
+closeButton.Name = "CloseButton"
+closeButton.Size = UDim2.new(0, 16, 0, 16)
+closeButton.Position = UDim2.new(1, -19, 0, 2)
+closeButton.BackgroundTransparency = 1
+closeButton.Text = "❌"
+closeButton.TextColor3 = Color3.fromRGB(255, 100, 100)
+closeButton.TextSize = 8
+closeButton.Font = Enum.Font.GothamBold
+closeButton.AutoButtonColor = false
+closeButton.BorderSizePixel = 0
+closeButton.Parent = titleBar
+
+-- TabBar
+local tabBar = Instance.new("Frame")
+tabBar.Name = "TabBar"
+tabBar.Size = UDim2.new(1, -10, 0, 17)
+tabBar.Position = UDim2.new(0, 5, 0, 22)
+tabBar.BackgroundTransparency = 1
+tabBar.Parent = mainFrame
+
+local tab1Button = Instance.new("TextButton")
+tab1Button.Name = "Tab1"
+tab1Button.Size = UDim2.new(0.48, 0, 1, 0)
+tab1Button.BackgroundColor3 = Color3.fromRGB(80, 40, 120)
+tab1Button.Text = "🔍 Детектор"
+tab1Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+tab1Button.TextSize = 7
+tab1Button.Font = Enum.Font.GothamBold
+tab1Button.AutoButtonColor = false
+tab1Button.BorderSizePixel = 0
+tab1Button.Parent = tabBar
+local tab1Corner = Instance.new("UICorner")
+tab1Corner.CornerRadius = UDim.new(0, 4)
+tab1Corner.Parent = tab1Button
+
+local tab1Indicator = Instance.new("Frame")
+tab1Indicator.Size = UDim2.new(0.6, 0, 0, 1)
+tab1Indicator.Position = UDim2.new(0.2, 0, 1, -2)
+tab1Indicator.BackgroundColor3 = INDICATOR_COLORS[1]
+tab1Indicator.BorderSizePixel = 0
+tab1Indicator.Parent = tab1Button
+
+local tab2Button = Instance.new("TextButton")
+tab2Button.Name = "Tab2"
+tab2Button.Size = UDim2.new(0.48, 0, 1, 0)
+tab2Button.Position = UDim2.new(0.52, 0, 0, 0)
+tab2Button.BackgroundColor3 = Color3.fromRGB(45, 25, 70)
+tab2Button.Text = "🔎 Инспектор"
+tab2Button.TextColor3 = Color3.fromRGB(140, 120, 180)
+tab2Button.TextSize = 7
+tab2Button.Font = Enum.Font.GothamBold
+tab2Button.AutoButtonColor = false
+tab2Button.BorderSizePixel = 0
+tab2Button.Parent = tabBar
+local tab2Corner = Instance.new("UICorner")
+tab2Corner.CornerRadius = UDim.new(0, 4)
+tab2Corner.Parent = tab2Button
+
+local tab2Indicator = Instance.new("Frame")
+tab2Indicator.Size = UDim2.new(0.6, 0, 0, 1)
+tab2Indicator.Position = UDim2.new(0.2, 0, 1, -2)
+tab2Indicator.BackgroundColor3 = INDICATOR_COLORS[1]
+tab2Indicator.BorderSizePixel = 0
+tab2Indicator.Visible = false
+tab2Indicator.Parent = tab2Button
+
+-- ═══════════════════════════════════════
+-- 6. КОНТЕНТ ДЕТЕКТОРА
+-- ═══════════════════════════════════════
+
+local detectorContent = Instance.new("Frame")
+detectorContent.Name = "DetectorContent"
+detectorContent.Size = UDim2.new(1, -10, 1, -45)
+detectorContent.Position = UDim2.new(0, 5, 0, 41)
+detectorContent.BackgroundTransparency = 1
+detectorContent.Visible = true
+detectorContent.ClipsDescendants = true
+detectorContent.Parent = mainFrame
+
+local buttonRow = Instance.new("Frame")
+buttonRow.Size = UDim2.new(1, 0, 0, 17)
+buttonRow.BackgroundTransparency = 1
+buttonRow.Parent = detectorContent
+
+local startButton = Instance.new("TextButton")
+startButton.Size = UDim2.new(0.48, 0, 1, 0)
+startButton.BackgroundColor3 = Color3.fromRGB(34, 139, 34)
+startButton.Text = "▶ Старт"
+startButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+startButton.TextSize = 7
+startButton.Font = Enum.Font.GothamBold
+startButton.AutoButtonColor = false
+startButton.BorderSizePixel = 0
+startButton.Parent = buttonRow
+local startCorner = Instance.new("UICorner")
+startCorner.CornerRadius = UDim.new(0, 4)
+startCorner.Parent = startButton
+
+local stopButton = Instance.new("TextButton")
+stopButton.Size = UDim2.new(0.48, 0, 1, 0)
+stopButton.Position = UDim2.new(0.52, 0, 0, 0)
+stopButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+stopButton.Text = "■ Стоп"
+stopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+stopButton.TextSize = 7
+stopButton.Font = Enum.Font.GothamBold
+stopButton.AutoButtonColor = false
+stopButton.BorderSizePixel = 0
+stopButton.Parent = buttonRow
+local stopCorner = Instance.new("UICorner")
+stopCorner.CornerRadius = UDim.new(0, 4)
+stopCorner.Parent = stopButton
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, 0, 0, 10)
+statusLabel.Position = UDim2.new(0, 0, 0, 19)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "⏸ Нажми ▶ Старт"
+statusLabel.TextColor3 = Color3.fromRGB(180, 140, 220)
+statusLabel.TextSize = 6
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = detectorContent
+
+local copyBox = Instance.new("TextBox")
+copyBox.Size = UDim2.new(1, 0, 0, 12)
+copyBox.Position = UDim2.new(0, 0, 0, 30)
+copyBox.BackgroundColor3 = Color3.fromRGB(35, 18, 55)
+copyBox.Text = ""
+copyBox.PlaceholderText = "Путь объекта..."
+copyBox.TextColor3 = Color3.fromRGB(200, 150, 255)
+copyBox.PlaceholderColor3 = Color3.fromRGB(100, 70, 130)
+copyBox.TextSize = 5
+copyBox.Font = Enum.Font.Code
+copyBox.TextXAlignment = Enum.TextXAlignment.Left
+copyBox.ClearTextOnFocus = false
+copyBox.BorderSizePixel = 0
+copyBox.Parent = detectorContent
+local copyBoxCorner = Instance.new("UICorner")
+copyBoxCorner.CornerRadius = UDim.new(0, 3)
+copyBoxCorner.Parent = copyBox
+local copyBoxPad = Instance.new("UIPadding")
+copyBoxPad.PaddingLeft = UDim.new(0, 3)
+copyBoxPad.Parent = copyBox
+
+local detectorScroll = Instance.new("ScrollingFrame")
+detectorScroll.Name = "DetectorScroll"
+detectorScroll.Size = UDim2.new(1, 0, 1, -46)
+detectorScroll.Position = UDim2.new(0, 0, 0, 44)
+detectorScroll.BackgroundColor3 = SCROLL_PALETTE[1]
+detectorScroll.BorderSizePixel = 0
+detectorScroll.ScrollBarThickness = 2
+detectorScroll.ScrollBarImageColor3 = Color3.fromRGB(140, 60, 220)
+detectorScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+detectorScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+detectorScroll.Parent = detectorContent
+local detScrollCorner = Instance.new("UICorner")
+detScrollCorner.CornerRadius = UDim.new(0, 4)
+detScrollCorner.Parent = detectorScroll
+local detScrollLayout = Instance.new("UIListLayout")
+detScrollLayout.SortOrder = Enum.SortOrder.LayoutOrder
+detScrollLayout.Padding = UDim.new(0, 1)
+detScrollLayout.Parent = detectorScroll
+local detScrollPad = Instance.new("UIPadding")
+detScrollPad.PaddingTop = UDim.new(0, 2)
+detScrollPad.PaddingBottom = UDim.new(0, 2)
+detScrollPad.PaddingLeft = UDim.new(0, 2)
+detScrollPad.PaddingRight = UDim.new(0, 2)
+detScrollPad.Parent = detectorScroll
+
+-- ═══════════════════════════════════════
+-- 7. КОНТЕНТ ИНСПЕКТОРА
+-- ═══════════════════════════════════════
+
+local inspectorContent = Instance.new("Frame")
+inspectorContent.Name = "InspectorContent"
+inspectorContent.Size = UDim2.new(1, -10, 1, -45)
+inspectorContent.Position = UDim2.new(0, 5, 0, 41)
+inspectorContent.BackgroundTransparency = 1
+inspectorContent.Visible = false
+inspectorContent.ClipsDescendants = true
+inspectorContent.Parent = mainFrame
+
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0.48, 0, 0, 15)
+toggleButton.BackgroundColor3 = Color3.fromRGB(50, 160, 50)
+toggleButton.Text = "🟢 Активен"
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.TextSize = 6
+toggleButton.Font = Enum.Font.GothamBold
+toggleButton.AutoButtonColor = false
+toggleButton.BorderSizePixel = 0
+toggleButton.Parent = inspectorContent
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(0, 4)
+toggleCorner.Parent = toggleButton
+
+local hintLabel = Instance.new("TextLabel")
+hintLabel.Size = UDim2.new(0.48, 0, 0, 15)
+hintLabel.Position = UDim2.new(0.52, 0, 0, 0)
+hintLabel.BackgroundTransparency = 1
+hintLabel.Text = "Кликни на объект"
+hintLabel.TextColor3 = Color3.fromRGB(160, 120, 200)
+hintLabel.TextSize = 6
+hintLabel.Font = Enum.Font.Gotham
+hintLabel.TextXAlignment = Enum.TextXAlignment.Right
+hintLabel.Parent = inspectorContent
+
+local objectNameLabel = Instance.new("TextLabel")
+objectNameLabel.Size = UDim2.new(1, 0, 0, 14)
+objectNameLabel.Position = UDim2.new(0, 0, 0, 17)
+objectNameLabel.BackgroundColor3 = TITLE_PALETTE[1]
+objectNameLabel.Text = "—"
+objectNameLabel.TextColor3 = Color3.fromRGB(255, 200, 150)
+objectNameLabel.TextSize = 7
+objectNameLabel.Font = Enum.Font.GothamBold
+objectNameLabel.BorderSizePixel = 0
+objectNameLabel.Parent = inspectorContent
+local objNameCorner = Instance.new("UICorner")
+objNameCorner.CornerRadius = UDim.new(0, 3)
+objNameCorner.Parent = objectNameLabel
+
+local inspectorScroll = Instance.new("ScrollingFrame")
+inspectorScroll.Name = "InspectorScroll"
+inspectorScroll.Size = UDim2.new(1, 0, 1, -55)
+inspectorScroll.Position = UDim2.new(0, 0, 0, 33)
+inspectorScroll.BackgroundColor3 = SCROLL_PALETTE[1]
+inspectorScroll.BorderSizePixel = 0
+inspectorScroll.ScrollBarThickness = 2
+inspectorScroll.ScrollBarImageColor3 = Color3.fromRGB(140, 60, 220)
+inspectorScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+inspectorScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+inspectorScroll.Parent = inspectorContent
+local insScrollCorner = Instance.new("UICorner")
+insScrollCorner.CornerRadius = UDim.new(0, 4)
+insScrollCorner.Parent = inspectorScroll
+local insScrollLayout = Instance.new("UIListLayout")
+insScrollLayout.SortOrder = Enum.SortOrder.LayoutOrder
+insScrollLayout.Padding = UDim.new(0, 1)
+insScrollLayout.Parent = inspectorScroll
+local insScrollPad = Instance.new("UIPadding")
+insScrollPad.PaddingTop = UDim.new(0, 2)
+insScrollPad.PaddingBottom = UDim.new(0, 2)
+insScrollPad.PaddingLeft = UDim.new(0, 2)
+insScrollPad.PaddingRight = UDim.new(0, 2)
+insScrollPad.Parent = inspectorScroll
+
+local bottomRow = Instance.new("Frame")
+bottomRow.Size = UDim2.new(1, 0, 0, 16)
+bottomRow.Position = UDim2.new(0, 0, 1, -16)
+bottomRow.BackgroundTransparency = 1
+bottomRow.Parent = inspectorContent
+
+local teleportBtn = Instance.new("TextButton")
+teleportBtn.Size = UDim2.new(0.32, 0, 1, 0)
+teleportBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 180)
+teleportBtn.Text = "📍 ТП"
+teleportBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+teleportBtn.TextSize = 6
+teleportBtn.Font = Enum.Font.GothamBold
+teleportBtn.AutoButtonColor = false
+teleportBtn.BorderSizePixel = 0
+teleportBtn.Visible = false
+teleportBtn.Parent = bottomRow
+local tpCorner = Instance.new("UICorner")
+tpCorner.CornerRadius = UDim.new(0, 4)
+tpCorner.Parent = teleportBtn
+
+local descriptionBtn = Instance.new("TextButton")
+descriptionBtn.Size = UDim2.new(0.32, 0, 1, 0)
+descriptionBtn.Position = UDim2.new(0.34, 0, 0, 0)
+descriptionBtn.BackgroundColor3 = Color3.fromRGB(60, 100, 60)
+descriptionBtn.Text = "📝 Описание"
+descriptionBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+descriptionBtn.TextSize = 6
+descriptionBtn.Font = Enum.Font.GothamBold
+descriptionBtn.AutoButtonColor = false
+descriptionBtn.BorderSizePixel = 0
+descriptionBtn.Visible = false
+descriptionBtn.Parent = bottomRow
+local descCorner = Instance.new("UICorner")
+descCorner.CornerRadius = UDim.new(0, 4)
+descCorner.Parent = descriptionBtn
+
+local copyAllBtn = Instance.new("TextButton")
+copyAllBtn.Size = UDim2.new(0.32, 0, 1, 0)
+copyAllBtn.Position = UDim2.new(0.68, 0, 0, 0)
+copyAllBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 160)
+copyAllBtn.Text = "📋 Всё"
+copyAllBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+copyAllBtn.TextSize = 6
+copyAllBtn.Font = Enum.Font.GothamBold
+copyAllBtn.AutoButtonColor = false
+copyAllBtn.BorderSizePixel = 0
+copyAllBtn.Visible = false
+copyAllBtn.Parent = bottomRow
+local copyAllCorner = Instance.new("UICorner")
+copyAllCorner.CornerRadius = UDim.new(0, 4)
+copyAllCorner.Parent = copyAllBtn
+
+-- ═══════════════════════════════════════
+-- 8. АНИМАЦИИ — ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+-- ═══════════════════════════════════════
+
+-- Hover-эффект для кнопок
+local function addHoverEffect(btn, normalColor)
+    local originalSize = btn.Size
+    local hoverColor = Color3.new(
+        math.min(normalColor.R + 0.1, 1),
+        math.min(normalColor.G + 0.1, 1),
+        math.min(normalColor.B + 0.1, 1)
+    )
+
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15, Enum.EasingStyle.Quad),
+            {BackgroundColor3 = hoverColor}):Play()
+    end)
+
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.15, Enum.EasingStyle.Quad),
+            {BackgroundColor3 = normalColor}):Play()
+    end)
+
+    btn.MouseButton1Down:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.08, Enum.EasingStyle.Quad),
+            {Size = UDim2.new(originalSize.X.Scale, originalSize.X.Offset - 2,
+                              originalSize.Y.Scale, originalSize.Y.Offset - 1)}):Play()
+    end)
+
+    btn.MouseButton1Up:Connect(function()
+        TweenService:Create(btn, TweenInfo.new(0.08, Enum.EasingStyle.Quad),
+            {Size = originalSize}):Play()
+    end)
+end
+
+-- Применяем hover-эффекты
+addHoverEffect(startButton, Color3.fromRGB(34, 139, 34))
+addHoverEffect(stopButton, Color3.fromRGB(180, 40, 40))
+addHoverEffect(teleportBtn, Color3.fromRGB(60, 80, 180))
+addHoverEffect(descriptionBtn, Color3.fromRGB(60, 100, 60))
+addHoverEffect(copyAllBtn, Color3.fromRGB(100, 50, 160))
+addHoverEffect(toggleButton, Color3.fromRGB(50, 160, 50))
+addHoverEffect(tab1Button, Color3.fromRGB(80, 40, 120))
+addHoverEffect(tab2Button, Color3.fromRGB(45, 25, 70))
+
+-- Hover для closeButton
+closeButton.MouseEnter:Connect(function()
+    TweenService:Create(closeButton, TweenInfo.new(0.15),
+        {Size = UDim2.new(0, 18, 0, 18)}):Play()
+end)
+closeButton.MouseLeave:Connect(function()
+    TweenService:Create(closeButton, TweenInfo.new(0.15),
+        {Size = UDim2.new(0, 16, 0, 16)}):Play()
+end)
+
+-- Hover для collapseButton
+collapseButton.MouseEnter:Connect(function()
+    TweenService:Create(collapseButton, TweenInfo.new(0.15),
+        {Size = UDim2.new(0, 18, 0, 18)}):Play()
+end)
+collapseButton.MouseLeave:Connect(function()
+    TweenService:Create(collapseButton, TweenInfo.new(0.15),
+        {Size = UDim2.new(0, 16, 0, 16)}):Play()
+end)
+
+-- ═══════════════════════════════════════
+-- 9. ПЕРЕТАСКИВАНИЕ ОКНА
+-- ═══════════════════════════════════════
+
+do
+    local dragging = false
+    local dragStart, startPos = nil, nil
+
+    titleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or
+           input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = mainFrame.Position
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or
+           input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            mainFrame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or
+           input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════
+-- 10. ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК С АНИМАЦИЕЙ
+-- ═══════════════════════════════════════
+
+local function switchTab(tabName)
+    if isCollapsed then return end
+    local oldTab = activeTab
+    activeTab = tabName
+
+    local slideInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+    if tabName == "detector" then
+        -- Анимация ухода инспектора вправо
+        if oldTab == "inspector" then
+            TweenService:Create(inspectorContent, slideInfo,
+                {Position = UDim2.new(1, 0, 0, 41)}):Play()
+            task.delay(0.2, function()
+                inspectorContent.Visible = false
+                inspectorContent.Position = UDim2.new(0, 5, 0, 41)
+            end)
+        end
+        -- Анимация появления детектора слева
+        detectorContent.Position = UDim2.new(-1, 0, 0, 41)
+        detectorContent.Visible = true
+        TweenService:Create(detectorContent, slideInfo,
+            {Position = UDim2.new(0, 5, 0, 41)}):Play()
+
+        tab1Button.BackgroundColor3 = Color3.fromRGB(80, 40, 120)
+        tab1Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        tab1Indicator.Visible = true
+        tab2Button.BackgroundColor3 = Color3.fromRGB(45, 25, 70)
+        tab2Button.TextColor3 = Color3.fromRGB(140, 120, 180)
+        tab2Indicator.Visible = false
+        titleLabel.Text = "🔮 ДЕТЕКТОР"
+    else
+        -- Анимация ухода детектора влево
+        if oldTab == "detector" then
+            TweenService:Create(detectorContent, slideInfo,
+                {Position = UDim2.new(-1, 0, 0, 41)}):Play()
+            task.delay(0.2, function()
+                detectorContent.Visible = false
+                detectorContent.Position = UDim2.new(0, 5, 0, 41)
+            end)
+        end
+        -- Анимация появления инспектора справа
+        inspectorContent.Position = UDim2.new(1, 0, 0, 41)
+        inspectorContent.Visible = true
+        TweenService:Create(inspectorContent, slideInfo,
+            {Position = UDim2.new(0, 5, 0, 41)}):Play()
+
+        tab1Button.BackgroundColor3 = Color3.fromRGB(45, 25, 70)
+        tab1Button.TextColor3 = Color3.fromRGB(140, 120, 180)
+        tab1Indicator.Visible = false
+        tab2Button.BackgroundColor3 = Color3.fromRGB(80, 40, 120)
+        tab2Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        tab2Indicator.Visible = true
+        titleLabel.Text = "🔮 ИНСПЕКТОР"
+    end
+end
+
+tab1Button.MouseButton1Click:Connect(function() switchTab("detector") end)
+tab2Button.MouseButton1Click:Connect(function() switchTab("inspector") end)
+
+-- ═══════════════════════════════════════
+-- 11. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (ЛОГИКА)
+-- ═══════════════════════════════════════
+
+local function isGenericName(name) return GENERIC_NAMES[name] == true end
+
+local function shortenPath(fullName, maxParts)
+    maxParts = maxParts or 3
+    local segs = {}
+    for seg in string.gmatch(fullName, "[^%.]+") do table.insert(segs, seg) end
+    local st = math.max(1, #segs - maxParts + 1)
+    local res = {}
+    for i = st, #segs do table.insert(res, segs[i]) end
+    return table.concat(res, " › ")
+end
+
+local function getSmartName(obj)
+    local fullPath = obj:GetFullName()
+    local objName = (obj.Name ~= "" and obj.Name) or obj.ClassName
+    if not isGenericName(objName) then return objName, fullPath end
+    local cur = obj.Parent
+    local depth = 0
+    while cur and cur ~= workspace and cur ~= game and depth < 10 do
+        local pn = cur.Name
+        if pn and pn ~= "" and not isGenericName(pn) then
+            if cur:IsA("Model") then return pn .. "(м)", fullPath
+            elseif cur:IsA("Folder") then return pn .. "/" .. objName, fullPath
+            else return pn .. "→" .. objName, fullPath end
+        end
+        cur = cur.Parent
+        depth = depth + 1
+    end
+    return shortenPath(fullPath, 3), fullPath
+end
+
+local function findParentContainer(obj)
+    local cur = obj.Parent
+    while cur and cur ~= workspace and cur ~= game do
+        if cur:IsA("Model") or cur:IsA("Folder") then return cur end
+        cur = cur.Parent
+    end
+    return nil
+end
+
+local function getModelDisplayName(model)
+    if not isGenericName(model.Name) then return model.Name end
+    local cur = model.Parent
+    local depth = 0
+    while cur and cur ~= workspace and cur ~= game and depth < 5 do
+        if cur.Name and cur.Name ~= "" and not isGenericName(cur.Name) then
+            return cur.Name .. "→" .. model.Name
+        end
+        cur = cur.Parent
+        depth = depth + 1
+    end
+    return shortenPath(model:GetFullName(), 3)
+end
+
+local function isPlayerModel(model)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Character and p.Character == model then return true, p end
+    end
+    if model:FindFirstChildOfClass("Humanoid") then return true, nil end
+    return false, nil
+end
+
+local function getDistanceColor(dist)
+    if dist <= 30 then return Color3.fromRGB(255, 100, 150)
+    elseif dist <= 60 then return Color3.fromRGB(255, 200, 100)
+    else return Color3.fromRGB(150, 180, 255) end
+end
+
+-- ═══════════════════════════════════════
+-- 12. ИНСПЕКТОР — ФУНКЦИИ
+-- ═══════════════════════════════════════
+
+local function clearInspectorScroll()
+    for _, ch in ipairs(inspectorScroll:GetChildren()) do
+        if ch:IsA("Frame") then ch:Destroy() end
+    end
+end
+
+local function getValueColor(val)
+    local s = tostring(val)
+    if s == "true" then return Color3.fromRGB(100, 220, 150)
+    elseif s == "false" then return Color3.fromRGB(220, 100, 120)
+    elseif tonumber(s) then return Color3.fromRGB(150, 180, 255)
+    elseif string.find(s, "Enum") then return Color3.fromRGB(220, 150, 255)
+    else return Color3.fromRGB(220, 200, 180) end
+end
+
+-- addInspectorRow с анимацией появления
+local function addInspectorRow(key, value, index)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 12)
+    row.BackgroundColor3 = Color3.fromRGB(35, 20, 55)
+    row.BackgroundTransparency = 1  -- начинаем с прозрачного
+    row.BorderSizePixel = 0
+    row.LayoutOrder = index
+    row.Parent = inspectorScroll
+
+    local rowCorner = Instance.new("UICorner")
+    rowCorner.CornerRadius = UDim.new(0, 2)
+    rowCorner.Parent = row
+
+    -- Анимация появления (волна)
+    local targetTransp = (index % 2 == 0) and 0.6 or 0.4
+    task.delay(index * 0.03, function()
+        if row and row.Parent then
+            TweenService:Create(row, TweenInfo.new(0.2, Enum.EasingStyle.Quad),
+                {BackgroundTransparency = targetTransp}):Play()
+        end
+    end)
+
+    local keyLabel = Instance.new("TextLabel")
+    keyLabel.Size = UDim2.new(0.38, 0, 1, 0)
+    keyLabel.BackgroundTransparency = 1
+    keyLabel.Text = key
+    keyLabel.TextColor3 = Color3.fromRGB(180, 140, 220)
+    keyLabel.TextSize = 6
+    keyLabel.Font = Enum.Font.Gotham
+    keyLabel.TextXAlignment = Enum.TextXAlignment.Left
+    keyLabel.Parent = row
+    local keyPad = Instance.new("UIPadding")
+    keyPad.PaddingLeft = UDim.new(0, 4)
+    keyPad.Parent = keyLabel
+
+    local valueBtn = Instance.new("TextButton")
+    valueBtn.Size = UDim2.new(0.62, 0, 1, 0)
+    valueBtn.Position = UDim2.new(0.38, 0, 0, 0)
+    valueBtn.BackgroundTransparency = 1
+    valueBtn.Text = tostring(value)
+    valueBtn.TextColor3 = getValueColor(value)
+    valueBtn.TextSize = 6
+    valueBtn.Font = Enum.Font.Code
+    valueBtn.TextXAlignment = Enum.TextXAlignment.Left
+    valueBtn.TextTruncate = Enum.TextTruncate.AtEnd
+    valueBtn.AutoButtonColor = false
+    valueBtn.Parent = row
+
+    valueBtn.MouseButton1Click:Connect(function()
+        pcall(function() if setclipboard then setclipboard(tostring(value)) end end)
+        copyBox.Text = tostring(value)
+        local origCol = valueBtn.TextColor3
+        valueBtn.TextColor3 = Color3.fromRGB(100, 255, 150)
+        task.delay(0.3, function()
+            if valueBtn and valueBtn.Parent then valueBtn.TextColor3 = origCol end
+        end)
+    end)
+end
+
+local function inspectObject(obj)
+    if not obj then return end
+    lastInspectedObj = obj
+    selectionBox.Adornee = obj
+    selectionBox.Color3 = Color3.fromRGB(100, 255, 150)
+    objectNameLabel.Text = obj.Name ~= "" and obj.Name or obj.ClassName
+    clearInspectorScroll()
+    lastInspectedData = {}
+
+    local function safeGet(fn)
+        local ok, val = pcall(fn)
+        return ok and tostring(val) or "н/д"
+    end
+
+    lastInspectedData["Name"] = obj.Name ~= "" and obj.Name or obj.ClassName
+    lastInspectedData["ClassName"] = obj.ClassName
+    lastInspectedData["Parent"] = obj.Parent and obj.Parent.Name or "nil"
+    lastInspectedData["FullPath"] = obj:GetFullName()
+    lastInspectedData["Anchored"] = safeGet(function() return obj.Anchored end)
+    lastInspectedData["CanCollide"] = safeGet(function() return obj.CanCollide end)
+    lastInspectedData["Locked"] = safeGet(function() return obj.Locked end)
+    lastInspectedData["Massless"] = safeGet(function() return obj.Massless end)
+    lastInspectedData["Material"] = safeGet(function() return tostring(obj.Material):gsub("Enum.Material.", "") end)
+    lastInspectedData["ColorRGB"] = safeGet(function()
+        local c = obj.Color
+        return math.floor(c.R*255)..","..math.floor(c.G*255)..","..math.floor(c.B*255)
+    end)
+    lastInspectedData["BrickColor"] = safeGet(function() return tostring(obj.BrickColor) end)
+    lastInspectedData["Transparency"] = safeGet(function() return obj.Transparency end)
+    lastInspectedData["CastShadow"] = safeGet(function() return obj.CastShadow end)
+    lastInspectedData["SizeX"] = safeGet(function() return string.format("%.2f", obj.Size.X) end)
+    lastInspectedData["SizeY"] = safeGet(function() return string.format("%.2f", obj.Size.Y) end)
+    lastInspectedData["SizeZ"] = safeGet(function() return string.format("%.2f", obj.Size.Z) end)
+    lastInspectedData["PosX"] = safeGet(function() return string.format("%.2f", obj.Position.X) end)
+    lastInspectedData["PosY"] = safeGet(function() return string.format("%.2f", obj.Position.Y) end)
+    lastInspectedData["PosZ"] = safeGet(function() return string.format("%.2f", obj.Position.Z) end)
+    lastInspectedData["Children"] = safeGet(function() return #obj:GetChildren() end)
+
+    if humanoidRootPart and humanoidRootPart.Parent then
+        local distOk, dist = pcall(function() return (obj.Position - humanoidRootPart.Position).Magnitude end)
+        if distOk then lastInspectedData["Distance"] = string.format("%.1f", dist) end
+    end
+
+    local props = {
+        {"Имя", lastInspectedData["Name"]}, {"Класс", lastInspectedData["ClassName"]},
+        {"Родитель", lastInspectedData["Parent"]}, {"──", "────────"},
+        {"Anchored", lastInspectedData["Anchored"]}, {"CanCollide", lastInspectedData["CanCollide"]},
+        {"──", "────────"}, {"Материал", lastInspectedData["Material"]},
+        {"RGB", lastInspectedData["ColorRGB"]}, {"──", "────────"},
+        {"Size", lastInspectedData["SizeX"].."×"..lastInspectedData["SizeY"].."×"..lastInspectedData["SizeZ"]},
+        {"Pos", lastInspectedData["PosX"]..","..lastInspectedData["PosY"]..","..lastInspectedData["PosZ"]},
+        {"──", "────────"}, {"Дети", lastInspectedData["Children"]},
+    }
+    if lastInspectedData["Distance"] then table.insert(props, {"Расст.", lastInspectedData["Distance"].." ст."}) end
+    for i, p in ipairs(props) do addInspectorRow(p[1], p[2], i) end
+    teleportBtn.Visible = true
+    descriptionBtn.Visible = true
+    copyAllBtn.Visible = true
+    hintLabel.Text = "✓ Выбран"
+end
+
+-- ═══════════════════════════════════════
+-- 13. ИНСПЕКТОР — HOVER И КЛИК
+-- ═══════════════════════════════════════
+
+mouse.Move:Connect(function()
+    if not inspectorActive then selectionBox.Adornee = nil return end
+    if activeTab == "inspector" then
+        local target = mouse.Target
+        if target and target:IsA("BasePart") then
+            if target ~= lastInspectedObj then selectionBox.Color3 = Color3.fromRGB(200, 100, 255) end
+            selectionBox.Adornee = target
+        elseif not lastInspectedObj then selectionBox.Adornee = nil end
+    end
+end)
+
+mouse.Button1Down:Connect(function()
+    if not inspectorActive or activeTab ~= "inspector" then return end
+    local target = mouse.Target
+    if target and target:IsA("BasePart") then inspectObject(target)
+    else hintLabel.Text = "❌ Не найден" end
+end)
+
+-- ═══════════════════════════════════════
+-- 14. ДЕТЕКТОР — ЛОГ С АНИМАЦИЕЙ
+-- ═══════════════════════════════════════
+
+local function clearDetectorLog()
+    for _, ch in ipairs(detectorScroll:GetChildren()) do
+        if ch:IsA("Frame") or ch:IsA("TextLabel") then ch:Destroy() end
+    end
+end
+
+local function addDetectorSeparator(text, order)
+    local sep = Instance.new("TextLabel")
+    sep.Size = UDim2.new(1, 0, 0, 9)
+    sep.BackgroundTransparency = 1
+    sep.Text = text
+    sep.TextColor3 = Color3.fromRGB(120, 80, 180)
+    sep.TextSize = 5
+    sep.Font = Enum.Font.Code
+    sep.TextXAlignment = Enum.TextXAlignment.Center
+    sep.LayoutOrder = order
+    sep.Parent = detectorScroll
+end
+
+local function addDetectorEntry(text, color, fullPath, objRef, order, displayName, className, distance)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 13)
+    row.BackgroundColor3 = Color3.fromRGB(40, 22, 65)
+    row.BackgroundTransparency = 1  -- начинаем прозрачным
+    row.BorderSizePixel = 0
+    row.LayoutOrder = order
+    row.Parent = detectorScroll
+
+    local rowCorner = Instance.new("UICorner")
+    rowCorner.CornerRadius = UDim.new(0, 3)
+    rowCorner.Parent = row
+
+    -- Волновая анимация появления
+    task.delay(order * 0.02, function()
+        if row and row.Parent then
+            TweenService:Create(row, TweenInfo.new(0.15, Enum.EasingStyle.Quad),
+                {BackgroundTransparency = 0.5}):Play()
+        end
+    end)
+
+    local mainBtn = Instance.new("TextButton")
+    mainBtn.Size = UDim2.new(1, -18, 1, 0)
+    mainBtn.BackgroundTransparency = 1
+    mainBtn.Text = text
+    mainBtn.TextColor3 = color
+    mainBtn.TextSize = 6
+    mainBtn.Font = Enum.Font.Code
+    mainBtn.TextXAlignment = Enum.TextXAlignment.Left
+    mainBtn.TextTruncate = Enum.TextTruncate.AtEnd
+    mainBtn.AutoButtonColor = false
+    mainBtn.Parent = row
+    local mainPad = Instance.new("UIPadding")
+    mainPad.PaddingLeft = UDim.new(0, 3)
+    mainPad.Parent = mainBtn
+
+    mainBtn.MouseEnter:Connect(function()
+        TweenService:Create(row, TweenInfo.new(0.1), {BackgroundTransparency = 0.2}):Play()
+    end)
+    mainBtn.MouseLeave:Connect(function()
+        TweenService:Create(row, TweenInfo.new(0.1), {BackgroundTransparency = 0.5}):Play()
+    end)
+
+    mainBtn.MouseButton1Click:Connect(function()
+        pcall(function() if setclipboard then setclipboard(fullPath) end end)
+        local brief = string.format("[%s] | %s | %s ст. | %s",
+            displayName or "?", className or "?",
+            distance and string.format("%.1f", distance) or "?", fullPath)
+        copyBox.Text = brief
+        copyBox:CaptureFocus()
+        TweenService:Create(row, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(60, 120, 80)}):Play()
+        task.delay(0.3, function()
+            if row and row.Parent then
+                TweenService:Create(row, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 22, 65)}):Play()
+            end
+        end)
+    end)
+
+    local inspectBtn = Instance.new("TextButton")
+    inspectBtn.Size = UDim2.new(0, 15, 0, 11)
+    inspectBtn.Position = UDim2.new(1, -16, 0.5, -5)
+    inspectBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 130)
+    inspectBtn.Text = "🔎"
+    inspectBtn.TextSize = 6
+    inspectBtn.AutoButtonColor = false
+    inspectBtn.BorderSizePixel = 0
+    inspectBtn.Parent = row
+    local inspBtnCorner = Instance.new("UICorner")
+    inspBtnCorner.CornerRadius = UDim.new(0, 2)
+    inspBtnCorner.Parent = inspectBtn
+
+    inspectBtn.MouseButton1Click:Connect(function()
+        if objRef and objRef.Parent then switchTab("inspector") inspectObject(objRef) end
+    end)
+end
+
+-- ═══════════════════════════════════════
+-- 15. ДЕТЕКТОР — СКАНИРОВАНИЕ
+-- ═══════════════════════════════════════
+
+local function performScan()
+    if not humanoidRootPart or not humanoidRootPart.Parent then
+        statusLabel.Text = "⚠ Нет персонажа" return
+    end
+    local playerPos = humanoidRootPart.Position
+    local allDesc = workspace:GetDescendants()
+    local modelGroups, soloEntries = {}, {}
+
+    for _, obj in ipairs(allDesc) do
+        if obj:IsA("BasePart") then
+            local isOwn = character and obj:IsDescendantOf(character)
+            if not isOwn then
+                local ok, dist = pcall(function() return (obj.Position - playerPos).Magnitude end)
+                if ok and dist <= SCAN_RADIUS then
+                    local container = findParentContainer(obj)
+                    if container then
+                        if not modelGroups[container] then
+                            modelGroups[container] = {parts = {}, minDist = dist, totalParts = 0, firstPart = obj}
+                        end
+                        local g = modelGroups[container]
+                        table.insert(g.parts, obj) g.totalParts = g.totalParts + 1
+                        if dist < g.minDist then g.minDist = dist g.firstPart = obj end
+                    else
+                        local sn, fp = getSmartName(obj)
+                        table.insert(soloEntries, {name=sn, fullPath=fp, className=obj.ClassName, distance=dist, objRef=obj})
+                    end
+                end
+            end
+        end
+    end
+
+    clearDetectorLog()
+    local order, total = 0, 0
+    addDetectorSeparator("── 🔮 Радиус:"..SCAN_RADIUS.." ──", order) order = order + 1
+
+    local sorted = {}
+    for m, g in pairs(modelGroups) do table.insert(sorted, {model=m, group=g}) end
+    table.sort(sorted, function(a,b) return a.group.minDist < b.group.minDist end)
+
+    for _, e in ipairs(sorted) do
+        local m, g = e.model, e.group
+        local col = getDistanceColor(g.minDist)
+        local icon = isPlayerModel(m) and "👤" or "📦"
+        local dn = getModelDisplayName(m)
+        local txt = string.format("%s %s(%d)|%.0f", icon, dn, g.totalParts, g.minDist)
+        addDetectorEntry(txt, col, m:GetFullName(), g.firstPart, order, dn, m.ClassName, g.minDist)
+        order = order + 1 total = total + 1
+    end
+
+    if #soloEntries > 0 and #sorted > 0 then addDetectorSeparator("── Части ──", order) order = order + 1 end
+    table.sort(soloEntries, function(a,b) return a.distance < b.distance end)
+
+    for _, e in ipairs(soloEntries) do
+        local col = getDistanceColor(e.distance)
+        local txt = string.format("🔹 %s|%.0f", e.name, e.distance)
+        addDetectorEntry(txt, col, e.fullPath, e.objRef, order, e.name, e.className, e.distance)
+        order = order + 1 total = total + 1
+    end
+
+    addDetectorSeparator("── Найдено: "..total.." ──", order)
+    statusLabel.Text = "🔮 Найдено: "..total
+    task.defer(function() detectorScroll.CanvasPosition = Vector2.new(0, math.huge) end)
+end
+
+-- ═══════════════════════════════════════
+-- 16. ОБРАБОТЧИКИ КНОПОК
+-- ═══════════════════════════════════════
+
+startButton.MouseButton1Click:Connect(function()
+    if scanning then return end
+    scanning = true clearDetectorLog() copyBox.Text = ""
+    statusLabel.Text = "🔮 Запуск..."
+    startButton.BackgroundColor3 = Color3.fromRGB(20, 100, 20)
+    performScan()
+    task.spawn(function() while scanning do task.wait(SCAN_INTERVAL) if scanning then performScan() end end end)
+end)
+
+stopButton.MouseButton1Click:Connect(function()
+    if not scanning then return end
+    scanning = false statusLabel.Text = "⏸ Стоп"
+    startButton.BackgroundColor3 = Color3.fromRGB(34, 139, 34)
+end)
+
+toggleButton.MouseButton1Click:Connect(function()
+    inspectorActive = not inspectorActive
+    if inspectorActive then
+        toggleButton.Text = "🟢 Активен"
+        toggleButton.BackgroundColor3 = Color3.fromRGB(50, 160, 50)
+        hintLabel.Text = "Кликни на объект"
+    else
+        toggleButton.Text = "🔴 Выкл"
+        toggleButton.BackgroundColor3 = Color3.fromRGB(160, 50, 50)
+        selectionBox.Adornee = nil
+        hintLabel.Text = "Отключён"
+    end
+end)
+
+teleportBtn.MouseButton1Click:Connect(function()
+    if lastInspectedObj and lastInspectedObj.Parent then
+        pcall(function()
+            humanoidRootPart.CFrame = CFrame.new(lastInspectedObj.Position + Vector3.new(0, lastInspectedObj.Size.Y/2 + 4, 0))
+        end)
+        hintLabel.Text = "📍 ТП!"
+        task.delay(1, function() if hintLabel then hintLabel.Text = "✓ Выбран" end end)
+    end
+end)
+
+descriptionBtn.MouseButton1Click:Connect(function()
+    if not lastInspectedObj then return end
+    local d = lastInspectedData
+    local lines = {
+        "╔══ ОБЪЕКТ: "..(d["Name"] or "?").." ══╗",
+        "Класс:        "..(d["ClassName"] or "?"),
+        "Родитель:     "..(d["Parent"] or "?"),
+        "FullPath:     "..(d["FullPath"] or "?"),
+        "─────────────────────────",
+        "Anchored:     "..(d["Anchored"] or "?"),
+        "CanCollide:   "..(d["CanCollide"] or "?"),
+        "─────────────────────────",
+        "Материал:     "..(d["Material"] or "?"),
+        "Color RGB:    "..(d["ColorRGB"] or "?"),
+        "─────────────────────────",
+        "Size:         X="..(d["SizeX"] or "?").." Y="..(d["SizeY"] or "?").." Z="..(d["SizeZ"] or "?"),
+        "Position:     X="..(d["PosX"] or "?").." Y="..(d["PosY"] or "?").." Z="..(d["PosZ"] or "?"),
+        "─────────────────────────",
+        "Детей:        "..(d["Children"] or "?"),
+        "Расстояние:   "..(d["Distance"] or "?").." ст.",
+        "╚══════════════════════════╝",
+    }
+    local desc = table.concat(lines, "\n")
+    pcall(function() if setclipboard then setclipboard(desc) end end)
+    copyBox.Text = desc copyBox:CaptureFocus()
+    descriptionBtn.Text = "✓ Готово!"
+    task.delay(1, function() if descriptionBtn then descriptionBtn.Text = "📝 Описание" end end)
+end)
+
+copyAllBtn.MouseButton1Click:Connect(function()
+    if not lastInspectedObj then return end
+    local parts = {}
+    for k, v in pairs(lastInspectedData) do table.insert(parts, k..":"..tostring(v)) end
+    local result = table.concat(parts, " | ")
+    pcall(function() if setclipboard then setclipboard(result) end end)
+    copyBox.Text = result copyBox:CaptureFocus()
+    copyAllBtn.Text = "✓"
+    task.delay(1, function() if copyAllBtn then copyAllBtn.Text = "📋 Всё" end end)
+end)
+
+-- ═══════════════════════════════════════
+-- 17. СВОРАЧИВАНИЕ
+-- ═══════════════════════════════════════
+
+collapseButton.MouseButton1Click:Connect(function()
+    isCollapsed = not isCollapsed
+    local collapseInfo = TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+
+    if isCollapsed then
+        collapseButton.Text = "➕"
+        local tween = TweenService:Create(mainFrame, collapseInfo,
+            {Size = UDim2.new(0, 190, 0, COLLAPSED_HEIGHT)})
+        tween:Play()
+        tween.Completed:Connect(function()
+            tabBar.Visible = false
+            detectorContent.Visible = false
+            inspectorContent.Visible = false
+        end)
+    else
+        collapseButton.Text = "➖"
+        tabBar.Visible = true
+        if activeTab == "detector" then
+            detectorContent.Visible = true
+        else
+            inspectorContent.Visible = true
+        end
+        TweenService:Create(mainFrame, collapseInfo,
+            {Size = UDim2.new(0, 190, 0, FULL_HEIGHT)}):Play()
+    end
+end)
+
+-- ═══════════════════════════════════════
+-- 18. АНИМАЦИЯ ЗАКРЫТИЯ
+-- ═══════════════════════════════════════
+
+closeButton.MouseButton1Click:Connect(function()
+    scanning = false
+    local closeInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+    local closeTween = TweenService:Create(mainFrame, closeInfo, {
+        Size = UDim2.new(0, 0, 0, 0),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        BackgroundTransparency = 1
+    })
+    closeTween:Play()
+    closeTween.Completed:Connect(function()
+        mainFrame.Visible = false
+        selectionBox.Adornee = nil
+    end)
+end)
+
+-- F8 toggle
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.F8 then
+        inspectorActive = not inspectorActive
+        if inspectorActive then
+            toggleButton.Text = "🟢 Активен"
+            toggleButton.BackgroundColor3 = Color3.fromRGB(50, 160, 50)
+            hintLabel.Text = "Кликни на объект"
+        else
+            toggleButton.Text = "🔴 Выкл"
+            toggleButton.BackgroundColor3 = Color3.fromRGB(160, 50, 50)
+            selectionBox.Adornee = nil hintLabel.Text = "F8: Выкл"
+        end
+    end
+end)
+
+-- ═══════════════════════════════════════
+-- 19. ПЕРЕЛИВАНИЕ ЦВЕТОВ
+-- ═══════════════════════════════════════
+
+local colorAnimRunning = true
+
+task.spawn(function()
+    while true do
+        task.wait(COLOR_INTERVAL)
+        if mainFrame.Visible and colorAnimRunning then
+            colorIndex = (colorIndex % #PURPLE_PALETTE) + 1
+            indicatorIndex = (indicatorIndex % #INDICATOR_COLORS) + 1
+            local tweenInfo = TweenInfo.new(2.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+
+            TweenService:Create(mainFrame, tweenInfo, {BackgroundColor3 = PURPLE_PALETTE[colorIndex]}):Play()
+            TweenService:Create(mainStroke, tweenInfo, {Color = STROKE_PALETTE[colorIndex]}):Play()
+            TweenService:Create(titleBar, tweenInfo, {BackgroundColor3 = TITLE_PALETTE[colorIndex]}):Play()
+            TweenService:Create(titleBottomCover, tweenInfo, {BackgroundColor3 = TITLE_PALETTE[colorIndex]}):Play()
+            TweenService:Create(detectorScroll, tweenInfo, {BackgroundColor3 = SCROLL_PALETTE[colorIndex]}):Play()
+            TweenService:Create(inspectorScroll, tweenInfo, {BackgroundColor3 = SCROLL_PALETTE[colorIndex]}):Play()
+            TweenService:Create(objectNameLabel, tweenInfo, {BackgroundColor3 = TITLE_PALETTE[colorIndex]}):Play()
+            TweenService:Create(tab1Indicator, TweenInfo.new(2, Enum.EasingStyle.Sine), {BackgroundColor3 = INDICATOR_COLORS[indicatorIndex]}):Play()
+            TweenService:Create(tab2Indicator, TweenInfo.new(2, Enum.EasingStyle.Sine), {BackgroundColor3 = INDICATOR_COLORS[indicatorIndex]}):Play()
+        end
+    end
+end)
+
+-- ═══════════════════════════════════════
+-- 20. АНИМАЦИЯ ПОЯВЛЕНИЯ + ИНИЦИАЛИЗАЦИЯ
+-- ═══════════════════════════════════════
+
+-- Анимация появления GUI
+task.spawn(function()
+    task.wait(0.1)
+    local appearInfo = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+    TweenService:Create(mainFrame, appearInfo, {
+        Size = UDim2.new(0, 190, 0, FULL_HEIGHT),
+        Position = UDim2.new(0.5, -95, 0.5, -130),
+        BackgroundTransparency = 0
+    }):Play()
+end)
+
+-- Инициализация
+switchTab("detector")
+statusLabel.Text = "⏸ Нажми ▶ Старт"
+hintLabel.Text = "Кликни на объект"
