@@ -1,0 +1,2020 @@
+-- ═══════════════════════════════════════════════════════════════
+-- 🎮 FORT HELPER — LocalScript (StarterPlayerScripts)
+-- By Probothospot
+-- Fort TP + Portal TP + Arena + AUTO MODE (14 шагов) + ЭКИПИРОВКА + ПОМОЩЬ
+-- 7 вкладок: 🧱 Fort | 📍 Портал | 🏟 Арена | ⚙ Авто | 🥊 Экип | 🤝 Помощь | 📦 Other
+-- ═══════════════════════════════════════════════════════════════
+
+-- ═══ СЕРВИСЫ ═══
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- ═══ ИГРОК И ПЕРСОНАЖ ═══
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    hrp = newChar:WaitForChild("HumanoidRootPart")
+end)
+
+-- ═══ КОНСТАНТЫ ═══
+local TARGET_SIZE = UDim2.new(0, 210, 0, 305)
+local MINIMIZED_SIZE = UDim2.new(0, 210, 0, 22)
+local SCAN_RADIUS = 1000
+
+-- Определение локаций по Y
+local LOBBY_Y_MIN = 300
+local LOBBY_Y_MAX = 400
+local ARENA_Y_THRESHOLD = 299
+local ARENA_COORDS = Vector3.new(-2, -12385, -2)
+
+-- Задержки для авто режима (14 шагов)
+local DELAY_STEP_EQUIP     = 0.5   -- после экипировки (шаг 1, 7)
+local DELAY_STEP_PORTAL    = 1.0   -- после ТП в портал (шаг 2, 8)
+local DELAY_STEP_ARENA     = 0.1   -- проверка арены (шаг 3, 9)
+local DELAY_STEP_COORDS    = 0.5   -- после ТП на координаты (шаг 4, 10)
+local DELAY_STEP_ABILITY   = 1.5   -- после способности (шаг 5, 13)
+local DELAY_STEP_RESET     = 2.0   -- после ресета (шаг 6, 14)
+local DELAY_STEP_DETECT    = 0.1   -- после детекта стены (шаг 11)
+local DELAY_STEP_WALLTP    = 0.5   -- после ТП к стене (шаг 12)
+local DELAY_LOOP           = 1.5   -- перед новым циклом
+local CHECK_INTERVAL       = 0.3   -- интервал проверки
+
+-- ═══ ЗАДЕРЖКИ ДЛЯ РЕЖИМА ПОМОЩИ (9 шагов) ═══
+local HELP_DELAY_EQUIP    = 0.5   -- после экипировки (шаг 1)
+local HELP_DELAY_PORTAL   = 1.0   -- после ТП в портал (шаг 2)
+local HELP_DELAY_ARENA    = 0.1   -- проверка арены (шаг 3)
+local HELP_DELAY_COORDS   = 0.5   -- после ТП на координаты (шаг 4, 8)
+local HELP_DELAY_ABILITY1 = 1.5   -- после первого использования Zzzz (шаг 6)
+local HELP_DELAY_WAIT     = 2.0   -- ожидание перед вторым Zzzz (шаг 7)
+local HELP_DELAY_ABILITY2 = 0.5   -- после второго использования Zzzz (шаг 7)
+local HELP_CHECK_INTERVAL = 0.3   -- интервал проверки
+local LOBBY_Y_MIN_HELP    = 300   -- минимальный Y для лобби
+local LOBBY_Y_MAX_HELP    = 400   -- максимальный Y для лобби
+
+local COLORS = {
+    gray = Color3.fromRGB(180, 180, 180),
+    yellow = Color3.fromRGB(255, 220, 50),
+    green = Color3.fromRGB(100, 255, 100),
+    red = Color3.fromRGB(255, 80, 80),
+    purple = Color3.fromRGB(180, 140, 255),
+}
+
+local TAB_TITLES = {"🧱 FORT TP", "📍 ПОРТАЛ ТП", "🏟 АРЕНА", "⚙ АВТО РЕЖИМ", "🥊 ЭКИПИРОВКА", "🤝 РЕЖИМ ПОМОЩИ", "📦 OTHER"}
+
+-- ═══ ДАННЫЕ ПЕРЧАТОК ═══
+local GLOVES = {
+    {
+        name = "Fort",
+        emoji = "🥊",
+        searchName = "Fort",
+        expectedPos = Vector3.new(-1000.95, 322.87, 14.73),
+        expectedChildren = 7,
+        btnColor = Color3.fromRGB(100, 40, 160),
+    },
+    {
+        name = "ZZZZZZZ",
+        emoji = "🖤",
+        searchName = "ZZZZZZZ",
+        expectedPos = Vector3.new(-1153.01, 322.86, 14.72),
+        expectedChildren = 3,
+        btnColor = Color3.fromRGB(30, 30, 30),
+    },
+}
+
+-- ═══ ПЕРЕМЕННЫЕ СОСТОЯНИЯ ═══
+local guiOpen = true
+local minimized = false
+local currentTab = 1
+
+-- Fort TP
+local searching = false
+local tpDone = false
+local foundWall = nil
+local wallCount = 0
+local selectedTarget = nil
+local blinkActive = false
+local blinkGeneration = 0
+
+-- Portal TP
+local portalFound = false
+
+-- Arena
+local autoArena = false
+local arenaAttempts = 0
+local arenaGeneration = 0
+
+-- Auto Mode (14 шагов)
+local autoMode = false
+local autoGeneration = 0
+local autoCycleCount = 0
+local currentStep = 0
+
+-- Help Mode (9 шагов) — НОВАЯ ВКЛАДКА 6
+local helpMode = false
+local helpGeneration = 0
+local helpCycleCount = 0
+local helpCurrentStep = 0
+local helpPhase = "full"  -- "full" = шаги 1-9, "loop" = шаги 5-9
+
+-- Equip (вкладка 5)
+local equipState = {
+    fortObj = nil,
+    fortFound = false,
+    fortAutoOn = false,
+    fortAutoGen = 0,
+    zzzObj = nil,
+    zzzFound = false,
+    zzzAutoOn = false,
+    zzzAutoGen = 0,
+    logLines = {},
+}
+
+-- ═══ ФУНКЦИЯ ОПРЕДЕЛЕНИЯ СТЕНЫ FORT ═══
+local function isTargetWall(obj)
+    local ok, result = pcall(function()
+        if not obj:IsA("BasePart") then return false end
+        if obj.Parent ~= workspace then return false end
+        if obj.Material ~= Enum.Material.Brick then return false end
+        if obj.Anchored ~= true then return false end
+        if obj.CanCollide ~= true then return false end
+        if math.abs(obj.Color.R * 255 - 172) > 10 then return false end
+        if math.abs(obj.Color.G * 255 - 73) > 10 then return false end
+        if math.abs(obj.Color.B * 255 - 73) > 10 then return false end
+        if math.abs(obj.Size.X - 15.0) > 0.5 then return false end
+        if math.abs(obj.Size.Y - 17.0) > 0.5 then return false end
+        if math.abs(obj.Size.Z - 1.2) > 0.5 then return false end
+        if #obj:GetChildren() ~= 5 then return false end
+        return true
+    end)
+    return ok and result
+end
+
+-- ═══ ПОИСК СТЕНЫ ═══
+local function findWall()
+    local walls = {}
+    pcall(function()
+        for _, obj in ipairs(workspace:GetChildren()) do
+            if isTargetWall(obj) then table.insert(walls, obj) end
+        end
+    end)
+    wallCount = #walls
+    return walls[1]
+end
+
+local function findWallsNearTarget()
+    if not selectedTarget then return {} end
+    local walls = {}
+    pcall(function()
+        local targetChar = selectedTarget.Character
+        if not targetChar then return end
+        local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
+        if not targetHRP then return end
+        for _, obj in ipairs(workspace:GetChildren()) do
+            if isTargetWall(obj) then
+                local dist = (obj.Position - targetHRP.Position).Magnitude
+                if dist <= SCAN_RADIUS then table.insert(walls, {obj = obj, dist = dist}) end
+            end
+        end
+        table.sort(walls, function(a, b) return a.dist < b.dist end)
+    end)
+    return walls
+end
+
+local function smartFindWall()
+    if selectedTarget then
+        local walls = findWallsNearTarget()
+        wallCount = #walls
+        return walls[1] and walls[1].obj
+    end
+    return findWall()
+end
+
+local function findNearestWallToPlayer()
+    local allWalls = {}
+    pcall(function()
+        for _, obj in ipairs(workspace:GetChildren()) do
+            if isTargetWall(obj) then
+                local ok, dist = pcall(function() return (obj.Position - hrp.Position).Magnitude end)
+                if ok then table.insert(allWalls, {obj = obj, dist = dist}) end
+            end
+        end
+    end)
+    table.sort(allWalls, function(a, b) return a.dist < b.dist end)
+    return allWalls
+end
+
+-- ═══ ПОИСК ПОРТАЛА ═══
+local function findPortal()
+    local ok, portal = pcall(function()
+        return workspace:FindFirstChild("Lobby") and workspace.Lobby:FindFirstChild("Teleport1Frame")
+    end)
+    return ok and portal
+end
+
+-- ═══ ТЕЛЕПОРТАЦИЯ ═══
+local function teleportTo(target, offset)
+    offset = offset or Vector3.new(0, 3, 0)
+    pcall(function()
+        if hrp and target then hrp.CFrame = CFrame.new(target.Position + offset) end
+    end)
+end
+
+-- ═══ ПРОВЕРКА ЛОББИ (ДЛЯ РЕЖИМА ПОМОЩИ) ═══
+local function isInLobby()
+    local ok, y = pcall(function() return hrp.Position.Y end)
+    if ok then
+        return y >= LOBBY_Y_MIN_HELP and y <= LOBBY_Y_MAX_HELP
+    end
+    return false
+end
+
+-- ═══ ПОИСК ОБЪЕКТА ПЕРЧАТКИ ═══
+local function findGloveObj(cfg)
+    -- Способ 1: прямой путь
+    local ok1, obj1 = pcall(function()
+        local lobby = workspace:WaitForChild("Lobby", 3)
+        if lobby then return lobby:WaitForChild(cfg.searchName, 3) end
+        return nil
+    end)
+    if ok1 and obj1 then return obj1 end
+
+    -- Способ 2: поиск по координатам
+    local ok2, obj2 = pcall(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj.Name == cfg.searchName and obj:IsA("MeshPart") then
+                if math.abs(obj.Position.X - cfg.expectedPos.X) < 2
+                and math.abs(obj.Position.Y - cfg.expectedPos.Y) < 2
+                and math.abs(obj.Position.Z - cfg.expectedPos.Z) < 2 then
+                    return obj
+                end
+            end
+        end
+        return nil
+    end)
+    return ok2 and obj2
+end
+
+-- ═══ ОПРЕДЕЛЕНИЕ МЕТОДА ЭКИПИРОВКИ (ИСПРАВЛЕНО) ═══
+local function detectGloveMethod(obj)
+    if not obj then return "Unknown", nil end
+
+    local okCd, cd = pcall(function()
+        return obj:FindFirstChildOfClass("ClickDetector")
+    end)
+    if okCd and cd then return "ClickDetector", cd end
+
+    local okPp, pp = pcall(function()
+        return obj:FindFirstChildOfClass("ProximityPrompt")
+    end)
+    if okPp and pp then return "ProximityPrompt", pp end
+
+    return "Touched", nil
+end
+
+-- ═══ БЫСТРЫЙ ПОИСК ПЕРЧАТКИ (ДЛЯ АВТО РЕЖИМА) ═══
+local function findGloveObjFast(cfg)
+    -- Быстрый поиск без WaitForChild (без ожидания)
+    local ok, obj = pcall(function()
+        local lobby = workspace:FindFirstChild("Lobby")
+        if lobby then
+            return lobby:FindFirstChild(cfg.searchName)
+        end
+        return nil
+    end)
+    if ok and obj then return obj end
+
+    -- Резервный: по координатам
+    local ok2, obj2 = pcall(function()
+        for _, o in ipairs(workspace:GetDescendants()) do
+            if o.Name == cfg.searchName and o:IsA("MeshPart") then
+                if math.abs(o.Position.X - cfg.expectedPos.X) < 2
+                and math.abs(o.Position.Y - cfg.expectedPos.Y) < 2
+                and math.abs(o.Position.Z - cfg.expectedPos.Z) < 2 then
+                    return o
+                end
+            end
+        end
+        return nil
+    end)
+    return ok2 and obj2
+end
+
+-- ═══ ФУНКЦИИ СПОСОБНОСТЕЙ ПЕРЧАТОК ═══
+local function fireFortAbility()
+    local ok, remote = pcall(function()
+        return ReplicatedStorage:WaitForChild("Fortlol", 5)
+    end)
+    if ok and remote then
+        return pcall(function() remote:FireServer() end)
+    end
+    return false
+end
+
+local function fireZzzzAbility()
+    local ok, remote = pcall(function()
+        return ReplicatedStorage:WaitForChild("ZZZZZZZSleep", 5)
+    end)
+    if ok and remote then
+        return pcall(function() remote:FireServer() end)
+    end
+    return false
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- СОЗДАНИЕ GUI
+-- ═══════════════════════════════════════════════════════════════
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "FortHelper"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 0, 0, 0)
+mainFrame.Position = UDim2.new(0.5, -105, 0.5, -152)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 15, 50)
+mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
+mainFrame.Parent = screenGui
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 10)
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = Color3.fromRGB(140, 80, 200)
+mainStroke.Thickness = 2
+mainStroke.Parent = mainFrame
+
+-- ═══ TITLEBAR ═══
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 22)
+titleBar.BackgroundColor3 = Color3.fromRGB(50, 25, 80)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 10)
+
+local titleFill = Instance.new("Frame")
+titleFill.Size = UDim2.new(1, 0, 0, 10)
+titleFill.Position = UDim2.new(0, 0, 1, -10)
+titleFill.BackgroundColor3 = Color3.fromRGB(50, 25, 80)
+titleFill.BorderSizePixel = 0
+titleFill.Parent = titleBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Text = TAB_TITLES[1]
+titleLabel.Size = UDim2.new(1, -50, 1, 0)
+titleLabel.Position = UDim2.new(0, 8, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.TextColor3 = Color3.fromRGB(220, 180, 255)
+titleLabel.TextSize = 10
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = titleBar
+
+local collapseBtn = Instance.new("TextButton")
+collapseBtn.Text = "➖"
+collapseBtn.Size = UDim2.new(0, 22, 0, 22)
+collapseBtn.Position = UDim2.new(1, -46, 0, 0)
+collapseBtn.BackgroundTransparency = 1
+collapseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+collapseBtn.TextSize = 10
+collapseBtn.Font = Enum.Font.Gotham
+collapseBtn.Parent = titleBar
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Text = "❌"
+closeBtn.Size = UDim2.new(0, 22, 0, 22)
+closeBtn.Position = UDim2.new(1, -24, 0, 0)
+closeBtn.BackgroundTransparency = 1
+closeBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+closeBtn.TextSize = 10
+closeBtn.Font = Enum.Font.Gotham
+closeBtn.Parent = titleBar
+
+-- ═══ TABBAR (7 вкладок) СО СВАЙПОМ ═══
+local tabBar = Instance.new("Frame")
+tabBar.Size = UDim2.new(1, -8, 0, 22)
+tabBar.Position = UDim2.new(0, 4, 0, 24)
+tabBar.BackgroundTransparency = 1
+tabBar.ClipsDescendants = true
+tabBar.Parent = mainFrame
+
+local tabButtons = {}
+local tabNames = {"🧱 Fort", "📍 Портал", "🏟 Арена", "⚙ Авто", "🥊 Экип", "🤝 Помощь", "📦 Other"}
+
+-- ═══ КОНСТАНТЫ СВАЙПА ═══
+local TAB_BUTTON_WIDTH = 34              -- 32 ширина + 2 padding
+local MAX_TAB_OFFSET = (#tabNames - 5) * TAB_BUTTON_WIDTH  -- макс скролл (2 кнопки * 34 = 68px)
+local tabSwiping = false
+local tabSwipeStart = nil
+local tabSwipeOffset = 0
+local tabTargetOffset = 0
+
+-- Создание кнопок вкладок
+for i, name in ipairs(tabNames) do
+    local tab = Instance.new("TextButton")
+    tab.Name = "Tab" .. i
+    tab.Text = name
+    tab.Size = UDim2.new(0, 32, 0, 22)
+    tab.Position = UDim2.new(0, (i - 1) * TAB_BUTTON_WIDTH, 0, 0)
+    tab.BackgroundColor3 = i == 1 and Color3.fromRGB(60, 40, 100) or Color3.fromRGB(35, 20, 55)
+    tab.TextColor3 = Color3.fromRGB(220, 200, 255)
+    tab.TextSize = 6
+    tab.Font = Enum.Font.GothamBold
+    tab.BorderSizePixel = 0
+    tab.AutoButtonColor = false
+    tab.Parent = tabBar
+    Instance.new("UICorner", tab).CornerRadius = UDim.new(0, 4)
+    tabButtons[i] = tab
+end
+
+-- ═══ ФУНКЦИЯ ОБНОВЛЕНИЯ ПОЗИЦИИ ВКЛАДОК ═══
+local function updateTabPosition(offset, animated)
+    -- Ограничить offset в диапазоне [0, MAX_TAB_OFFSET]
+    offset = math.clamp(offset, 0, MAX_TAB_OFFSET)
+    tabSwipeOffset = offset
+
+    if animated then
+        -- Плавная анимация через TweenService
+        for i, btn in ipairs(tabButtons) do
+            local targetX = (i - 1) * TAB_BUTTON_WIDTH - offset
+            TweenService:Create(btn, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = UDim2.new(0, targetX, 0, 0)}):Play()
+        end
+    else
+        -- Мгновенное перемещение (во время свайпа)
+        for i, btn in ipairs(tabButtons) do
+            local targetX = (i - 1) * TAB_BUTTON_WIDTH - offset
+            btn.Position = UDim2.new(0, targetX, 0, 0)
+        end
+    end
+end
+
+-- ═══ ОБРАБОТКА СВАЙПА НА TABBAR ═══
+tabBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        tabSwiping = true
+        tabSwipeStart = input.Position.X
+        tabTargetOffset = tabSwipeOffset  -- запомнить начальный offset
+    end
+end)
+
+tabBar.InputChanged:Connect(function(input)
+    if tabSwiping and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        -- Вычислить смещение пальца
+        local deltaX = tabSwipeStart - input.Position.X
+        -- Обновить позицию (мгновенно, без анимации)
+        local newOffset = tabTargetOffset + deltaX
+        updateTabPosition(newOffset, false)
+    end
+end)
+
+tabBar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if tabSwiping then
+            tabSwiping = false
+            -- Проверка: клик или свайп?
+            local totalDelta = math.abs(input.Position.X - tabSwipeStart)
+            if totalDelta < 5 then
+                -- Это был клик — пусть кнопка обработает сама
+                return
+            end
+            -- Это свайп — snap к ближайшей позиции
+            local snapped = math.round(tabSwipeOffset / TAB_BUTTON_WIDTH) * TAB_BUTTON_WIDTH
+            snapped = math.clamp(snapped, 0, MAX_TAB_OFFSET)
+            updateTabPosition(snapped, true)  -- с анимацией
+        end
+    end
+end)
+
+-- ═══ СВАЙП ПО КОНТЕНТУ ДЛЯ ПЕРЕКЛЮЧЕНИЯ ВКЛАДОК ═══
+local contentSwiping = false
+local contentSwipeStartX = nil
+local contentSwipeStartY = nil
+local SWIPE_THRESHOLD = 30  -- минимум 30px для переключения
+
+mainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        -- Только если ниже tabBar (Y > 50)
+        local relY = input.Position.Y - mainFrame.AbsolutePosition.Y
+        if relY > 50 then
+            contentSwiping = true
+            contentSwipeStartX = input.Position.X
+            contentSwipeStartY = input.Position.Y
+        end
+    end
+end)
+
+mainFrame.InputEnded:Connect(function(input)
+    if contentSwiping and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) then
+        contentSwiping = false
+        local deltaX = input.Position.X - contentSwipeStartX
+        local deltaY = math.abs(input.Position.Y - contentSwipeStartY)
+        -- Только горизонтальный свайп (deltaX > deltaY)
+        if math.abs(deltaX) >= SWIPE_THRESHOLD and math.abs(deltaX) > deltaY then
+            if deltaX < 0 then
+                -- Свайп влево → следующая вкладка
+                if currentTab < #tabNames then
+                    switchTab(currentTab + 1)
+                    -- Автоскролл tabBar чтобы показать активную вкладку
+                    local neededOffset = math.max(0, (currentTab - 4) * TAB_BUTTON_WIDTH)
+                    neededOffset = math.clamp(neededOffset, 0, MAX_TAB_OFFSET)
+                    updateTabPosition(neededOffset, true)
+                end
+            else
+                -- Свайп вправо → предыдущая вкладка
+                if currentTab > 1 then
+                    switchTab(currentTab - 1)
+                    -- Автоскролл tabBar чтобы показать активную вкладку
+                    local neededOffset = math.max(0, (currentTab - 5) * TAB_BUTTON_WIDTH)
+                    neededOffset = math.clamp(neededOffset, 0, MAX_TAB_OFFSET)
+                    updateTabPosition(neededOffset, true)
+                end
+            end
+        end
+    end
+end)
+
+-- ═══ КОНТЕЙНЕРЫ КОНТЕНТА (7 вкладок) ═══
+local contentFrames = {}
+for i = 1, 7 do
+    local cf = Instance.new("Frame")
+    cf.Name = "Content" .. i
+    cf.Size = UDim2.new(1, -8, 1, -54)
+    cf.Position = UDim2.new(0, 4, 0, 50)
+    cf.BackgroundTransparency = 1
+    cf.Visible = i == 1
+    cf.ClipsDescendants = true
+    cf.Parent = mainFrame
+    contentFrames[i] = cf
+end
+
+-- ═══ ФУНКЦИЯ СОЗДАНИЯ КНОПКИ ═══
+local function createButton(parent, text, color, pos, size)
+    local btn = Instance.new("TextButton")
+    btn.Text = text
+    btn.Size = size or UDim2.new(0, 96, 0, 20)
+    btn.Position = pos
+    btn.BackgroundColor3 = color
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 9
+    btn.Font = Enum.Font.GothamBold
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = false
+    btn.Parent = parent
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
+
+    local origColor, origSize, origPos = color, btn.Size, pos
+    local hoverColor = Color3.fromRGB(math.min(color.R*255+30,255), math.min(color.G*255+30,255), math.min(color.B*255+30,255))
+    btn.MouseEnter:Connect(function() TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = hoverColor}):Play() end)
+    btn.MouseLeave:Connect(function() TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = origColor}):Play() end)
+    btn.MouseButton1Down:Connect(function()
+        btn.Size = UDim2.new(origSize.X.Scale, origSize.X.Offset-2, origSize.Y.Scale, origSize.Y.Offset-2)
+        btn.Position = UDim2.new(origPos.X.Scale, origPos.X.Offset+1, origPos.Y.Scale, origPos.Y.Offset+1)
+    end)
+    btn.MouseButton1Up:Connect(function() btn.Size = origSize; btn.Position = origPos end)
+    return btn
+end
+
+local function createLabel(parent, text, pos, size, color, fontSize)
+    local lbl = Instance.new("TextLabel")
+    lbl.Text = text
+    lbl.Size = size or UDim2.new(1, 0, 0, 14)
+    lbl.Position = pos
+    lbl.BackgroundTransparency = 1
+    lbl.TextColor3 = color or COLORS.gray
+    lbl.TextSize = fontSize or 9
+    lbl.Font = Enum.Font.GothamSemibold
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = parent
+    return lbl
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- ВКЛАДКА 1 — FORT TP
+-- ═══════════════════════════════════════════════════════════════
+local cf1 = contentFrames[1]
+
+local statusLabel1 = createLabel(cf1, "⏸ Нажми Старт", UDim2.new(0, 4, 0, 0))
+local wallLabel = createLabel(cf1, "🚫 Стена: НЕТУ", UDim2.new(0, 4, 0, 14), nil, Color3.fromRGB(255, 100, 100))
+local playerLabel = createLabel(cf1, "👤 Цель: Никто", UDim2.new(0, 4, 0, 28), nil, Color3.fromRGB(200, 180, 255), 8)
+
+local playerScroll = Instance.new("ScrollingFrame")
+playerScroll.Size = UDim2.new(1, 0, 0, 40)
+playerScroll.Position = UDim2.new(0, 0, 0, 44)
+playerScroll.BackgroundColor3 = Color3.fromRGB(18, 10, 32)
+playerScroll.BorderSizePixel = 0
+playerScroll.ScrollBarThickness = 2
+playerScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+playerScroll.Parent = cf1
+Instance.new("UICorner", playerScroll).CornerRadius = UDim.new(0, 4)
+Instance.new("UIListLayout", playerScroll).Padding = UDim.new(0, 1)
+
+local resetTargetBtn = createButton(cf1, "❌ Сбросить цель", Color3.fromRGB(80, 30, 30), UDim2.new(0, 0, 0, 88), UDim2.new(1, 0, 0, 14))
+resetTargetBtn.TextSize = 7
+
+local startBtn = createButton(cf1, "▶ Старт", Color3.fromRGB(40, 160, 60), UDim2.new(0, 0, 0, 106), UDim2.new(0, 98, 0, 20))
+local stopBtn = createButton(cf1, "■ Стоп", Color3.fromRGB(180, 40, 40), UDim2.new(0, 102, 0, 106), UDim2.new(0, 98, 0, 20))
+local retryBtn = createButton(cf1, "🔄 Снова", Color3.fromRGB(40, 80, 200), UDim2.new(0, 0, 0, 130), UDim2.new(1, 0, 0, 20))
+retryBtn.Visible = false
+
+local infoFrame1 = Instance.new("Frame")
+infoFrame1.Size = UDim2.new(1, 0, 0, 28)
+infoFrame1.Position = UDim2.new(0, 0, 0, 154)
+infoFrame1.BackgroundColor3 = Color3.fromRGB(25, 12, 40)
+infoFrame1.Visible = false
+infoFrame1.BorderSizePixel = 0
+infoFrame1.Parent = cf1
+Instance.new("UICorner", infoFrame1).CornerRadius = UDim.new(0, 4)
+
+local posLabel1 = createLabel(infoFrame1, "📍 Игрок: —", UDim2.new(0, 4, 0, 2), nil, Color3.fromRGB(180, 160, 220), 7)
+local distLabel1 = createLabel(infoFrame1, "📏 Расстояние: —", UDim2.new(0, 4, 0, 14), nil, Color3.fromRGB(180, 160, 220), 7)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ВКЛАДКА 2 — ПОРТАЛ ТП
+-- ═══════════════════════════════════════════════════════════════
+local cf2 = contentFrames[2]
+
+local objStatusLabel = createLabel(cf2, "❌ Teleport1Frame не найден", UDim2.new(0, 4, 0, 0), nil, Color3.fromRGB(255, 100, 100))
+local distLabel2 = createLabel(cf2, "📏 Расстояние: —", UDim2.new(0, 4, 0, 18), nil, Color3.fromRGB(180, 160, 220), 8)
+local posLabel2 = createLabel(cf2, "📍 Позиция: —", UDim2.new(0, 4, 0, 34), nil, Color3.fromRGB(180, 160, 220), 8)
+local tpPortalBtn = createButton(cf2, "🚪 ТП в портал", Color3.fromRGB(40, 160, 60), UDim2.new(0, 0, 0, 54), UDim2.new(1, 0, 0, 26))
+local statusLabel2 = createLabel(cf2, "", UDim2.new(0, 4, 0, 86), nil, COLORS.gray, 8)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ВКЛАДКА 3 — АРЕНА
+-- ═══════════════════════════════════════════════════════════════
+local cf3 = contentFrames[3]
+
+local arenaStatusLabel = createLabel(cf3, "▶ Нажми для авто-захода", UDim2.new(0, 4, 0, 0))
+local attemptsLabel = createLabel(cf3, "🔁 Попыток: 0", UDim2.new(0, 4, 0, 16), nil, Color3.fromRGB(180, 160, 220), 8)
+local posCheckLabel = createLabel(cf3, "📍 Ваш Y: —", UDim2.new(0, 4, 0, 32), nil, Color3.fromRGB(180, 160, 220), 8)
+local startArenaBtn = createButton(cf3, "▶ Авто арена", Color3.fromRGB(100, 40, 160), UDim2.new(0, 0, 0, 52), UDim2.new(0, 98, 0, 20))
+local stopArenaBtn = createButton(cf3, "■ Стоп", Color3.fromRGB(180, 40, 40), UDim2.new(0, 102, 0, 52), UDim2.new(0, 98, 0, 20))
+local arenaInfoLabel = createLabel(cf3, "ℹ Арена если Y < 299", UDim2.new(0, 4, 0, 78), nil, Color3.fromRGB(120, 100, 160), 7)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ВКЛАДКА 4 — АВТО РЕЖИМ (14 ШАГОВ) — ScrollingFrame
+-- ═══════════════════════════════════════════════════════════════
+
+local cf4Scroll = Instance.new("ScrollingFrame")
+cf4Scroll.Size = UDim2.new(1, 0, 1, 0)
+cf4Scroll.BackgroundTransparency = 1
+cf4Scroll.BorderSizePixel = 0
+cf4Scroll.ScrollBarThickness = 3
+cf4Scroll.ScrollBarImageColor3 = Color3.fromRGB(140, 80, 200)
+cf4Scroll.CanvasSize = UDim2.new(0, 0, 0, 465)
+cf4Scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+cf4Scroll.Parent = contentFrames[4]
+
+local cf4 = cf4Scroll
+
+local autoIndicator = Instance.new("Frame")
+autoIndicator.Size = UDim2.new(1, 0, 0, 22)
+autoIndicator.Position = UDim2.new(0, 0, 0, 0)
+autoIndicator.BackgroundColor3 = Color3.fromRGB(40, 20, 20)
+autoIndicator.BorderSizePixel = 0
+autoIndicator.Parent = cf4
+Instance.new("UICorner", autoIndicator).CornerRadius = UDim.new(0, 5)
+
+local autoStroke = Instance.new("UIStroke")
+autoStroke.Color = Color3.fromRGB(100, 40, 40)
+autoStroke.Thickness = 1.5
+autoStroke.Parent = autoIndicator
+
+local autoIndicatorLabel = Instance.new("TextLabel")
+autoIndicatorLabel.Text = "⛔ АВТО ВЫКЛЮЧЕН"
+autoIndicatorLabel.Size = UDim2.new(1, 0, 1, 0)
+autoIndicatorLabel.BackgroundTransparency = 1
+autoIndicatorLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+autoIndicatorLabel.TextSize = 9
+autoIndicatorLabel.Font = Enum.Font.GothamBold
+autoIndicatorLabel.Parent = autoIndicator
+
+local stepCards, stepIcons, stepInfos = {}, {}, {}
+local stepData = {
+    {icon = "🥊", text = "Шаг 1 — Экип Fort"},
+    {icon = "🚪", text = "Шаг 2 — ТП в портал"},
+    {icon = "🏟", text = "Шаг 3 — Проверка арены"},
+    {icon = "📍", text = "Шаг 4 — ТП на -12385"},
+    {icon = "🧱", text = "Шаг 5 — Способность Fort"},
+    {icon = "🔄", text = "Шаг 6 — Ресет"},
+    {icon = "🖤", text = "Шаг 7 — Экип Zzzzz"},
+    {icon = "🚪", text = "Шаг 8 — ТП в портал"},
+    {icon = "🏟", text = "Шаг 9 — Проверка арены"},
+    {icon = "📍", text = "Шаг 10 — ТП на -12385"},
+    {icon = "🔍", text = "Шаг 11 — Детект стены"},
+    {icon = "🧱", text = "Шаг 12 — ТП к стене"},
+    {icon = "💤", text = "Шаг 13 — Способность Zzzzz"},
+    {icon = "🔄", text = "Шаг 14 — Ресет"},
+}
+
+for i, data in ipairs(stepData) do
+    local yPos = 24 + (i - 1) * 26
+    local card = Instance.new("Frame")
+    card.Size = UDim2.new(1, 0, 0, 24)
+    card.Position = UDim2.new(0, 0, 0, yPos)
+    card.BackgroundColor3 = Color3.fromRGB(25, 15, 40)
+    card.BorderSizePixel = 0
+    card.Parent = cf4
+    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 4)
+    local cStroke = Instance.new("UIStroke", card)
+    cStroke.Color = Color3.fromRGB(50, 30, 70)
+    cStroke.Thickness = 1
+
+    local iconLbl = Instance.new("TextLabel")
+    iconLbl.Text = "⏸"
+    iconLbl.Size = UDim2.new(0, 12, 0, 12)
+    iconLbl.Position = UDim2.new(0, 3, 0, 2)
+    iconLbl.BackgroundTransparency = 1
+    iconLbl.TextColor3 = Color3.fromRGB(120, 120, 120)
+    iconLbl.TextSize = 8
+    iconLbl.Font = Enum.Font.Gotham
+    iconLbl.Parent = card
+
+    local textLbl = Instance.new("TextLabel")
+    textLbl.Text = data.icon .. " " .. data.text
+    textLbl.Size = UDim2.new(1, -18, 0, 10)
+    textLbl.Position = UDim2.new(0, 16, 0, 2)
+    textLbl.BackgroundTransparency = 1
+    textLbl.TextColor3 = Color3.fromRGB(200, 180, 230)
+    textLbl.TextSize = 6
+    textLbl.Font = Enum.Font.GothamSemibold
+    textLbl.TextXAlignment = Enum.TextXAlignment.Left
+    textLbl.Parent = card
+
+    local infoLbl = Instance.new("TextLabel")
+    infoLbl.Text = ""
+    infoLbl.Size = UDim2.new(1, -18, 0, 10)
+    infoLbl.Position = UDim2.new(0, 16, 0, 12)
+    infoLbl.BackgroundTransparency = 1
+    infoLbl.TextColor3 = Color3.fromRGB(140, 120, 180)
+    infoLbl.TextSize = 5
+    infoLbl.Font = Enum.Font.Gotham
+    infoLbl.TextXAlignment = Enum.TextXAlignment.Left
+    infoLbl.Parent = card
+
+    stepCards[i] = card
+    stepIcons[i] = iconLbl
+    stepInfos[i] = infoLbl
+end
+
+local divider4 = Instance.new("Frame")
+divider4.Size = UDim2.new(1, 0, 0, 1)
+divider4.Position = UDim2.new(0, 0, 0, 390)
+divider4.BackgroundColor3 = Color3.fromRGB(60, 40, 100)
+divider4.BorderSizePixel = 0
+divider4.Parent = cf4
+
+local cycleLabel = createLabel(cf4, "🔁 Циклов: 0", UDim2.new(0, 4, 0, 394), nil, Color3.fromRGB(180, 160, 220), 8)
+
+local delayLabel = Instance.new("TextLabel")
+delayLabel.Text = "⏱ Экип:0.5 Портал:1.0 Арена:0.1 Коорд:0.5\nСпособн:1.5 Ресет:2.0 Детект:0.1 Стена:0.5"
+delayLabel.Size = UDim2.new(1, -8, 0, 20)
+delayLabel.Position = UDim2.new(0, 4, 0, 410)
+delayLabel.BackgroundTransparency = 1
+delayLabel.TextColor3 = Color3.fromRGB(120, 100, 160)
+delayLabel.TextSize = 5
+delayLabel.Font = Enum.Font.Gotham
+delayLabel.TextXAlignment = Enum.TextXAlignment.Left
+delayLabel.TextWrapped = true
+delayLabel.Parent = cf4
+
+local startAutoBtn = createButton(cf4, "▶ Запуск", Color3.fromRGB(80, 40, 160), UDim2.new(0, 0, 0, 434), UDim2.new(0, 98, 0, 20))
+local stopAutoBtn = createButton(cf4, "■ Стоп", Color3.fromRGB(180, 40, 40), UDim2.new(0, 102, 0, 434), UDim2.new(0, 98, 0, 20))
+
+-- ═══════════════════════════════════════════════════════════════
+-- ВКЛАДКА 5 — ЭКИПИРОВКА ПЕРЧАТОК
+-- ═══════════════════════════════════════════════════════════════
+
+local cf5Scroll = Instance.new("ScrollingFrame")
+cf5Scroll.Size = UDim2.new(1, 0, 1, 0)
+cf5Scroll.BackgroundTransparency = 1
+cf5Scroll.BorderSizePixel = 0
+cf5Scroll.ScrollBarThickness = 3
+cf5Scroll.ScrollBarImageColor3 = Color3.fromRGB(140, 80, 200)
+cf5Scroll.CanvasSize = UDim2.new(0, 0, 0, 290)
+cf5Scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+cf5Scroll.Parent = contentFrames[5]
+
+local cf5 = cf5Scroll
+
+-- ═══ СЕКЦИЯ FORT ═══
+local fortStatusLabel = createLabel(cf5, "🔍 Поиск Fort...", UDim2.new(0, 4, 0, 0), nil, COLORS.gray, 9)
+local fortMethodLabel = createLabel(cf5, "❓ Метод: Неизвестен", UDim2.new(0, 4, 0, 14), nil, Color3.fromRGB(180, 180, 180), 8)
+local fortDistLabel = createLabel(cf5, "📏 Fort: —", UDim2.new(0, 4, 0, 28), nil, Color3.fromRGB(180, 160, 220), 8)
+
+local fortEquipBtn = createButton(cf5, "🥊 Экипировать Fort", Color3.fromRGB(100, 40, 160), UDim2.new(0, 0, 0, 44), UDim2.new(1, 0, 0, 24))
+fortEquipBtn.TextSize = 10
+
+local fortAutoBtn = createButton(cf5, "🔄 Авто Fort: ВЫКЛ", Color3.fromRGB(60, 30, 120), UDim2.new(0, 0, 0, 72), UDim2.new(1, 0, 0, 18))
+fortAutoBtn.TextSize = 8
+
+-- ═══ РАЗДЕЛИТЕЛЬ ═══
+local divider5a = Instance.new("Frame")
+divider5a.Size = UDim2.new(1, 0, 0, 2)
+divider5a.Position = UDim2.new(0, 0, 0, 94)
+divider5a.BackgroundColor3 = Color3.fromRGB(60, 40, 100)
+divider5a.BorderSizePixel = 0
+divider5a.Parent = cf5
+
+-- ═══ СЕКЦИЯ ZZZZZZZ ═══
+local zzzStatusLabel = createLabel(cf5, "🔍 Поиск ZZZZZZZ...", UDim2.new(0, 4, 0, 100), nil, COLORS.gray, 9)
+local zzzMethodLabel = createLabel(cf5, "❓ Метод: Неизвестен", UDim2.new(0, 4, 0, 114), nil, Color3.fromRGB(180, 180, 180), 8)
+local zzzDistLabel = createLabel(cf5, "📏 ZZZ: —", UDim2.new(0, 4, 0, 128), nil, Color3.fromRGB(180, 160, 220), 8)
+
+local zzzEquipBtn = createButton(cf5, "🖤 Экипировать ZZZZZZZ", Color3.fromRGB(30, 30, 30), UDim2.new(0, 0, 0, 144), UDim2.new(1, 0, 0, 24))
+zzzEquipBtn.TextSize = 10
+
+local zzzAutoBtn = createButton(cf5, "🔄 Авто ZZZ: ВЫКЛ", Color3.fromRGB(25, 25, 45), UDim2.new(0, 0, 0, 172), UDim2.new(1, 0, 0, 18))
+zzzAutoBtn.TextSize = 8
+
+-- ═══ РАЗДЕЛИТЕЛЬ ═══
+local divider5b = Instance.new("Frame")
+divider5b.Size = UDim2.new(1, 0, 0, 2)
+divider5b.Position = UDim2.new(0, 0, 0, 194)
+divider5b.BackgroundColor3 = Color3.fromRGB(60, 40, 100)
+divider5b.BorderSizePixel = 0
+divider5b.Parent = cf5
+
+-- ═══ ОБЩИЙ СТАТУС ═══
+local equipStatusLabel = createLabel(cf5, "💡 Нажми кнопку экипировки", UDim2.new(0, 4, 0, 200), UDim2.new(1, -8, 0, 26), Color3.fromRGB(180, 160, 220), 9)
+equipStatusLabel.TextWrapped = true
+
+-- ═══ ЛОГ ═══
+local logFrame = Instance.new("ScrollingFrame")
+logFrame.Size = UDim2.new(1, 0, 0, 40)
+logFrame.Position = UDim2.new(0, 0, 0, 230)
+logFrame.BackgroundColor3 = Color3.fromRGB(15, 10, 25)
+logFrame.BorderSizePixel = 0
+logFrame.ScrollBarThickness = 2
+logFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 60, 160)
+logFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+logFrame.Parent = cf5
+Instance.new("UICorner", logFrame).CornerRadius = UDim.new(0, 4)
+Instance.new("UIListLayout", logFrame).Padding = UDim.new(0, 1)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ВКЛАДКА 6 — РЕЖИМ ПОМОЩИ (9 ШАГОВ)
+-- ═══════════════════════════════════════════════════════════════
+
+local helpScroll = Instance.new("ScrollingFrame")
+helpScroll.Size = UDim2.new(1, 0, 1, 0)
+helpScroll.BackgroundTransparency = 1
+helpScroll.BorderSizePixel = 0
+helpScroll.ScrollBarThickness = 3
+helpScroll.ScrollBarImageColor3 = Color3.fromRGB(140, 80, 200)
+helpScroll.CanvasSize = UDim2.new(0, 0, 0, 400)
+helpScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+helpScroll.Parent = contentFrames[6]
+
+local cf6 = helpScroll
+
+-- ═══ ИНДИКАТОР РЕЖИМА ПОМОЩИ ═══
+local helpIndicator = Instance.new("Frame")
+helpIndicator.Size = UDim2.new(1, 0, 0, 28)
+helpIndicator.Position = UDim2.new(0, 0, 0, 0)
+helpIndicator.BackgroundColor3 = Color3.fromRGB(40, 20, 20)
+helpIndicator.BorderSizePixel = 0
+helpIndicator.Parent = cf6
+Instance.new("UICorner", helpIndicator).CornerRadius = UDim.new(0, 5)
+
+local helpStrokeUi = Instance.new("UIStroke")
+helpStrokeUi.Color = Color3.fromRGB(100, 40, 40)
+helpStrokeUi.Thickness = 1.5
+helpStrokeUi.Parent = helpIndicator
+
+local helpIndicatorLabel = Instance.new("TextLabel")
+helpIndicatorLabel.Text = "⛔ ПОМОЩЬ ВЫКЛЮЧЕНА"
+helpIndicatorLabel.Size = UDim2.new(1, 0, 1, 0)
+helpIndicatorLabel.BackgroundTransparency = 1
+helpIndicatorLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+helpIndicatorLabel.TextSize = 9
+helpIndicatorLabel.Font = Enum.Font.GothamBold
+helpIndicatorLabel.Parent = helpIndicator
+
+-- ═══ КАРТОЧКИ ШАГОВ (9 шт) ═══
+local helpCards, helpIcons, helpInfos = {}, {}, {}
+local helpStepData = {
+    {icon = "🖤", text = "Шаг 1 — Экип Zzzzz"},
+    {icon = "🚪", text = "Шаг 2 — ТП в портал"},
+    {icon = "🏟", text = "Шаг 3 — Проверка арены"},
+    {icon = "📍", text = "Шаг 4 — ТП на -12385"},
+    {icon = "🔍", text = "Шаг 5 — Ждём стену Fort"},
+    {icon = "💤", text = "Шаг 6 — Zzzz #1"},
+    {icon = "💤", text = "Шаг 7 — Zzzz #2 (2с)"},
+    {icon = "📍", text = "Шаг 8 — ТП на -12385"},
+    {icon = "🔁", text = "Шаг 9 — Повтор с шага 5"},
+}
+
+for i, data in ipairs(helpStepData) do
+    local yPos = 30 + (i - 1) * 26
+    local card = Instance.new("Frame")
+    card.Size = UDim2.new(1, 0, 0, 24)
+    card.Position = UDim2.new(0, 0, 0, yPos)
+    card.BackgroundColor3 = Color3.fromRGB(25, 15, 40)
+    card.BorderSizePixel = 0
+    card.Parent = cf6
+    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 4)
+    local cStroke = Instance.new("UIStroke", card)
+    cStroke.Color = Color3.fromRGB(50, 30, 70)
+    cStroke.Thickness = 1
+
+    local iconLbl = Instance.new("TextLabel")
+    iconLbl.Text = "⏸"
+    iconLbl.Size = UDim2.new(0, 12, 0, 12)
+    iconLbl.Position = UDim2.new(0, 3, 0, 2)
+    iconLbl.BackgroundTransparency = 1
+    iconLbl.TextColor3 = Color3.fromRGB(120, 120, 120)
+    iconLbl.TextSize = 8
+    iconLbl.Font = Enum.Font.Gotham
+    iconLbl.Parent = card
+
+    local textLbl = Instance.new("TextLabel")
+    textLbl.Text = data.icon .. " " .. data.text
+    textLbl.Size = UDim2.new(1, -18, 0, 10)
+    textLbl.Position = UDim2.new(0, 16, 0, 2)
+    textLbl.BackgroundTransparency = 1
+    textLbl.TextColor3 = Color3.fromRGB(200, 180, 230)
+    textLbl.TextSize = 6
+    textLbl.Font = Enum.Font.GothamSemibold
+    textLbl.TextXAlignment = Enum.TextXAlignment.Left
+    textLbl.Parent = card
+
+    local infoLbl = Instance.new("TextLabel")
+    infoLbl.Text = ""
+    infoLbl.Size = UDim2.new(1, -18, 0, 10)
+    infoLbl.Position = UDim2.new(0, 16, 0, 12)
+    infoLbl.BackgroundTransparency = 1
+    infoLbl.TextColor3 = Color3.fromRGB(140, 120, 180)
+    infoLbl.TextSize = 5
+    infoLbl.Font = Enum.Font.Gotham
+    infoLbl.TextXAlignment = Enum.TextXAlignment.Left
+    infoLbl.Parent = card
+
+    helpCards[i] = card
+    helpIcons[i] = iconLbl
+    helpInfos[i] = infoLbl
+end
+
+-- ═══ ЛЕЙБЛ ПРОВЕРКИ ЛОББИ ═══
+local lobbyCheckLabel = createLabel(cf6, "📍 Ваш Y: — | Лобби: ?", UDim2.new(0, 4, 0, 264), UDim2.new(1, -8, 0, 14), Color3.fromRGB(180, 160, 220), 8)
+
+-- ═══ РАЗДЕЛИТЕЛЬ ═══
+local divider6 = Instance.new("Frame")
+divider6.Size = UDim2.new(1, 0, 0, 2)
+divider6.Position = UDim2.new(0, 0, 0, 280)
+divider6.BackgroundColor3 = Color3.fromRGB(60, 40, 100)
+divider6.BorderSizePixel = 0
+divider6.Parent = cf6
+
+-- ═══ ЛЕЙБЛЫ ЦИКЛОВ И ФАЗЫ ═══
+local helpCycleLabel = createLabel(cf6, "🔁 Полных циклов: 0", UDim2.new(0, 4, 0, 284), UDim2.new(1, -8, 0, 12), Color3.fromRGB(180, 160, 220), 8)
+local helpPhaseLabel = createLabel(cf6, "▶ Фаза: ожидание старта", UDim2.new(0, 4, 0, 298), UDim2.new(1, -8, 0, 12), Color3.fromRGB(200, 180, 255), 8)
+
+-- ═══ КНОПКИ УПРАВЛЕНИЯ ═══
+local startHelpBtn = createButton(cf6, "▶ Старт помощи", Color3.fromRGB(40, 160, 60), UDim2.new(0, 0, 0, 314), UDim2.new(0, 98, 0, 22))
+local stopHelpBtn = createButton(cf6, "■ Стоп", Color3.fromRGB(180, 40, 40), UDim2.new(0, 102, 0, 314), UDim2.new(0, 98, 0, 22))
+
+-- ═══ СТАТУС ОПЕРАЦИИ ═══
+local helpStatusLabel = createLabel(cf6, "💡 Нажми Старт (нужно быть в лобби)", UDim2.new(0, 4, 0, 340), UDim2.new(1, -8, 0, 28), Color3.fromRGB(180, 160, 220), 8)
+helpStatusLabel.TextWrapped = true
+
+-- ═══════════════════════════════════════════════════════════════
+-- ФУНКЦИИ ЭКИПИРОВКИ (ПЕРЕНЕСЕНО ПЕРЕД runAutoLoop)
+-- ═══════════════════════════════════════════════════════════════
+
+local function addEquipLog(text)
+    local time = os.date("%H:%M:%S")
+    local logText = "[" .. time .. "] " .. text
+    table.insert(equipState.logLines, logText)
+    if #equipState.logLines > 3 then table.remove(equipState.logLines, 1) end
+    pcall(function()
+        for _, child in ipairs(logFrame:GetChildren()) do if child:IsA("TextLabel") then child:Destroy() end end
+        for idx, line in ipairs(equipState.logLines) do
+            local lbl = Instance.new("TextLabel")
+            lbl.Size = UDim2.new(1, -4, 0, 12)
+            lbl.BackgroundTransparency = 1
+            lbl.TextColor3 = Color3.fromRGB(160, 140, 200)
+            lbl.TextSize = 7
+            lbl.Font = Enum.Font.Code
+            lbl.Text = line
+            lbl.TextXAlignment = Enum.TextXAlignment.Left
+            lbl.Parent = logFrame
+        end
+    end)
+end
+
+local function updateMethodLabel(lbl, method)
+    if method == "ClickDetector" then lbl.Text = "🖱 Метод: ClickDetector"; lbl.TextColor3 = Color3.fromRGB(100, 200, 255)
+    elseif method == "ProximityPrompt" then lbl.Text = "🔘 Метод: ProximityPrompt"; lbl.TextColor3 = Color3.fromRGB(200, 255, 100)
+    elseif method == "Touched" then lbl.Text = "👣 Метод: ТП"; lbl.TextColor3 = Color3.fromRGB(255, 200, 100)
+    else lbl.Text = "❓ Метод: Неизвестен"; lbl.TextColor3 = Color3.fromRGB(180, 180, 180) end
+end
+
+-- equipGlove возвращает true/false для использования в runAutoLoop
+local function equipGlove(cfg, gloveRef, statusLbl, equipBtn)
+    -- Проверка и переиск объекта если невалиден
+    if not gloveRef or not gloveRef.Parent then
+        gloveRef = findGloveObjFast(cfg)
+        -- Обновить equipState
+        if cfg.name == "Fort" then
+            equipState.fortObj = gloveRef
+        elseif cfg.name == "ZZZZZZZ" then
+            equipState.zzzObj = gloveRef
+        end
+        if not gloveRef then
+            pcall(function() statusLbl.Text = "❌ " .. cfg.name .. ": не найден"; statusLbl.TextColor3 = COLORS.red end)
+            addEquipLog(cfg.name .. " → ❌ не найден")
+            return false
+        end
+    end
+
+    -- Метод 1: ClickDetector
+    local ok1, cd = pcall(function() return gloveRef:FindFirstChildOfClass("ClickDetector") end)
+    if ok1 and cd then
+        local fireOk = pcall(function() fireclickdetector(cd) end)
+        if fireOk then
+            pcall(function()
+                statusLbl.Text = "✅ " .. cfg.name .. ": ClickDetector"
+                statusLbl.TextColor3 = COLORS.green
+                TweenService:Create(equipBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 160, 40)}):Play()
+                task.delay(0.5, function() TweenService:Create(equipBtn, TweenInfo.new(0.2), {BackgroundColor3 = cfg.btnColor}):Play() end)
+            end)
+            addEquipLog(cfg.name .. " → ✅ ClickDetector")
+            return true
+        end
+    end
+
+    -- Метод 2: ProximityPrompt
+    local ok2, pp = pcall(function() return gloveRef:FindFirstChildOfClass("ProximityPrompt") end)
+    if ok2 and pp then
+        local fireOk = pcall(function() fireproximityprompt(pp) end)
+        if fireOk then
+            pcall(function()
+                statusLbl.Text = "✅ " .. cfg.name .. ": ProximityPrompt"
+                statusLbl.TextColor3 = COLORS.green
+                TweenService:Create(equipBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 160, 40)}):Play()
+                task.delay(0.5, function() TweenService:Create(equipBtn, TweenInfo.new(0.2), {BackgroundColor3 = cfg.btnColor}):Play() end)
+            end)
+            addEquipLog(cfg.name .. " → ✅ ProximityPrompt")
+            return true
+        end
+    end
+
+    -- Метод 3: ТП к объекту
+    local ok3 = pcall(function() hrp.CFrame = CFrame.new(gloveRef.Position + Vector3.new(0, gloveRef.Size.Y/2 + 2, 0)) end)
+    if ok3 then
+        task.wait(0.3)
+        pcall(function()
+            statusLbl.Text = "✅ " .. cfg.name .. ": ТП"
+            statusLbl.TextColor3 = COLORS.green
+            TweenService:Create(equipBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 160, 40)}):Play()
+            task.delay(0.5, function() TweenService:Create(equipBtn, TweenInfo.new(0.2), {BackgroundColor3 = cfg.btnColor}):Play() end)
+        end)
+        addEquipLog(cfg.name .. " → ✅ ТП")
+        return true
+    end
+
+    -- Все методы провалились
+    pcall(function() statusLbl.Text = "❌ " .. cfg.name .. ": все методы провалены"; statusLbl.TextColor3 = COLORS.red end)
+    addEquipLog(cfg.name .. " → ❌ все методы")
+    return false
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- ФУНКЦИЯ setHelpStatus (ДЛЯ РЕЖИМА ПОМОЩИ)
+-- ═══════════════════════════════════════════════════════════════
+
+local function setHelpStatus(step, status)
+    local card = helpCards[step]
+    local icon = helpIcons[step]
+    local stroke = card:FindFirstChildOfClass("UIStroke")
+
+    if status == "idle" then
+        TweenService:Create(card, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 15, 40)}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(50, 30, 70)}):Play()
+        icon.Text = "⏸"
+        icon.TextColor3 = Color3.fromRGB(120, 120, 120)
+
+    elseif status == "active" then
+        TweenService:Create(card, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(50, 40, 10)}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(255, 200, 50)}):Play()
+        icon.Text = "▶"
+        icon.TextColor3 = Color3.fromRGB(255, 220, 50)
+
+    elseif status == "waiting" then
+        -- Особый статус для шага 5 (ожидание стены)
+        TweenService:Create(card, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(20, 30, 50)}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(100, 150, 255)}):Play()
+        icon.Text = "⏳"
+        icon.TextColor3 = Color3.fromRGB(100, 180, 255)
+
+    elseif status == "done" then
+        TweenService:Create(card, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(20, 40, 20)}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(80, 200, 80)}):Play()
+        icon.Text = "✅"
+        icon.TextColor3 = Color3.fromRGB(80, 255, 80)
+
+    elseif status == "error" then
+        TweenService:Create(card, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(50, 20, 20)}):Play()
+        TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(200, 80, 80)}):Play()
+        icon.Text = "❌"
+        icon.TextColor3 = Color3.fromRGB(255, 80, 80)
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- ФУНКЦИЯ updateHelpIndicator (ДЛЯ РЕЖИМА ПОМОЩИ)
+-- ═══════════════════════════════════════════════════════════════
+
+local helpStrokePulseGen = 0
+
+local function updateHelpIndicator(enabled)
+    if enabled then
+        TweenService:Create(helpIndicator, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(20, 50, 20)}):Play()
+        TweenService:Create(helpStrokeUi, TweenInfo.new(0.3), {Color = Color3.fromRGB(80, 255, 80)}):Play()
+        helpIndicatorLabel.Text = "✅ ПОМОЩЬ АКТИВНА"
+        helpIndicatorLabel.TextColor3 = Color3.fromRGB(80, 255, 80)
+        -- Пульсация
+        helpStrokePulseGen += 1
+        local myGen = helpStrokePulseGen
+        task.spawn(function()
+            while helpMode and guiOpen and helpStrokePulseGen == myGen do
+                TweenService:Create(helpStrokeUi, TweenInfo.new(0.5), {Color = Color3.fromRGB(40, 120, 40)}):Play()
+                task.wait(1)
+                if not helpMode or helpStrokePulseGen ~= myGen then break end
+                TweenService:Create(helpStrokeUi, TweenInfo.new(0.5), {Color = Color3.fromRGB(80, 255, 80)}):Play()
+                task.wait(1)
+            end
+        end)
+    else
+        helpStrokePulseGen += 1
+        TweenService:Create(helpIndicator, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(40, 20, 20)}):Play()
+        TweenService:Create(helpStrokeUi, TweenInfo.new(0.3), {Color = Color3.fromRGB(100, 40, 40)}):Play()
+        helpIndicatorLabel.Text = "⛔ ПОМОЩЬ ВЫКЛЮЧЕНА"
+        helpIndicatorLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- СИСТЕМА ИГРОКОВ (Fort TP)
+-- ═══════════════════════════════════════════════════════════════
+local playerButtons = {}
+
+local function highlightPlayerButtons()
+    for plr, btn in pairs(playerButtons) do
+        pcall(function() btn.BackgroundColor3 = plr == selectedTarget and Color3.fromRGB(60, 40, 100) or Color3.fromRGB(40, 25, 65) end)
+    end
+end
+
+local function createPlayerButton(plr)
+    if plr == player then return end
+    local btn = Instance.new("TextButton")
+    btn.Name = plr.Name
+    btn.Text = plr.Name
+    btn.Size = UDim2.new(1, 0, 0, 14)
+    btn.BackgroundColor3 = Color3.fromRGB(40, 25, 65)
+    btn.TextColor3 = Color3.fromRGB(200, 180, 255)
+    btn.TextSize = 7
+    btn.Font = Enum.Font.Gotham
+    btn.BorderSizePixel = 0
+    btn.Parent = playerScroll
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 3)
+    btn.MouseButton1Click:Connect(function()
+        selectedTarget = plr
+        playerLabel.Text = "👤 Цель: " .. plr.Name
+        playerLabel.TextColor3 = Color3.fromRGB(100, 255, 150)
+        highlightPlayerButtons()
+    end)
+    playerButtons[plr] = btn
+end
+
+for _, plr in ipairs(Players:GetPlayers()) do createPlayerButton(plr) end
+Players.PlayerAdded:Connect(function(plr) createPlayerButton(plr); highlightPlayerButtons() end)
+Players.PlayerRemoving:Connect(function(plr)
+    if playerButtons[plr] then playerButtons[plr]:Destroy(); playerButtons[plr] = nil end
+    if selectedTarget == plr then selectedTarget = nil; playerLabel.Text = "👤 Цель: Никто"; playerLabel.TextColor3 = Color3.fromRGB(200, 180, 255) end
+end)
+
+resetTargetBtn.MouseButton1Click:Connect(function()
+    selectedTarget = nil; playerLabel.Text = "👤 Цель: Никто"; playerLabel.TextColor3 = Color3.fromRGB(200, 180, 255); highlightPlayerButtons()
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- АНИМАЦИИ
+-- ═══════════════════════════════════════════════════════════════
+
+TweenService:Create(mainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = TARGET_SIZE}):Play()
+
+local dragging, dragStart, startPos = false, nil, nil
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true; dragStart = input.Position; startPos = mainFrame.Position
+    end
+end)
+titleBar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+    guiOpen = false; searching = false; autoArena = false; autoMode = false
+    helpMode = false; helpGeneration += 1  -- ОСТАНОВКА РЕЖИМА ПОМОЩИ
+    blinkActive = false; blinkGeneration += 1; arenaGeneration += 1; autoGeneration += 1
+    equipState.fortAutoOn = false; equipState.zzzAutoOn = false
+    equipState.fortAutoGen += 1; equipState.zzzAutoGen += 1
+    TweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Size = UDim2.new(0,0,0,0)}):Play()
+    task.delay(0.35, function() screenGui:Destroy() end)
+end)
+
+collapseBtn.MouseButton1Click:Connect(function()
+    if minimized then
+        collapseBtn.Text = "➖"
+        local tw = TweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = TARGET_SIZE})
+        tw:Play()
+        tw.Completed:Connect(function() tabBar.Visible = true; contentFrames[currentTab].Visible = true end)
+        minimized = false
+    else
+        collapseBtn.Text = "➕"
+        tabBar.Visible = false
+        for _, cf in ipairs(contentFrames) do cf.Visible = false end
+        TweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {Size = MINIMIZED_SIZE}):Play()
+        minimized = true
+    end
+end)
+
+local function switchTab(newTab)
+    if newTab == currentTab or minimized then return end
+    local oldCf, newCf = contentFrames[currentTab], contentFrames[newTab]
+    local dir = newTab > currentTab and -1 or 1
+    for i, btn in ipairs(tabButtons) do btn.BackgroundColor3 = i == newTab and Color3.fromRGB(60, 40, 100) or Color3.fromRGB(35, 20, 55) end
+    titleLabel.Text = TAB_TITLES[newTab]
+    newCf.Position = UDim2.new(-dir, 0, 0, 50); newCf.Visible = true
+    TweenService:Create(oldCf, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(dir, 0, 0, 50)}):Play()
+    local tw = TweenService:Create(newCf, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = UDim2.new(0, 4, 0, 50)})
+    tw:Play()
+    tw.Completed:Connect(function() oldCf.Visible = false; oldCf.Position = UDim2.new(0, 4, 0, 50) end)
+    currentTab = newTab
+end
+
+for i, btn in ipairs(tabButtons) do btn.MouseButton1Click:Connect(function() switchTab(i) end) end
+
+task.spawn(function()
+    local colors = {Color3.fromRGB(30,15,50), Color3.fromRGB(50,20,80), Color3.fromRGB(40,10,70), Color3.fromRGB(35,18,60)}
+    local idx = 1
+    while guiOpen do idx = idx % #colors + 1; TweenService:Create(mainFrame, TweenInfo.new(2.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {BackgroundColor3 = colors[idx]}):Play(); task.wait(3) end
+end)
+
+task.spawn(function()
+    while guiOpen do TweenService:Create(mainStroke, TweenInfo.new(1), {Color = Color3.fromRGB(180, 100, 255)}):Play(); task.wait(2); if not guiOpen then break end; TweenService:Create(mainStroke, TweenInfo.new(1), {Color = Color3.fromRGB(120, 60, 200)}):Play(); task.wait(2) end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ЛОГИКА FORT TP (вкладка 1)
+-- ═══════════════════════════════════════════════════════════════
+
+local function setStatus1(text, color, blink)
+    statusLabel1.Text = text; statusLabel1.TextColor3 = color; statusLabel1.TextTransparency = 0
+    if blink then blinkGeneration += 1; local myGen = blinkGeneration; task.spawn(function() while blinkGeneration == myGen and guiOpen do statusLabel1.TextTransparency = 0.3; task.wait(0.4); if blinkGeneration ~= myGen then break end; statusLabel1.TextTransparency = 0; task.wait(0.4) end end) else blinkGeneration += 1 end
+end
+
+local function startWallBlink()
+    if blinkActive then return end; blinkActive = true
+    task.spawn(function() while blinkActive and guiOpen do TweenService:Create(wallLabel, TweenInfo.new(0.5), {TextTransparency = 0.5}):Play(); task.wait(0.5); if not blinkActive then break end; TweenService:Create(wallLabel, TweenInfo.new(0.5), {TextTransparency = 0}):Play(); task.wait(0.5) end; wallLabel.TextTransparency = 0 end)
+end
+
+local function stopWallBlink() blinkActive = false; wallLabel.TextTransparency = 0 end
+
+local function updateInfo1(wall)
+    if wall and hrp then local ok1, wPos = pcall(function() return wall.Position end); local ok2, pPos = pcall(function() return hrp.Position end); if ok2 then posLabel1.Text = string.format("📍 Игрок: %.0f, %.0f, %.0f", pPos.X, pPos.Y, pPos.Z) end; if ok1 and ok2 then distLabel1.Text = string.format("📏 Расстояние: %.1f ст.", (wPos - pPos).Magnitude) end end
+end
+
+local function performTP1(wall)
+    setStatus1("✅ ТП выполнен!", COLORS.green, false); teleportTo(wall, Vector3.new(0, wall.Size.Y/2 + 3, 0)); tpDone = true; searching = false; startBtn.Visible = false; stopBtn.Visible = false; retryBtn.Visible = true; infoFrame1.Visible = true; updateInfo1(wall)
+end
+
+local function startSearch()
+    if searching then return end; searching = true; tpDone = false; retryBtn.Visible = false; startBtn.Visible = true; stopBtn.Visible = true; infoFrame1.Visible = false
+    local wall = smartFindWall(); if wall then performTP1(wall); return end
+    local targetName = selectedTarget and selectedTarget.Name; setStatus1(targetName and ("⏳ Жду стену у "..targetName.."...") or "⏳ Жду стену...", COLORS.yellow, true)
+    task.spawn(function() while searching and guiOpen do local w = smartFindWall(); if w then performTP1(w); return end; task.wait(0.5) end end)
+end
+
+startBtn.MouseButton1Click:Connect(startSearch)
+stopBtn.MouseButton1Click:Connect(function() searching = false; setStatus1("⛔ Остановлено", COLORS.red, false) end)
+retryBtn.MouseButton1Click:Connect(function() tpDone = false; retryBtn.Visible = false; startBtn.Visible = true; stopBtn.Visible = true; infoFrame1.Visible = false; setStatus1("⏸ Нажми Старт", COLORS.gray, false) end)
+
+task.spawn(function()
+    while guiOpen do local wall = smartFindWall(); foundWall = wall; local targetName = selectedTarget and selectedTarget.Name
+    if wall then stopWallBlink(); wallLabel.Text = targetName and ("🧱 Стена у "..targetName.." ("..wallCount..")") or ("🧱 Стена: ЕСТЬ ("..wallCount..")"); wallLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+    else wallLabel.Text = targetName and ("🚫 Стена у "..targetName.." НЕТУ") or "🚫 Стена: НЕТУ"; wallLabel.TextColor3 = Color3.fromRGB(255, 100, 100); startWallBlink() end; task.wait(0.5) end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ЛОГИКА ПОРТАЛ ТП (вкладка 2)
+-- ═══════════════════════════════════════════════════════════════
+
+task.spawn(function()
+    while guiOpen do local portal = findPortal(); portalFound = portal ~= nil
+    if portal then objStatusLabel.Text = "✅ Teleport1Frame найден"; objStatusLabel.TextColor3 = COLORS.green; tpPortalBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 60); local ok1, pPos = pcall(function() return portal.Position end); local ok2, hPos = pcall(function() return hrp.Position end); if ok1 then posLabel2.Text = string.format("📍 Позиция: %.0f, %.0f, %.0f", pPos.X, pPos.Y, pPos.Z) end; if ok1 and ok2 then distLabel2.Text = string.format("📏 Расстояние: %.1f ст.", (pPos - hPos).Magnitude) end
+    else objStatusLabel.Text = "❌ Teleport1Frame не найден"; objStatusLabel.TextColor3 = COLORS.red; tpPortalBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80) end; task.wait(1) end
+end)
+
+tpPortalBtn.MouseButton1Click:Connect(function() local portal = findPortal(); if portal then teleportTo(portal); statusLabel2.Text = "✅ ТП!"; statusLabel2.TextColor3 = COLORS.green else statusLabel2.Text = "❌ Не найден"; statusLabel2.TextColor3 = COLORS.red end end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ЛОГИКА АРЕНА (вкладка 3)
+-- ═══════════════════════════════════════════════════════════════
+
+local function setArenaStatus(text, color, blink)
+    arenaStatusLabel.Text = text; arenaStatusLabel.TextColor3 = color
+    if blink then arenaGeneration += 1; local myGen = arenaGeneration; task.spawn(function() while arenaGeneration == myGen and guiOpen do arenaStatusLabel.TextTransparency = 0.3; task.wait(0.4); if arenaGeneration ~= myGen then break end; arenaStatusLabel.TextTransparency = 0; task.wait(0.4) end end) else arenaGeneration += 1 end
+end
+
+task.spawn(function() while guiOpen do pcall(function() if hrp then posCheckLabel.Text = string.format("📍 Ваш Y: %.1f", hrp.Position.Y) end end); task.wait(0.5) end end)
+
+startArenaBtn.MouseButton1Click:Connect(function()
+    if autoArena then return end; autoArena = true; arenaAttempts = 0
+    task.spawn(function() while autoArena and guiOpen do arenaAttempts += 1; attemptsLabel.Text = "🔁 Попыток: " .. arenaAttempts; setArenaStatus("⏳ Попытка: " .. arenaAttempts, COLORS.yellow, true); local portal = findPortal(); if not portal then setArenaStatus("❌ Портал не найден", COLORS.red, false); task.wait(1); continue end; teleportTo(portal); task.wait(0.5); local ok, y = pcall(function() return hrp.Position.Y end); if ok and y < ARENA_Y_THRESHOLD then autoArena = false; setArenaStatus("✅ На арене!", COLORS.green, false); break end; task.wait(1) end end)
+end)
+stopArenaBtn.MouseButton1Click:Connect(function() autoArena = false; setArenaStatus("⛔ Остановлено", COLORS.red, false) end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ЛОГИКА АВТО РЕЖИМА (вкладка 4) — 14 ШАГОВ
+-- ═══════════════════════════════════════════════════════════════
+
+local autoStrokePulseGen = 0
+
+local function updateAutoIndicator(enabled)
+    if enabled then TweenService:Create(autoIndicator, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(20, 50, 20)}):Play(); TweenService:Create(autoStroke, TweenInfo.new(0.3), {Color = Color3.fromRGB(80, 255, 80)}):Play(); autoIndicatorLabel.Text = "✅ АВТО ВКЛЮЧЁН"; autoIndicatorLabel.TextColor3 = Color3.fromRGB(80, 255, 80); autoStrokePulseGen += 1; local myGen = autoStrokePulseGen; task.spawn(function() while autoMode and guiOpen and autoStrokePulseGen == myGen do TweenService:Create(autoStroke, TweenInfo.new(0.5), {Color = Color3.fromRGB(40, 120, 40)}):Play(); task.wait(1); if not autoMode or autoStrokePulseGen ~= myGen then break end; TweenService:Create(autoStroke, TweenInfo.new(0.5), {Color = Color3.fromRGB(80, 255, 80)}):Play(); task.wait(1) end end)
+    else autoStrokePulseGen += 1; TweenService:Create(autoIndicator, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(40, 20, 20)}):Play(); TweenService:Create(autoStroke, TweenInfo.new(0.3), {Color = Color3.fromRGB(100, 40, 40)}):Play(); autoIndicatorLabel.Text = "⛔ АВТО ВЫКЛЮЧЕН"; autoIndicatorLabel.TextColor3 = Color3.fromRGB(255, 80, 80) end
+end
+
+local function setStepStatus(step, status)
+    local card, icon = stepCards[step], stepIcons[step]; local stroke = card:FindFirstChildOfClass("UIStroke")
+    if status == "idle" then TweenService:Create(card, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 15, 40)}):Play(); TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(50, 30, 70)}):Play(); icon.Text = "⏸"; icon.TextColor3 = Color3.fromRGB(120, 120, 120)
+    elseif status == "active" then TweenService:Create(card, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(50, 40, 10)}):Play(); TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(255, 200, 50)}):Play(); icon.Text = "▶"; icon.TextColor3 = Color3.fromRGB(255, 220, 50)
+    elseif status == "done" then TweenService:Create(card, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(20, 40, 20)}):Play(); TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(80, 200, 80)}):Play(); icon.Text = "✅"; icon.TextColor3 = Color3.fromRGB(80, 255, 80)
+    elseif status == "error" then TweenService:Create(card, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(50, 20, 20)}):Play(); TweenService:Create(stroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(200, 80, 80)}):Play(); icon.Text = "❌"; icon.TextColor3 = Color3.fromRGB(255, 80, 80) end
+end
+
+local function runAutoLoop(myGen)
+    while autoMode and guiOpen and autoGeneration == myGen do
+        -- Сброс всех 14 карточек
+        for i = 1, 14 do setStepStatus(i, "idle"); stepInfos[i].Text = "" end
+
+        -- ═══ ШАГ 1: ЭКИПИРОВКА FORT ═══
+        currentStep = 1; setStepStatus(1, "active"); stepInfos[1].Text = "⏳ Экипируем Fort..."
+        -- Переискать если потерян (быстрая версия)
+        if not equipState.fortObj or not equipState.fortObj.Parent then
+            equipState.fortObj = findGloveObjFast(GLOVES[1])
+        end
+        local equipOk1 = equipGlove(GLOVES[1], equipState.fortObj, equipStatusLabel, fortEquipBtn)
+        if equipOk1 then
+            stepInfos[1].Text = "✅ Fort экипирован"; setStepStatus(1, "done")
+        else
+            stepInfos[1].Text = "⚠ Экип не подтверждён"; setStepStatus(1, "error")
+            -- Не прерываем — возможно уже экипирован
+        end
+        task.wait(DELAY_STEP_EQUIP); if not autoMode or autoGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 2: ТП В ПОРТАЛ ═══
+        currentStep = 2; setStepStatus(2, "active"); stepInfos[2].Text = "🔍 Ищем портал..."
+        local portal2 = findPortal()
+        if not portal2 then setStepStatus(2, "error"); stepInfos[2].Text = "❌ Портал не найден"; task.wait(CHECK_INTERVAL); continue end
+        teleportTo(portal2); stepInfos[2].Text = "✅ ТП выполнен"; setStepStatus(2, "done")
+        task.wait(DELAY_STEP_PORTAL); if not autoMode or autoGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 3: ПРОВЕРКА АРЕНЫ ═══
+        currentStep = 3; setStepStatus(3, "active"); stepInfos[3].Text = "⏳ Проверяем..."
+        task.wait(DELAY_STEP_ARENA)
+        local onArena3, waitAttempts3 = false, 0
+        while autoMode and guiOpen and autoGeneration == myGen do
+            waitAttempts3 += 1
+            local ok, y = pcall(function() return hrp.Position.Y end)
+            if ok then stepInfos[3].Text = string.format("Y: %.1f (%d)", y, waitAttempts3); if y < ARENA_Y_THRESHOLD then onArena3 = true; break end end
+            if waitAttempts3 > 5 then stepInfos[3].Text = "🔄 Повтор ТП..."; local p = findPortal(); if p then teleportTo(p) end; waitAttempts3 = 0 end
+            task.wait(CHECK_INTERVAL)
+        end
+        if not onArena3 then continue end
+        stepInfos[3].Text = "✅ На арене!"; setStepStatus(3, "done"); if not autoMode or autoGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 4: ТП НА КООРДИНАТЫ -12385 ═══
+        currentStep = 4; setStepStatus(4, "active"); stepInfos[4].Text = "⏳ ТП..."
+        pcall(function() hrp.CFrame = CFrame.new(ARENA_COORDS) end); task.wait(0.2)
+        local ok4, p4 = pcall(function() return hrp.Position end)
+        if ok4 then stepInfos[4].Text = string.format("✅ %.0f,%.0f,%.0f", p4.X, p4.Y, p4.Z) end
+        setStepStatus(4, "done"); task.wait(DELAY_STEP_COORDS); if not autoMode or autoGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 5: СПОСОБНОСТЬ FORT ═══
+        currentStep = 5; setStepStatus(5, "active"); stepInfos[5].Text = "⏳ Используем Fort..."
+        local fortFireOk = fireFortAbility()
+        if fortFireOk then stepInfos[5].Text = "✅ Fort активирован"; setStepStatus(5, "done") else stepInfos[5].Text = "❌ Ошибка Fort"; setStepStatus(5, "error") end
+        task.wait(DELAY_STEP_ABILITY); if not autoMode or autoGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 6: РЕСЕТ ПЕРСОНАЖА ═══
+        currentStep = 6; setStepStatus(6, "active"); stepInfos[6].Text = "⏳ Ресет..."
+        pcall(function() local humanoid = character and character:FindFirstChildOfClass("Humanoid"); if humanoid then humanoid.Health = 0 end end)
+        local newChar6 = player.CharacterAdded:Wait(); character = newChar6
+        hrp = newChar6:WaitForChild("HumanoidRootPart", 10)
+        -- Ждём чтобы персонаж полностью загрузился
+        task.wait(0.5)
+        -- Проверяем что hrp валиден
+        if not hrp or not hrp.Parent then
+            stepInfos[6].Text = "⚠ HRP не загружен"; setStepStatus(6, "error")
+            task.wait(1); continue
+        end
+        stepInfos[6].Text = "✅ Сброшен"; setStepStatus(6, "done")
+        task.wait(DELAY_STEP_RESET); if not autoMode or autoGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 7: ЭКИПИРОВКА ZZZZZZZ ═══
+        currentStep = 7; setStepStatus(7, "active"); stepInfos[7].Text = "⏳ Экипируем Zzzzz..."
+        -- Переискать если потерян (быстрая версия)
+        if not equipState.zzzObj or not equipState.zzzObj.Parent then
+            equipState.zzzObj = findGloveObjFast(GLOVES[2])
+        end
+        local equipOk7 = equipGlove(GLOVES[2], equipState.zzzObj, equipStatusLabel, zzzEquipBtn)
+        if equipOk7 then
+            stepInfos[7].Text = "✅ Zzzzz экипирован"; setStepStatus(7, "done")
+        else
+            stepInfos[7].Text = "⚠ Экип не подтверждён"; setStepStatus(7, "error")
+        end
+        task.wait(DELAY_STEP_EQUIP); if not autoMode or autoGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 8: ТП В ПОРТАЛ (второй раз) ═══
+        currentStep = 8; setStepStatus(8, "active"); stepInfos[8].Text = "🔍 Ищем портал..."
+        local portal8 = findPortal()
+        if not portal8 then setStepStatus(8, "error"); stepInfos[8].Text = "❌ Портал не найден"; task.wait(CHECK_INTERVAL); continue end
+        teleportTo(portal8); stepInfos[8].Text = "✅ ТП выполнен"; setStepStatus(8, "done")
+        task.wait(DELAY_STEP_PORTAL); if not autoMode or autoGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 9: ПРОВЕРКА АРЕНЫ ═══
+        currentStep = 9; setStepStatus(9, "active"); stepInfos[9].Text = "⏳ Проверяем..."
+        task.wait(DELAY_STEP_ARENA)
+        local onArena9, waitAttempts9 = false, 0
+        while autoMode and guiOpen and autoGeneration == myGen do
+            waitAttempts9 += 1
+            local ok, y = pcall(function() return hrp.Position.Y end)
+            if ok then stepInfos[9].Text = string.format("Y: %.1f (%d)", y, waitAttempts9); if y < ARENA_Y_THRESHOLD then onArena9 = true; break end end
+            if waitAttempts9 > 5 then stepInfos[9].Text = "🔄 Повтор ТП..."; local p9 = findPortal(); if p9 then teleportTo(p9) end; waitAttempts9 = 0 end
+            task.wait(CHECK_INTERVAL)
+        end
+        if not onArena9 then continue end
+        stepInfos[9].Text = "✅ На арене!"; setStepStatus(9, "done"); if not autoMode or autoGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 10: ТП НА КООРДИНАТЫ -12385 ═══
+        currentStep = 10; setStepStatus(10, "active"); stepInfos[10].Text = "⏳ ТП..."
+        pcall(function() hrp.CFrame = CFrame.new(ARENA_COORDS) end); task.wait(0.2)
+        local ok10, p10 = pcall(function() return hrp.Position end)
+        if ok10 then stepInfos[10].Text = string.format("✅ %.0f,%.0f,%.0f", p10.X, p10.Y, p10.Z) end
+        setStepStatus(10, "done"); task.wait(DELAY_STEP_COORDS); if not autoMode or autoGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 11: ДЕТЕКТ СТЕНЫ FORT ═══
+        currentStep = 11; setStepStatus(11, "active"); stepInfos[11].Text = "🔍 Ищем стену..."
+        local detectedWall = nil
+        while autoMode and guiOpen and autoGeneration == myGen do
+            local allWalls = findNearestWallToPlayer()
+            if #allWalls > 0 then detectedWall = allWalls[1]; stepInfos[11].Text = string.format("✅ %d стен | Ближ: %.1f ст.", #allWalls, detectedWall.dist); break end
+            stepInfos[11].Text = "⏳ Нет стен..."; task.wait(CHECK_INTERVAL)
+        end
+        if not detectedWall then continue end
+        setStepStatus(11, "done"); task.wait(DELAY_STEP_DETECT); if not autoMode or autoGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 12: ТП К БЛИЖАЙШЕЙ СТЕНЕ ═══
+        currentStep = 12; setStepStatus(12, "active"); stepInfos[12].Text = "⏳ ТП к стене..."
+        pcall(function() hrp.CFrame = CFrame.new(detectedWall.obj.Position + Vector3.new(0, detectedWall.obj.Size.Y / 2 + 3, 0)) end)
+        stepInfos[12].Text = string.format("✅ ТП (%.1f ст.)", detectedWall.dist); setStepStatus(12, "done")
+        task.wait(DELAY_STEP_WALLTP); if not autoMode or autoGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 13: СПОСОБНОСТЬ ZZZZZZZ ═══
+        currentStep = 13; setStepStatus(13, "active"); stepInfos[13].Text = "⏳ Используем Zzzzz..."
+        local zzzFireOk = fireZzzzAbility()
+        if zzzFireOk then stepInfos[13].Text = "✅ Zzzzz активирован"; setStepStatus(13, "done") else stepInfos[13].Text = "❌ Ошибка Zzzzz"; setStepStatus(13, "error") end
+        task.wait(DELAY_STEP_ABILITY); if not autoMode or autoGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 14: РЕСЕТ ПЕРСОНАЖА ═══
+        currentStep = 14; setStepStatus(14, "active"); stepInfos[14].Text = "⏳ Ресет..."
+        pcall(function() local humanoid = character and character:FindFirstChildOfClass("Humanoid"); if humanoid then humanoid.Health = 0 end end)
+        local newChar14 = player.CharacterAdded:Wait(); character = newChar14
+        hrp = newChar14:WaitForChild("HumanoidRootPart", 10)
+        -- Ждём чтобы персонаж полностью загрузился
+        task.wait(0.5)
+        -- Проверяем что hrp валиден
+        if not hrp or not hrp.Parent then
+            stepInfos[14].Text = "⚠ HRP не загружен"; setStepStatus(14, "error")
+            task.wait(1); continue
+        end
+        stepInfos[14].Text = "✅ Сброшен"; setStepStatus(14, "done")
+        task.wait(DELAY_STEP_RESET); if not autoMode or autoGeneration ~= myGen then break end
+
+        -- ═══ КОНЕЦ ЦИКЛА ═══
+        autoCycleCount += 1; cycleLabel.Text = "🔁 Циклов: " .. autoCycleCount
+        currentStep = 0; for i = 1, 14 do setStepStatus(i, "idle"); stepInfos[i].Text = "" end
+        task.wait(DELAY_LOOP)
+    end
+    -- Выход из цикла
+    currentStep = 0; for i = 1, 14 do setStepStatus(i, "idle"); stepInfos[i].Text = "" end; updateAutoIndicator(false)
+end
+
+startAutoBtn.MouseButton1Click:Connect(function() if autoMode then return end; autoMode = true; autoCycleCount = 0; autoGeneration += 1; cycleLabel.Text = "🔁 Циклов: 0"; updateAutoIndicator(true); local myGen = autoGeneration; task.spawn(function() runAutoLoop(myGen) end) end)
+stopAutoBtn.MouseButton1Click:Connect(function() autoMode = false; autoGeneration += 1; currentStep = 0; updateAutoIndicator(false); for i = 1, 14 do setStepStatus(i, "idle"); stepInfos[i].Text = "" end end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ЛОГИКА ЭКИПИРОВКИ (вкладка 5) — КНОПКИ И ОБНОВЛЕНИЕ
+-- ═══════════════════════════════════════════════════════════════
+
+-- Инициализация поиска перчаток
+task.spawn(function()
+    task.wait(0.5)
+    -- Fort
+    fortStatusLabel.Text = "🔍 Поиск Fort..."; fortStatusLabel.TextColor3 = COLORS.yellow
+    equipState.fortObj = findGloveObj(GLOVES[1])
+    if equipState.fortObj then equipState.fortFound = true; fortStatusLabel.Text = "✅ Fort найден"; fortStatusLabel.TextColor3 = COLORS.green; fortEquipBtn.Active = true; local method = detectGloveMethod(equipState.fortObj); updateMethodLabel(fortMethodLabel, method)
+    else fortStatusLabel.Text = "❌ Fort не найден"; fortStatusLabel.TextColor3 = COLORS.red; fortEquipBtn.Active = false end
+    -- ZZZZZZZ
+    zzzStatusLabel.Text = "🔍 Поиск ZZZZZZZ..."; zzzStatusLabel.TextColor3 = COLORS.yellow
+    equipState.zzzObj = findGloveObj(GLOVES[2])
+    if equipState.zzzObj then equipState.zzzFound = true; zzzStatusLabel.Text = "✅ ZZZZZZZ найден"; zzzStatusLabel.TextColor3 = COLORS.green; zzzEquipBtn.Active = true; local method = detectGloveMethod(equipState.zzzObj); updateMethodLabel(zzzMethodLabel, method)
+    else zzzStatusLabel.Text = "❌ ZZZZZZZ не найден"; zzzStatusLabel.TextColor3 = COLORS.red; zzzEquipBtn.Active = false end
+end)
+
+-- Обновление каждую секунду
+task.spawn(function()
+    while guiOpen do task.wait(1); if not guiOpen then break end
+        -- Fort
+        if equipState.fortObj then local ok, parent = pcall(function() return equipState.fortObj.Parent end); if ok and parent then local okD, dist = pcall(function() return (hrp.Position - equipState.fortObj.Position).Magnitude end); if okD then fortDistLabel.Text = string.format("📏 Fort: %.1f ст.", dist) end
+        else fortDistLabel.Text = "📏 Fort: —"; fortEquipBtn.Active = false; equipState.fortObj = findGloveObj(GLOVES[1]); if equipState.fortObj then fortStatusLabel.Text = "✅ Fort найден"; fortStatusLabel.TextColor3 = COLORS.green; fortEquipBtn.Active = true end end else fortDistLabel.Text = "📏 Fort: —" end
+        -- ZZZZZZZ
+        if equipState.zzzObj then local ok, parent = pcall(function() return equipState.zzzObj.Parent end); if ok and parent then local okD, dist = pcall(function() return (hrp.Position - equipState.zzzObj.Position).Magnitude end); if okD then zzzDistLabel.Text = string.format("📏 ZZZ: %.1f ст.", dist) end
+        else zzzDistLabel.Text = "📏 ZZZ: —"; zzzEquipBtn.Active = false; equipState.zzzObj = findGloveObj(GLOVES[2]); if equipState.zzzObj then zzzStatusLabel.Text = "✅ ZZZZZZZ найден"; zzzStatusLabel.TextColor3 = COLORS.green; zzzEquipBtn.Active = true end end else zzzDistLabel.Text = "📏 ZZZ: —" end
+    end
+end)
+
+-- Кнопки экипировки
+fortEquipBtn.MouseButton1Click:Connect(function() equipGlove(GLOVES[1], equipState.fortObj, equipStatusLabel, fortEquipBtn) end)
+zzzEquipBtn.MouseButton1Click:Connect(function() equipGlove(GLOVES[2], equipState.zzzObj, equipStatusLabel, zzzEquipBtn) end)
+
+-- Авто-экипировка Fort
+fortAutoBtn.MouseButton1Click:Connect(function()
+    equipState.fortAutoOn = not equipState.fortAutoOn
+    if equipState.fortAutoOn then fortAutoBtn.Text = "🔄 Авто Fort: ВКЛ"; TweenService:Create(fortAutoBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 160, 40)}):Play(); equipState.fortAutoGen += 1; local myGen = equipState.fortAutoGen; task.spawn(function() while equipState.fortAutoOn and guiOpen and equipState.fortAutoGen == myGen do equipGlove(GLOVES[1], equipState.fortObj, equipStatusLabel, fortEquipBtn); task.wait(3) end end)
+    else fortAutoBtn.Text = "🔄 Авто Fort: ВЫКЛ"; TweenService:Create(fortAutoBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60, 30, 120)}):Play(); equipState.fortAutoGen += 1 end
+end)
+
+-- Авто-экипировка ZZZZZZZ
+zzzAutoBtn.MouseButton1Click:Connect(function()
+    equipState.zzzAutoOn = not equipState.zzzAutoOn
+    if equipState.zzzAutoOn then zzzAutoBtn.Text = "🔄 Авто ZZZ: ВКЛ"; TweenService:Create(zzzAutoBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 160, 40)}):Play(); equipState.zzzAutoGen += 1; local myGen = equipState.zzzAutoGen; task.spawn(function() while equipState.zzzAutoOn and guiOpen and equipState.zzzAutoGen == myGen do equipGlove(GLOVES[2], equipState.zzzObj, equipStatusLabel, zzzEquipBtn); task.wait(3) end end)
+    else zzzAutoBtn.Text = "🔄 Авто ZZZ: ВЫКЛ"; TweenService:Create(zzzAutoBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 45)}):Play(); equipState.zzzAutoGen += 1 end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ЛОГИКА РЕЖИМА ПОМОЩИ (вкладка 6) — 9 ШАГОВ
+-- ═══════════════════════════════════════════════════════════════
+
+-- Обновление lobbyCheckLabel каждые 0.5 сек
+task.spawn(function()
+    while guiOpen do
+        pcall(function()
+            if hrp then
+                local ok, y = pcall(function() return hrp.Position.Y end)
+                if ok then
+                    if y >= LOBBY_Y_MIN_HELP and y <= LOBBY_Y_MAX_HELP then
+                        lobbyCheckLabel.Text = string.format("📍 Y: %.0f | ✅ Лобби", y)
+                        lobbyCheckLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+                    else
+                        lobbyCheckLabel.Text = string.format("📍 Y: %.0f | ❌ Не лобби", y)
+                        lobbyCheckLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+                    end
+                end
+            end
+        end)
+        task.wait(0.5)
+    end
+end)
+
+-- Основной цикл режима помощи
+local function runHelpLoop(myGen)
+    helpPhase = "full"  -- начинаем с полного цикла
+
+    while helpMode and guiOpen and helpGeneration == myGen do
+
+        -- ════════════════════════════════════════
+        -- ПОЛНАЯ ФАЗА (шаги 1-4, только первый раз)
+        -- ════════════════════════════════════════
+
+        if helpPhase == "full" then
+            -- Сброс всех 9 карточек
+            for i = 1, 9 do setHelpStatus(i, "idle"); helpInfos[i].Text = "" end
+
+            helpPhaseLabel.Text = "📋 Фаза: ПОЛНАЯ (1→9)"
+            helpPhaseLabel.TextColor3 = Color3.fromRGB(200, 180, 255)
+
+            -- ═══ ШАГ 1: ЭКИПИРОВКА ZZZZZZZ ═══
+            helpCurrentStep = 1
+            setHelpStatus(1, "active")
+            helpInfos[1].Text = "⏳ Экипируем Zzzzz..."
+
+            -- Переискать если потерян
+            if not equipState.zzzObj or not equipState.zzzObj.Parent then
+                equipState.zzzObj = findGloveObjFast(GLOVES[2])
+            end
+
+            local equip1Ok = equipGlove(GLOVES[2], equipState.zzzObj, helpStatusLabel, zzzEquipBtn)
+            if equip1Ok then
+                helpInfos[1].Text = "✅ Zzzzz экипирован"
+                setHelpStatus(1, "done")
+            else
+                helpInfos[1].Text = "⚠ Экип не подтверждён"
+                setHelpStatus(1, "error")
+                -- Продолжаем несмотря на ошибку
+            end
+            task.wait(HELP_DELAY_EQUIP)
+            if not helpMode or helpGeneration ~= myGen then break end
+
+            -- ═══ ШАГ 2: ТП В ПОРТАЛ ═══
+            helpCurrentStep = 2
+            setHelpStatus(2, "active")
+            helpInfos[2].Text = "🔍 Ищем портал..."
+
+            local portal2 = findPortal()
+            if not portal2 then
+                setHelpStatus(2, "error")
+                helpInfos[2].Text = "❌ Портал не найден"
+                task.wait(HELP_CHECK_INTERVAL)
+                continue
+            end
+            teleportTo(portal2)
+            helpInfos[2].Text = "✅ ТП выполнен"
+            setHelpStatus(2, "done")
+            task.wait(HELP_DELAY_PORTAL)
+            if not helpMode or helpGeneration ~= myGen then break end
+
+            -- ═══ ШАГ 3: ПРОВЕРКА АРЕНЫ ═══
+            helpCurrentStep = 3
+            setHelpStatus(3, "active")
+            helpInfos[3].Text = "⏳ Проверяем Y..."
+
+            task.wait(HELP_DELAY_ARENA)
+
+            local onArena3 = false
+            local waitAttempts3 = 0
+            while helpMode and guiOpen and helpGeneration == myGen do
+                waitAttempts3 += 1
+                local ok, y = pcall(function() return hrp.Position.Y end)
+                if ok then
+                    helpInfos[3].Text = string.format("Y: %.1f (%d)", y, waitAttempts3)
+                    if y < ARENA_Y_THRESHOLD then
+                        onArena3 = true
+                        break
+                    end
+                end
+                -- Повторить ТП если застряли в лобби
+                if waitAttempts3 > 5 then
+                    helpInfos[3].Text = "🔄 Повтор ТП..."
+                    local pRetry = findPortal()
+                    if pRetry then teleportTo(pRetry) end
+                    waitAttempts3 = 0
+                end
+                task.wait(HELP_CHECK_INTERVAL)
+            end
+            if not onArena3 then continue end
+            helpInfos[3].Text = "✅ На арене!"
+            setHelpStatus(3, "done")
+            if not helpMode or helpGeneration ~= myGen then break end
+
+            -- ═══ ШАГ 4: ТП НА КООРДИНАТЫ -12385 ═══
+            helpCurrentStep = 4
+            setHelpStatus(4, "active")
+            helpInfos[4].Text = "⏳ ТП..."
+
+            pcall(function() hrp.CFrame = CFrame.new(ARENA_COORDS) end)
+            task.wait(0.2)
+            local ok4, p4 = pcall(function() return hrp.Position end)
+            if ok4 then
+                helpInfos[4].Text = string.format("✅ %.0f,%.0f,%.0f", p4.X, p4.Y, p4.Z)
+            end
+            setHelpStatus(4, "done")
+            task.wait(HELP_DELAY_COORDS)
+            if not helpMode or helpGeneration ~= myGen then break end
+
+            -- Переходим в петлю
+            helpPhase = "loop"
+            helpPhaseLabel.Text = "🔁 Фаза: ПЕТЛЯ (5→9)"
+            helpPhaseLabel.TextColor3 = Color3.fromRGB(100, 255, 150)
+        end
+
+        -- ════════════════════════════════════════
+        -- ПЕТЛЯ (шаги 5-9, повторяется)
+        -- ════════════════════════════════════════
+
+        -- ═══ ШАГ 5: ЖДЁМ СТЕНУ FORT (радиус 500 студов) ═══
+        helpCurrentStep = 5
+        setHelpStatus(5, "waiting")  -- особый статус ожидания
+        helpInfos[5].Text = "⏳ Ждём стену Fort..."
+
+        local detectedWall5 = nil
+        local wallWaitAttempts = 0
+
+        while helpMode and guiOpen and helpGeneration == myGen do
+            wallWaitAttempts += 1
+
+            local allWalls5 = {}
+            pcall(function()
+                for _, obj in ipairs(workspace:GetChildren()) do
+                    if isTargetWall(obj) then
+                        local ok, dist = pcall(function()
+                            return (obj.Position - hrp.Position).Magnitude
+                        end)
+                        -- РАДИУС 500 СТУДОВ
+                        if ok and dist <= 500 then
+                            table.insert(allWalls5, {obj = obj, dist = dist})
+                        end
+                    end
+                end
+            end)
+
+            table.sort(allWalls5, function(a, b) return a.dist < b.dist end)
+
+            if #allWalls5 > 0 then
+                detectedWall5 = allWalls5[1]
+                helpInfos[5].Text = string.format("✅ Стена! %d шт. | %.1f ст.", #allWalls5, detectedWall5.dist)
+                break
+            end
+
+            helpInfos[5].Text = string.format("⏳ Нет стены... (%d)", wallWaitAttempts)
+            task.wait(HELP_CHECK_INTERVAL)
+        end
+
+        if not detectedWall5 then continue end
+        setHelpStatus(5, "done")
+
+        -- ТП к найденной стене (моментально после детекта)
+        pcall(function()
+            hrp.CFrame = CFrame.new(
+                detectedWall5.obj.Position +
+                Vector3.new(0, detectedWall5.obj.Size.Y / 2 + 3, 0)
+            )
+        end)
+
+        if not helpMode or helpGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 6: ПЕРВОЕ ИСПОЛЬЗОВАНИЕ ZZZZ ═══
+        helpCurrentStep = 6
+        setHelpStatus(6, "active")
+        helpInfos[6].Text = "⏳ Используем Zzzz #1..."
+
+        local zzzOk1 = fireZzzzAbility()
+        if zzzOk1 then
+            helpInfos[6].Text = "✅ Zzzz #1 активирован"
+            setHelpStatus(6, "done")
+        else
+            helpInfos[6].Text = "❌ Ошибка Zzzz #1"
+            setHelpStatus(6, "error")
+        end
+        task.wait(HELP_DELAY_ABILITY1)
+        if not helpMode or helpGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 7: ЖДАТЬ 2 СЕК + ВТОРОЕ ИСПОЛЬЗОВАНИЕ ZZZZ ═══
+        helpCurrentStep = 7
+        setHelpStatus(7, "active")
+
+        -- Отсчёт 2 секунд с отображением
+        for countdown = 2, 1, -1 do
+            helpInfos[7].Text = string.format("⏳ Ждём %d сек...", countdown)
+            task.wait(1)
+            if not helpMode or helpGeneration ~= myGen then break end
+        end
+        if not helpMode or helpGeneration ~= myGen then break end
+
+        helpInfos[7].Text = "⏳ Используем Zzzz #2..."
+        local zzzOk2 = fireZzzzAbility()
+        if zzzOk2 then
+            helpInfos[7].Text = "✅ Zzzz #2 активирован"
+            setHelpStatus(7, "done")
+        else
+            helpInfos[7].Text = "❌ Ошибка Zzzz #2"
+            setHelpStatus(7, "error")
+        end
+        task.wait(HELP_DELAY_ABILITY2)
+        if not helpMode or helpGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 8: ТП НА КООРДИНАТЫ -12385 ═══
+        helpCurrentStep = 8
+        setHelpStatus(8, "active")
+        helpInfos[8].Text = "⏳ ТП..."
+
+        pcall(function() hrp.CFrame = CFrame.new(ARENA_COORDS) end)
+        task.wait(0.2)
+        local ok8, p8 = pcall(function() return hrp.Position end)
+        if ok8 then
+            helpInfos[8].Text = string.format("✅ %.0f,%.0f,%.0f", p8.X, p8.Y, p8.Z)
+        end
+        setHelpStatus(8, "done")
+        task.wait(HELP_DELAY_COORDS)
+        if not helpMode or helpGeneration ~= myGen then break end
+
+        -- ═══ ШАГ 9: ПЕРЕХОД К ПЕТЛЕ ═══
+        helpCurrentStep = 9
+        setHelpStatus(9, "active")
+        helpCycleCount += 1
+        helpCycleLabel.Text = "🔁 Полных циклов: " .. helpCycleCount
+        helpInfos[9].Text = string.format("🔁 Цикл %d → Шаг 5", helpCycleCount)
+        task.wait(0.3)
+        setHelpStatus(9, "done")
+
+        -- Сбросить карточки 5-8 для следующей итерации
+        for i = 5, 8 do setHelpStatus(i, "idle"); helpInfos[i].Text = "" end
+        setHelpStatus(9, "idle"); helpInfos[9].Text = ""
+
+        -- helpPhase уже "loop" — следующая итерация пойдёт с шага 5
+        task.wait(0.5)
+    end
+
+    -- Выход из цикла
+    helpCurrentStep = 0
+    helpPhase = "full"
+    for i = 1, 9 do setHelpStatus(i, "idle"); helpInfos[i].Text = "" end
+    updateHelpIndicator(false)
+end
+
+-- Кнопка старта помощи
+startHelpBtn.MouseButton1Click:Connect(function()
+    -- Проверка лобби ОБЯЗАТЕЛЬНА
+    if not isInLobby() then
+        helpStatusLabel.Text = "❌ Ты не в лобби! (Y должен быть 300-400)"
+        helpStatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+        return
+    end
+
+    if helpMode then return end
+    helpMode = true
+    helpCycleCount = 0
+    helpPhase = "full"
+    helpGeneration += 1
+    helpCycleLabel.Text = "🔁 Полных циклов: 0"
+    helpPhaseLabel.Text = "▶ Фаза: ПОЛНАЯ (шаги 1-9)"
+    helpStatusLabel.Text = "✅ Режим помощи запущен"
+    helpStatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+    updateHelpIndicator(true)
+    local myGen = helpGeneration
+    task.spawn(function() runHelpLoop(myGen) end)
+end)
+
+-- Кнопка остановки помощи
+stopHelpBtn.MouseButton1Click:Connect(function()
+    helpMode = false
+    helpGeneration += 1
+    helpCurrentStep = 0
+    helpPhase = "full"           -- СБРОС фазы при остановке
+    helpCycleCount = 0           -- СБРОС счётчика
+    helpCycleLabel.Text = "🔁 Полных циклов: 0"
+    helpPhaseLabel.Text = "▶ Фаза: ожидание старта"
+    for i = 1, 9 do setHelpStatus(i, "idle"); helpInfos[i].Text = "" end
+    updateHelpIndicator(false)
+    helpStatusLabel.Text = "⛔ Остановлено и сброшено"
+    helpStatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- ВКЛАДКА 7 — OTHER (ДОПОЛНИТЕЛЬНЫЕ СКРИПТЫ)
+-- ═══════════════════════════════════════════════════════════════
+
+local cf7 = contentFrames[7]
+
+-- ═══ ЗАГОЛОВОК ═══
+local otherTitleLabel = Instance.new("TextLabel")
+otherTitleLabel.Text = "📦 ДОПОЛНИТЕЛЬНЫЕ СКРИПТЫ"
+otherTitleLabel.Size = UDim2.new(1, 0, 0, 18)
+otherTitleLabel.Position = UDim2.new(0, 0, 0, 0)
+otherTitleLabel.BackgroundTransparency = 1
+otherTitleLabel.TextColor3 = Color3.fromRGB(220, 180, 255)
+otherTitleLabel.TextSize = 9
+otherTitleLabel.Font = Enum.Font.GothamBold
+otherTitleLabel.Parent = cf7
+
+-- ═══ РАЗДЕЛИТЕЛЬ ═══
+local divider7 = Instance.new("Frame")
+divider7.Size = UDim2.new(1, 0, 0, 1)
+divider7.Position = UDim2.new(0, 0, 0, 20)
+divider7.BackgroundColor3 = Color3.fromRGB(60, 40, 100)
+divider7.BorderSizePixel = 0
+divider7.Parent = cf7
+
+-- ═══ СЕКЦИЯ PLATFORM ═══
+local platformFrame = Instance.new("Frame")
+platformFrame.Size = UDim2.new(1, 0, 0, 60)
+platformFrame.Position = UDim2.new(0, 0, 0, 26)
+platformFrame.BackgroundColor3 = Color3.fromRGB(25, 15, 40)
+platformFrame.BorderSizePixel = 0
+platformFrame.Parent = cf7
+Instance.new("UICorner", platformFrame).CornerRadius = UDim.new(0, 6)
+
+local platformStroke = Instance.new("UIStroke")
+platformStroke.Color = Color3.fromRGB(60, 40, 100)
+platformStroke.Thickness = 1
+platformStroke.Parent = platformFrame
+
+local platformTitleLabel = Instance.new("TextLabel")
+platformTitleLabel.Text = "🔧 Platform"
+platformTitleLabel.Size = UDim2.new(1, -8, 0, 16)
+platformTitleLabel.Position = UDim2.new(0, 4, 0, 4)
+platformTitleLabel.BackgroundTransparency = 1
+platformTitleLabel.TextColor3 = Color3.fromRGB(200, 180, 255)
+platformTitleLabel.TextSize = 9
+platformTitleLabel.Font = Enum.Font.GothamBold
+platformTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+platformTitleLabel.Parent = platformFrame
+
+local platformDescLabel = Instance.new("TextLabel")
+platformDescLabel.Text = "Загружает скрипт Platform"
+platformDescLabel.Size = UDim2.new(1, -8, 0, 12)
+platformDescLabel.Position = UDim2.new(0, 4, 0, 20)
+platformDescLabel.BackgroundTransparency = 1
+platformDescLabel.TextColor3 = Color3.fromRGB(140, 120, 180)
+platformDescLabel.TextSize = 7
+platformDescLabel.Font = Enum.Font.Gotham
+platformDescLabel.TextXAlignment = Enum.TextXAlignment.Left
+platformDescLabel.Parent = platformFrame
+
+-- Состояние Platform
+local platformActivated = false
+
+-- Кнопка Platform (изначально видима)
+local platformBtn = Instance.new("TextButton")
+platformBtn.Text = "On"
+platformBtn.Size = UDim2.new(0, 60, 0, 20)
+platformBtn.Position = UDim2.new(1, -68, 0, 34)
+platformBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 60)
+platformBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+platformBtn.TextSize = 9
+platformBtn.Font = Enum.Font.GothamBold
+platformBtn.BorderSizePixel = 0
+platformBtn.AutoButtonColor = false
+platformBtn.Parent = platformFrame
+Instance.new("UICorner", platformBtn).CornerRadius = UDim.new(0, 5)
+
+-- Лейбл "Активно" (изначально скрыт)
+local platformActiveLabel = Instance.new("TextLabel")
+platformActiveLabel.Text = "✅ Активно"
+platformActiveLabel.Size = UDim2.new(0, 70, 0, 20)
+platformActiveLabel.Position = UDim2.new(1, -78, 0, 34)
+platformActiveLabel.BackgroundTransparency = 1
+platformActiveLabel.TextColor3 = Color3.fromRGB(80, 255, 80)
+platformActiveLabel.TextSize = 9
+platformActiveLabel.Font = Enum.Font.GothamBold
+platformActiveLabel.Visible = false
+platformActiveLabel.Parent = platformFrame
+
+-- Hover эффект для кнопки Platform
+platformBtn.MouseEnter:Connect(function()
+    if not platformActivated then
+        TweenService:Create(platformBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(60, 200, 80)}):Play()
+    end
+end)
+platformBtn.MouseLeave:Connect(function()
+    if not platformActivated then
+        TweenService:Create(platformBtn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(40, 160, 60)}):Play()
+    end
+end)
+
+-- Нажатие на кнопку Platform — ОДНОРАЗОВОЕ
+platformBtn.MouseButton1Click:Connect(function()
+    if platformActivated then return end  -- Уже активировано
+    platformActivated = true
+    
+    -- Запуск loadstring
+    pcall(function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Platform"))()
+    end)
+    
+    -- Скрыть кнопку и показать "Активно"
+    platformBtn.Visible = false
+    platformActiveLabel.Visible = true
+    
+    -- Анимация появления
+    platformActiveLabel.TextTransparency = 1
+    TweenService:Create(platformActiveLabel, TweenInfo.new(0.3), {TextTransparency = 0}):Play()
+end)
+
+-- ═══ ИНФОРМАЦИЯ ═══
+local otherInfoLabel = Instance.new("TextLabel")
+otherInfoLabel.Text = "ℹ Скрипты загружаются один раз"
+otherInfoLabel.Size = UDim2.new(1, 0, 0, 14)
+otherInfoLabel.Position = UDim2.new(0, 4, 0, 92)
+otherInfoLabel.BackgroundTransparency = 1
+otherInfoLabel.TextColor3 = Color3.fromRGB(120, 100, 160)
+otherInfoLabel.TextSize = 7
+otherInfoLabel.Font = Enum.Font.Gotham
+otherInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+otherInfoLabel.Parent = cf7
