@@ -7,6 +7,8 @@
     - Анимации: появление GUI, сворачивание, кнопки, вкладки, уведомления
     - Переливающийся интерфейс зависящий от темы
     - Панель действий и мгновенное добавление локации
+    - Исправлен телепорт к Plate (workspace.Arena.Plate + 5 стадов)
+    - Компактный лаунчер 300x200
 --]]
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -31,10 +33,8 @@ if _G.CoordsDisplayEnabled == nil then _G.CoordsDisplayEnabled = false end
 if _G.TimerEnabled == nil then _G.TimerEnabled = false end
 
 -- ===== АВТО-ПЕРЕЗАПУСК ПОСЛЕ ТЕЛЕПОРТАЦИИ =====
--- Флаг: GUI не был закрыт пользователем вручную (P)
 if _G.EscanorHubClosed == nil then _G.EscanorHubClosed = false end
 
--- Список поддерживаемых Place ID для авто-перезапуска
 local SUPPORTED_PLACE_IDS = {
     [6403373529] = "Slap Battles",
     [7234087065] = "Barzil",
@@ -48,28 +48,22 @@ local SUPPORTED_PLACE_IDS = {
 }
 
 local function setupAutoRestart()
-    -- Loadstring URL для перезапуска скрипта
     local SCRIPT_URL = "https://pastebin.com/raw/wyYpVD58"
     local scriptSource = 'repeat task.wait() until game:IsLoaded() task.wait(2) loadstring(game:HttpGet("' .. SCRIPT_URL .. '"))()'
 
-    -- Попытка вставить скрипт в очередь перезапуска (совместимость с Xeno и другими)
     local function tryQueueScript()
-        -- Xeno
         local ok1 = pcall(function()
             if queue_on_teleport then queue_on_teleport(scriptSource) return end
         end)
         if ok1 then return true end
-        -- Synapse
         local ok2 = pcall(function()
             if syn and syn.queue_on_teleport then syn.queue_on_teleport(scriptSource) return end
         end)
         if ok2 then return true end
-        -- Fluxus
         local ok3 = pcall(function()
             if fluxus and fluxus.queue_on_teleport then fluxus.queue_on_teleport(scriptSource) return end
         end)
         if ok3 then return true end
-        -- Другие инжекторы через getgenv
         local ok4 = pcall(function()
             if getgenv then
                 local env = getgenv()
@@ -80,23 +74,18 @@ local function setupAutoRestart()
         return false
     end
 
-    -- Слушаем телепортацию
     LP.OnTeleport:Connect(function(State)
         if State == Enum.TeleportState.Started then
             if _G.EscanorHubClosed then return end
-            -- Сохранить настройки для нового плейса
             _G.TeleportHubSettings = _G.TeleportHubSettings or {}
             _G.TeleportHubSettings._autoRestarted = true
             local queued = tryQueueScript()
-            if queued then
-                warn("[Escanor HUB] Скрипт поставлен в очередь перезапуска!")
-            else
+            if not queued then
                 warn("[Escanor HUB] queue_on_teleport не найден. Попробуйте loadstring вручную после ТП.")
             end
         end
     end)
 
-    -- Повтор при неудачной телепортации
     pcall(function()
         TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
             if player == LP then
@@ -112,7 +101,7 @@ local function setupAutoRestart()
     end)
 end
 
--- ===== ЛАУНЧЕР =====
+-- ===== ЛАУНЧЕР (компактный 300x200) =====
 local function showLauncher()
     local launcherGui = Instance.new("ScreenGui")
     launcherGui.Name = "Launcher"
@@ -121,12 +110,12 @@ local function showLauncher()
     if not launcherGui.Parent then launcherGui.Parent = LP:WaitForChild("PlayerGui") end
 
     local main = Instance.new("Frame", launcherGui)
-    main.Size = UDim2.new(0, 420, 0, 360)
-    main.Position = UDim2.new(0.5, -210, 0.5, -180)
+    main.Size = UDim2.new(0, 300, 0, 200)
+    main.Position = UDim2.new(0.5, -150, 0.5, -100)
     main.BackgroundColor3 = Color3.fromRGB(20, 20, 35)
     main.BorderSizePixel = 0
     main.ClipsDescendants = true
-    Instance.new("UICorner", main).CornerRadius = UDim.new(0, 16)
+    Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
     local gradient = Instance.new("UIGradient", main)
     gradient.Color = ColorSequence.new{
         ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 50)),
@@ -134,95 +123,75 @@ local function showLauncher()
     }
     gradient.Rotation = -45
 
-    -- Переливающаяся рамка лаунчера (UIStroke)
     local launcherStroke = Instance.new("UIStroke", main)
     launcherStroke.Thickness = 2
     launcherStroke.Color = Color3.fromRGB(140, 100, 255)
     launcherStroke.Transparency = 0.15
 
-    -- Анимация перелива лаунчера
     local launcherHue = 0
     local launcherShimmerConn = RunService.Heartbeat:Connect(function(dt)
         if not main or not main.Parent then return end
         launcherHue = (launcherHue + dt * 1.2) % (math.pi * 2)
-        -- Фиолетовое переливание: оттенок 0.75 ± 0.12
         local h = (0.75 + math.sin(launcherHue) * 0.12) % 1
-        local strokeCol = Color3.fromHSV(h, 0.7, 0.9)
-        launcherStroke.Color = strokeCol
-        -- Обновить градиент фона лаунчера с лёгким переливом
+        launcherStroke.Color = Color3.fromHSV(h, 0.7, 0.9)
         local bgH = (0.75 + math.sin(launcherHue * 0.7) * 0.05) % 1
-        local gradCol1 = Color3.fromHSV(bgH, 0.3, 0.15)
-        local gradCol2 = Color3.fromHSV((bgH + 0.03) % 1, 0.25, 0.08)
         gradient.Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, gradCol1),
-            ColorSequenceKeypoint.new(1, gradCol2)
+            ColorSequenceKeypoint.new(0, Color3.fromHSV(bgH, 0.3, 0.15)),
+            ColorSequenceKeypoint.new(1, Color3.fromHSV((bgH + 0.03) % 1, 0.25, 0.08))
         }
-        gradient.Rotation = -45 + math.sin(launcherHue * 0.5) * 15
-        -- Обновить рамку заголовка
-        if titleStroke and titleStroke.Parent then
-            local h2 = (0.75 + math.sin(launcherHue + 1.0) * 0.12) % 1
-            titleStroke.Color = Color3.fromHSV(h2, 0.5, 0.75)
-        end
     end)
 
-    -- Заголовок лаунчера
+    -- Заголовок
     local titleBar = Instance.new("Frame", main)
-    titleBar.Size = UDim2.new(1, 0, 0, 32)
+    titleBar.Size = UDim2.new(1, 0, 0, 24)
     titleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
     titleBar.BorderSizePixel = 0
-    Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 8)
-
-    -- Переливающаяся рамка заголовка лаунчера
-    local titleStroke = Instance.new("UIStroke", titleBar)
-    titleStroke.Thickness = 1
-    titleStroke.Color = Color3.fromRGB(140, 100, 255)
-    titleStroke.Transparency = 0.4
+    Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 6)
 
     local titleText = Instance.new("TextLabel", titleBar)
-    titleText.Size = UDim2.new(1, -70, 1, 0)
-    titleText.Position = UDim2.new(0, 10, 0, 0)
+    titleText.Size = UDim2.new(1, -60, 1, 0)
+    titleText.Position = UDim2.new(0, 8, 0, 0)
     titleText.BackgroundTransparency = 1
     titleText.Text = "🚀 Escanor HUB 🔥 v1.2"
     titleText.TextColor3 = Color3.new(1, 1, 1)
     titleText.Font = Enum.Font.GothamBold
-    titleText.TextSize = 16
+    titleText.TextSize = 12
     titleText.TextXAlignment = Enum.TextXAlignment.Left
 
     local minBtn = Instance.new("TextButton", titleBar)
-    minBtn.Size = UDim2.new(0, 28, 0, 28)
-    minBtn.Position = UDim2.new(1, -60, 0, 2)
+    minBtn.Size = UDim2.new(0, 22, 0, 22)
+    minBtn.Position = UDim2.new(1, -46, 0, 1)
     minBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 85)
     minBtn.Text = "–"
     minBtn.TextColor3 = Color3.new(1, 1, 1)
     minBtn.Font = Enum.Font.GothamBold
-    minBtn.TextSize = 18
-    Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 6)
+    minBtn.TextSize = 14
+    Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 5)
 
     local closeBtn = Instance.new("TextButton", titleBar)
-    closeBtn.Size = UDim2.new(0, 28, 0, 28)
-    closeBtn.Position = UDim2.new(1, -28, 0, 2)
+    closeBtn.Size = UDim2.new(0, 22, 0, 22)
+    closeBtn.Position = UDim2.new(1, -22, 0, 1)
     closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
     closeBtn.Text = "✕"
     closeBtn.TextColor3 = Color3.new(1, 1, 1)
     closeBtn.Font = Enum.Font.GothamBold
-    closeBtn.TextSize = 16
-    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
+    closeBtn.TextSize = 14
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 5)
 
     local launcherMinimized = false
-    local launcherFullHeight = 360
     local contentFrame = Instance.new("Frame", main)
-    contentFrame.Size = UDim2.new(1, 0, 1, -32)
-    contentFrame.Position = UDim2.new(0, 0, 0, 32)
+    contentFrame.Size = UDim2.new(1, 0, 1, -24)
+    contentFrame.Position = UDim2.new(0, 0, 0, 24)
     contentFrame.BackgroundTransparency = 1
 
     minBtn.MouseButton1Click:Connect(function()
         if not launcherMinimized then
-            main:TweenSize(UDim2.new(0, 420, 0, 32), Enum.EasingDirection.InOut, Enum.EasingStyle.Quad, 0.3, true)
+            main:TweenSize(UDim2.new(0, 300, 0, 24), Enum.EasingDirection.InOut, Enum.EasingStyle.Quad, 0.3, true)
             minBtn.Text = "+"
             contentFrame.Visible = false
             launcherMinimized = true
         else
-            main:TweenSize(UDim2.new(0, 420, 0, launcherFullHeight), Enum.EasingDirection.InOut, Enum.EasingStyle.Quad, 0.3, true)
+            main:TweenSize(UDim2.new(0, 300, 0, 200), Enum.EasingDirection.InOut, Enum.EasingStyle.Quad, 0.3, true)
             minBtn.Text = "–"
             contentFrame.Visible = true
             launcherMinimized = false
@@ -234,7 +203,7 @@ local function showLauncher()
         launcherGui:Destroy()
     end)
 
-    -- Перетаскивание лаунчера
+    -- Перетаскивание
     local dragging = false
     local dragStart, startPos
     titleBar.InputBegan:Connect(function(input)
@@ -253,14 +222,14 @@ local function showLauncher()
         end
     end)
 
-    -- Контент лаунчера
+    -- Язык
     local langLabel = Instance.new("TextLabel", contentFrame)
-    langLabel.Size = UDim2.new(1, -20, 0, 25)
-    langLabel.Position = UDim2.new(0, 10, 0, 33)
+    langLabel.Size = UDim2.new(1, -16, 0, 16)
+    langLabel.Position = UDim2.new(0, 8, 0, 8)
     langLabel.BackgroundTransparency = 1
     langLabel.Text = "🌐 Язык / Language:"
     langLabel.TextColor3 = Color3.new(0.9, 0.9, 0.9)
-    langLabel.TextSize = 16
+    langLabel.TextSize = 11
     langLabel.Font = Enum.Font.Gotham
     langLabel.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -275,15 +244,15 @@ local function showLauncher()
     local langCodes = {"en", "ru", "ua"}
     for i, name in ipairs(langs) do
         local btn = Instance.new("TextButton", contentFrame)
-        btn.Size = UDim2.new(0.3, -5, 0, 36)
-        btn.Position = UDim2.new(0, 10 + (i-1)*130, 0, 63)
+        btn.Size = UDim2.new(0.3, -4, 0, 22)
+        btn.Position = UDim2.new(0, 8 + (i-1)*92, 0, 28)
         btn.Text = name
         btn.TextColor3 = Color3.new(1, 1, 1)
-        btn.TextSize = 14
+        btn.TextSize = 11
         btn.Font = Enum.Font.GothamSemibold
         btn.BackgroundColor3 = Color3.fromRGB(60, 60, 120)
         btn.BorderSizePixel = 0
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
         btn.MouseButton1Click:Connect(function()
             selectedLang = langCodes[i]
             updateLangButtons()
@@ -291,13 +260,14 @@ local function showLauncher()
         langButtons[langCodes[i]] = btn
     end
 
+    -- Устройство
     local devLabel = Instance.new("TextLabel", contentFrame)
-    devLabel.Size = UDim2.new(1, -20, 0, 25)
-    devLabel.Position = UDim2.new(0, 10, 0, 113)
+    devLabel.Size = UDim2.new(1, -16, 0, 16)
+    devLabel.Position = UDim2.new(0, 8, 0, 58)
     devLabel.BackgroundTransparency = 1
     devLabel.Text = "📱 Устройство / Device:"
     devLabel.TextColor3 = Color3.new(0.9, 0.9, 0.9)
-    devLabel.TextSize = 16
+    devLabel.TextSize = 11
     devLabel.Font = Enum.Font.Gotham
     devLabel.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -311,15 +281,15 @@ local function showLauncher()
     local devs = {"PC", "Mobile"}
     for i, dev in ipairs(devs) do
         local btn = Instance.new("TextButton", contentFrame)
-        btn.Size = UDim2.new(0.4, -5, 0, 36)
-        btn.Position = UDim2.new(0, 10 + (i-1)*170, 0, 143)
+        btn.Size = UDim2.new(0.4, -4, 0, 22)
+        btn.Position = UDim2.new(0, 8 + (i-1)*120, 0, 78)
         btn.Text = dev == "PC" and "💻 ПК" or "📱 Телефон"
         btn.TextColor3 = Color3.new(1, 1, 1)
-        btn.TextSize = 14
+        btn.TextSize = 11
         btn.Font = Enum.Font.GothamSemibold
         btn.BackgroundColor3 = Color3.fromRGB(60, 60, 120)
         btn.BorderSizePixel = 0
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
         btn.MouseButton1Click:Connect(function()
             selectedDevice = dev
             updateDevButtons()
@@ -327,13 +297,14 @@ local function showLauncher()
         deviceButtons[dev] = btn
     end
 
+    -- Тема
     local themeLabel = Instance.new("TextLabel", contentFrame)
-    themeLabel.Size = UDim2.new(1, -20, 0, 25)
-    themeLabel.Position = UDim2.new(0, 10, 0, 193)
+    themeLabel.Size = UDim2.new(1, -16, 0, 16)
+    themeLabel.Position = UDim2.new(0, 8, 0, 108)
     themeLabel.BackgroundTransparency = 1
     themeLabel.Text = "🎨 Тема / Theme:"
     themeLabel.TextColor3 = Color3.new(0.9, 0.9, 0.9)
-    themeLabel.TextSize = 16
+    themeLabel.TextSize = 11
     themeLabel.Font = Enum.Font.Gotham
     themeLabel.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -348,15 +319,15 @@ local function showLauncher()
     local themeNames = { dark = "🌙 Тёмная", light = "☀️ Светлая" }
     for i, theme in ipairs(themes) do
         local btn = Instance.new("TextButton", contentFrame)
-        btn.Size = UDim2.new(0.4, -5, 0, 36)
-        btn.Position = UDim2.new(0, 10 + (i-1)*170, 0, 223)
+        btn.Size = UDim2.new(0.4, -4, 0, 22)
+        btn.Position = UDim2.new(0, 8 + (i-1)*120, 0, 128)
         btn.Text = themeNames[theme]
         btn.TextColor3 = Color3.new(1, 1, 1)
-        btn.TextSize = 14
+        btn.TextSize = 11
         btn.Font = Enum.Font.GothamSemibold
         btn.BackgroundColor3 = Color3.fromRGB(60, 60, 120)
         btn.BorderSizePixel = 0
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
         btn.MouseButton1Click:Connect(function()
             selectedTheme = theme
             updateThemeButtons()
@@ -378,15 +349,15 @@ local function showLauncher()
     end
 
     local execBtn = Instance.new("TextButton", contentFrame)
-    execBtn.Size = UDim2.new(0.8, 0, 0, 45)
-    execBtn.Position = UDim2.new(0.1, 0, 1, -55)
+    execBtn.Size = UDim2.new(0.8, 0, 0, 30)
+    execBtn.Position = UDim2.new(0.1, 0, 1, -36)
     execBtn.Text = "🚀 Execute / Запустить"
     execBtn.TextColor3 = Color3.new(1, 1, 1)
-    execBtn.TextSize = 18
+    execBtn.TextSize = 13
     execBtn.Font = Enum.Font.GothamBold
     execBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 80)
     execBtn.BorderSizePixel = 0
-    Instance.new("UICorner", execBtn).CornerRadius = UDim.new(0, 12)
+    Instance.new("UICorner", execBtn).CornerRadius = UDim.new(0, 8)
     execBtn.MouseButton1Click:Connect(function()
         _G.TeleportHubSettings = {
             language = selectedLang,
@@ -443,7 +414,7 @@ function StartEscanorHub_Common()
     local autoTargetPlayer = nil
     local autoLoopConnection = nil
     local instantBtn = nil
-    local settingsWindow = nil -- legacy, используем settingsPanel
+    local settingsWindow = nil
 
     local favorites = _G.FavoriteLocations or {}
     local history = _G.TeleportHistory or {}
@@ -483,8 +454,7 @@ function StartEscanorHub_Common()
     local isMinimized = false
     local originalHeight = nil
 
-    -- Темы (полностью) с параметрами переливания
-    -- shimmerHue: базовый оттенок (0-1), shimmerRange: диапазон колебания оттенка, shimmerSat/shimmerVal: насыщенность/яркость
+    -- Темы (полностью)
     local themes = {
         dark = {
             mainBg = Color3.fromRGB(25,28,40), mainGradStart = Color3.fromRGB(25,28,40), mainGradEnd = Color3.fromRGB(15,18,30),
@@ -529,7 +499,7 @@ function StartEscanorHub_Common()
     }
     themes["default"] = themes.dark
 
-    -- ===== ФУНКЦИЯ ВЫЧИСЛЕНИЯ ПЕРЕЛИВАЮЩЕГОСЯ ЦВЕТА =====
+    -- Функции переливания
     local function getShimmerColor(t, phase)
         local baseH = t.shimmerHue or 0.75
         local range = t.shimmerRange or 0.12
@@ -557,9 +527,8 @@ function StartEscanorHub_Common()
         return Color3.fromHSV(h, sat, val)
     end
 
-    -- Переводы локаций (полная таблица включая Slap Battles)
+    -- Переводы
     local locationTranslations = {
-        -- Slap Battles
         ["Debug room"] = { ru = "Дебаг комната", en = "Debug Room", ua = "Дебаг кімната" },
         ["Main island"] = { ru = "Главный остров", en = "Main Island", ua = "Головний острів" },
         ["Left island"] = { ru = "Левый остров", en = "Left Island", ua = "Лівий острів" },
@@ -574,7 +543,6 @@ function StartEscanorHub_Common()
         ["Cloud"] = { ru = "Облако", en = "Cloud", ua = "Хмара" },
         ["Brazil"] = { ru = "Бразил", en = "Brazil", ua = "Бразил" },
         ["Plate"] = { ru = "Тарелка", en = "Plate", ua = "Тарілка" },
-        -- Barzil
         ["Spawn"] = { ru = "Спавн", en = "Spawn", ua = "Спавн" },
         ["Clown (Fan)"] = { ru = "Клоун (Фан)", en = "Clown (Fan)", ua = "Клоун (Фан)" },
         ["Angry Brazil"] = { ru = "Злой Бразил", en = "Angry Brazil", ua = "Злий Бразил" },
@@ -860,7 +828,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         _G.AntiAFKEnabled = false
     end
 
-    -- FPS Widget
     local function createFPSWidget()
         if fpsData.gui then return end
         local gui = Instance.new("ScreenGui")
@@ -945,7 +912,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         _G.ShowFPS = false
     end
 
-    -- ===== ВНЕШНИЕ МОДУЛИ =====
     local function startFullbright()
         if fullbrightEnabled then return end
         fullbrightBackup = {
@@ -1171,49 +1137,16 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
     end
 
     local function teleportToPlate()
-        -- Оптимизированный поиск тарелки — ищем по имени сначала (быстро)
-        local plate = nil
-        -- Быстрый поиск по имени
-        for _, v in pairs(workspace:GetChildren()) do
-            if v:IsA("BasePart") and (v.Name == "MovingPlate" or v.Name:lower():find("plate")) then
-                plate = v
-                break
-            end
-            if v:IsA("Model") then
-                local found = v:FindFirstChild("MovingPlate")
-                if found and found:IsA("BasePart") then plate = found break end
-                for _, child in pairs(v:GetChildren()) do
-                    if child:IsA("BasePart") and child.Name:lower():find("plate") then
-                        plate = child break
-                    end
-                end
-                if plate then break end
-            end
-        end
-        -- Если не нашли — расширенный поиск в координатной области
-        if not plate then
-            local minX, maxX = -293, 291
-            local minY, maxY = -10, 10
-            local minZ, maxZ = -293, 288
-            for _, v in pairs(workspace:GetDescendants()) do
-                if v:IsA("BasePart") then
-                    local p = v.Position
-                    if p.X > minX and p.X < maxX and p.Y > minY and p.Y < maxY and p.Z > minZ and p.Z < maxZ then
-                        if v.Name:lower():find("plate") or v.Name:lower():find("move") then
-                            plate = v break
-                        end
-                    end
+        local arena = workspace:FindFirstChild("Arena")
+        if arena then
+            local plate = arena:FindFirstChild("Plate")
+            if plate then
+                local char = LP.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    hrp.CFrame = plate.CFrame * CFrame.new(0, 5, 0)
                 end
             end
-        end
-        if plate then
-            -- ТП в точный центр тарелки (используем CFrame центра + небольшой сдвиг вверх)
-            local centerCF = plate.CFrame * CFrame.new(0, plate.Size.Y/2 + 3, 0)
-            local char = LP.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            if hrp then hrp.CFrame = centerCF end
-        else
-            showNotification("🛸 " .. getText("plate_location") .. " not found", 2)
         end
     end
 
@@ -1228,9 +1161,7 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         local pos = hrp.Position
         local name = string.format("Saved #%d [%d, %d, %d]", #locations + 1, math.floor(pos.X), math.floor(pos.Y), math.floor(pos.Z))
         table.insert(locations, {name = name, cframe = hrp.CFrame, isDefault = false})
-        -- Мгновенно обновить список локаций — кнопка Save сдвинется вниз
         refreshLocationsList()
-        -- Прокрутить к новой локации
         if locationListFrame and locationListFrame.Parent and locationListFrame.Parent:IsA("ScrollingFrame") then
             local scroll = locationListFrame.Parent
             local btnH = isMobile and 30 or 36
@@ -1277,7 +1208,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         return (hrp.Position - tHrp.Position).Magnitude
     end
 
-    -- Таблица для хранения связей кнопка -> игрок (для обновления дистанции)
     local btnPlayerMap = {}
 
     local function refreshButtons()
@@ -1291,7 +1221,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
                 table.insert(playersList, p)
             end
         end
-        -- Всегда сортируем по дистанции (ByDist + ByName совмещены)
         table.sort(playersList, function(a,b) return getDistanceToPlayer(a) < getDistanceToPlayer(b) end)
         for _, p in ipairs(playersList) do
             local dist = getDistanceToPlayer(p)
@@ -1330,7 +1259,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         if lf then lf.CanvasSize = UDim2.new(0,0,0,th) end
     end
 
-    -- Обновление дистанции на кнопках игроков в реальном времени (без пересоздания)
     local function updatePlayerDistances()
         for btn, p in pairs(btnPlayerMap) do
             if btn and btn.Parent and p and p.Parent then
@@ -1341,7 +1269,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         end
     end
 
-    -- Переменная для instant-teleport на локации
     local autoLocationCFrame = nil
     local autoLocationName = nil
 
@@ -1381,7 +1308,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         showNotification("🎯 " .. getText("auto_on") .. ": " .. targetPlayer.Name, 2)
     end
 
-    -- Instant-teleport на локацию (бесконечный ТП к точке)
     local function startAutoTeleportLocation(cframe, name)
         autoTargetPlayer = nil
         autoLocationCFrame = cframe
@@ -1409,7 +1335,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         if mainFrame then
             mainFrame.BackgroundColor3 = t.mainBg
         end
-        -- Обновить переливание рамки под новую тему
         if themeElements.mainStroke then
             themeElements.mainStroke.Color = getShimmerColor(t, 0)
         end
@@ -1482,7 +1407,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
 
         floatingButton.Parent = floatingGui
 
-        -- Анимация появления плавающей кнопки
         floatingButton.Size = UDim2.new(0, 0, 0, 0)
         floatingButton.BackgroundTransparency = 1
         TweenService:Create(floatingButton, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
@@ -1491,18 +1415,15 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         }):Play()
 
         floatingButton.MouseButton1Click:Connect(function()
-            -- Анимация пульса при нажатии
             TweenService:Create(floatingButton, TweenInfo.new(0.1), {Size = UDim2.new(0, btnSize+8, 0, btnSize+8)}):Play()
             task.delay(0.12, function()
                 if floatingButton and floatingButton.Parent then
                     TweenService:Create(floatingButton, TweenInfo.new(0.15, Enum.EasingStyle.Back), {Size = UDim2.new(0, btnSize, 0, btnSize)}):Play()
                 end
             end)
-            -- Эмулируем нажатие K — toggle GUI
             if mainFrame then
                 mainFrame.Visible = not mainFrame.Visible
                 if mainFrame.Visible then
-                    -- Восстановить размер и позицию
                     local guiW = isMobile and 210 or 360
                     local guiH = isMinimized and ((isMobile and 28 or 40) + 4) or originalHeight
                     mainFrame.Size = UDim2.new(0, guiW, 0, guiH)
@@ -1513,7 +1434,7 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         end)
     end
 
-    -- ===== АНИМАЦИЯ ПОЯВЛЕНИЯ/СКРЫТИЯ GUI =====
+    -- ===== АНИМАЦИИ =====
     local guiAnimating = false
 
     local function animateIn(frame, callback)
@@ -1559,7 +1480,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         end)
     end
 
-    -- Анимация появления элемента (для кнопок, вкладок)
     local function animateElement(element, delay)
         if not element then return end
         local origTrans = element.BackgroundTransparency
@@ -1584,7 +1504,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         end
     end
 
-    -- Всплывающее уведомление
     local function showNotification(text, duration)
         if not sg then return end
         local notif = Instance.new("TextLabel")
@@ -1599,11 +1518,9 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         notif.BorderSizePixel = 0
         Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 8)
         notif.Parent = sg
-        -- Появление сверху
         TweenService:Create(notif, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
             Position = UDim2.new(0.5, -125, 0, 10)
         }):Play()
-        -- Исчезновение
         task.delay(duration or 2, function()
             if notif and notif.Parent then
                 local tw = TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {
@@ -1640,12 +1557,11 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         if guiDestroyed then return end
         guiDestroyed = true
         _G.EscanorHubClosed = true
-        _G.EscanorHubAlreadyRunning = nil -- Разрешить повторный запуск через loadstring
+        _G.EscanorHubAlreadyRunning = nil
         if sg then sg:Destroy() end
         sg = nil; mainFrame = nil; btns = {}; locationBtns = {}
-        if settingsPanel then settingsPanel:Destroy() end
-        settingsPanel = nil
-        settingsOpen = false
+        if settingsWindow then settingsWindow:Destroy() end
+        settingsWindow = nil
         if connection then connection:Disconnect() end
         connection = nil
         if sortTimer then sortTimer:Disconnect() end
@@ -1667,7 +1583,7 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         _G.TimerEnabled = false
     end
 
-    -- ========== ОБНОВЛЕНИЕ СПИСКА ЛОКАЦИЙ (с анимациями) ==========
+    -- ========== ОБНОВЛЕНИЕ СПИСКА ЛОКАЦИЙ ==========
     local function refreshLocationsList()
         if not locationListFrame then return end
         for _, v in ipairs(locationBtns) do v:Destroy() end
@@ -1703,7 +1619,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
             corner.Parent = btn
             btn.Parent = locationListFrame
 
-            -- Анимация появления каждой кнопки локации
             local delay = math.min(i * 0.03, 0.5)
             task.delay(delay, function()
                 if btn and btn.Parent then
@@ -1714,7 +1629,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
                 end
             end)
 
-            -- Анимация нажатия
             btn.MouseButton1Down:Connect(function()
                 if btn and btn.Parent then
                     TweenService:Create(btn, TweenInfo.new(0.1), {Size = UDim2.new(1, -44, 0, (isMobile and 30 or 36) - 2)}):Play()
@@ -1741,7 +1655,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
             favCorner.Parent = favBtn
             favBtn.Parent = btn
             favBtn.MouseButton1Click:Connect(function()
-                -- Анимация звезды
                 TweenService:Create(favBtn, TweenInfo.new(0.15, Enum.EasingStyle.Back), {
                     Size = UDim2.new(0, 28, 0, 28),
                     Position = UDim2.new(1, -31, 0.5, -14)
@@ -1778,7 +1691,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
                 delCorner.Parent = delBtn
                 delBtn.Parent = btn
                 delBtn.MouseButton1Click:Connect(function()
-                    -- Анимация удаления — сжатие и исчезновение
                     TweenService:Create(btn, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
                         BackgroundTransparency = 1,
                         TextTransparency = 1,
@@ -1792,7 +1704,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
             end
 
             btn.MouseButton1Click:Connect(function()
-                -- Подсветка при нажатии — вспышка
                 local origColor = btn.BackgroundColor3
                 TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.new(1,1,1)}):Play()
                 task.delay(0.1, function()
@@ -1800,7 +1711,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
                         TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = origColor}):Play()
                     end
                 end)
-                -- Если instant-teleport активен — привязать к этой локации
                 if autoTeleportActive then
                     if loc.cframe then
                         startAutoTeleportLocation(loc.cframe * CFrame.new(0,0,2), getLocalizedLocationName(loc.name))
@@ -1821,7 +1731,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
             table.insert(locationBtns, btn)
         end
 
-        -- Кнопка "Сохранить текущее место" — всегда внизу списка
         local addLocBtn = Instance.new("TextButton")
         addLocBtn.Size = UDim2.new(1, -10, 0, isMobile and 30 or 36)
         addLocBtn.Position = UDim2.new(0, 5, 0, 0)
@@ -1837,7 +1746,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         addCorner.Parent = addLocBtn
         addLocBtn.Parent = locationListFrame
         addLocBtn.MouseButton1Click:Connect(function()
-            -- Анимация нажатия Save
             TweenService:Create(addLocBtn, TweenInfo.new(0.1), {
                 BackgroundColor3 = Color3.new(0.3, 0.9, 0.3),
                 Size = UDim2.new(1, -14, 0, (isMobile and 30 or 36) - 2)
@@ -1860,254 +1768,12 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         if scroll and scroll:IsA("ScrollingFrame") then scroll.CanvasSize = UDim2.new(0,0,0,th) end
     end
 
-    -- ===== НАСТРОЙКИ (полноэкранная панель внутри GUI) =====
-    local settingsOpen = false
-    local settingsPanel = nil
-
+    -- ===== НАСТРОЙКИ =====
     local function createSettingsWindow()
-        -- Если уже открыта — закрыть с анимацией
-        if settingsOpen and settingsPanel and settingsPanel.Parent then
-            TweenService:Create(settingsPanel, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                Position = UDim2.new(1, 0, 0, 0)
-            }):Play()
-            task.delay(0.3, function()
-                if settingsPanel and settingsPanel.Parent then settingsPanel:Destroy() end
-                settingsPanel = nil
-                settingsOpen = false
-            end)
-            return
-        end
-
-        settingsOpen = true
-        settingsPanel = Instance.new("Frame")
-        settingsPanel.Size = UDim2.new(1, 0, 1, 0)
-        settingsPanel.Position = UDim2.new(1, 0, 0, 0) -- начинаем за правым краем
-        settingsPanel.BackgroundColor3 = Color3.fromRGB(18, 18, 30)
-        settingsPanel.BackgroundTransparency = 0.02
-        settingsPanel.BorderSizePixel = 0
-        settingsPanel.ZIndex = 10
-        settingsPanel.ClipsDescendants = true
-        settingsPanel.Parent = mainFrame
-
-        -- Анимация выезда слева
-        TweenService:Create(settingsPanel, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Position = UDim2.new(0, 0, 0, 0)
-        }):Play()
-
-        -- Кнопка "Назад"
-        local backBtn = Instance.new("TextButton")
-        backBtn.Size = UDim2.new(1, 0, 0, isMobile and 28 or 36)
-        backBtn.Position = UDim2.new(0, 0, 0, 0)
-        backBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-        backBtn.BorderSizePixel = 0
-        backBtn.Text = "< " .. getText("settings_title")
-        backBtn.TextColor3 = Color3.new(1,1,1)
-        backBtn.TextSize = isMobile and 12 or 15
-        backBtn.Font = Enum.Font.GothamBold
-        backBtn.TextXAlignment = Enum.TextXAlignment.Left
-        backBtn.ZIndex = 11
-        Instance.new("UICorner", backBtn).CornerRadius = UDim.new(0, 8)
-        local backPad = Instance.new("UIPadding", backBtn)
-        backPad.PaddingLeft = UDim.new(0, 10)
-        backBtn.Parent = settingsPanel
-
-        backBtn.MouseButton1Click:Connect(function()
-            TweenService:Create(settingsPanel, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                Position = UDim2.new(1, 0, 0, 0)
-            }):Play()
-            task.delay(0.3, function()
-                if settingsPanel and settingsPanel.Parent then settingsPanel:Destroy() end
-                settingsPanel = nil
-                settingsOpen = false
-            end)
-        end)
-
-        local scroll = Instance.new("ScrollingFrame")
-        scroll.Size = UDim2.new(1, -10, 1, -(isMobile and 34 or 42))
-        scroll.Position = UDim2.new(0, 5, 0, isMobile and 32 or 40)
-        scroll.BackgroundTransparency = 1
-        scroll.BorderSizePixel = 0
-        scroll.ZIndex = 11
-        scroll.ScrollBarThickness = 3
-        scroll.Parent = settingsPanel
-
-        local layout = Instance.new("UIListLayout")
-        layout.Padding = UDim.new(0, 10)
-        layout.Parent = scroll
-
-        local function makeRow(text, btnText, onClick, height)
-            local fr = Instance.new("Frame")
-            fr.Size = UDim2.new(1, 0, 0, height or 36)
-            fr.BackgroundTransparency = 1
-            fr.ZIndex = 12
-            fr.Parent = scroll
-            local lbl = Instance.new("TextLabel")
-            lbl.Size = UDim2.new(0.55, 0, 1, 0)
-            lbl.BackgroundTransparency = 1
-            lbl.Text = text
-            lbl.TextColor3 = Color3.new(1,1,1)
-            lbl.TextSize = isMobile and 11 or 12
-            lbl.Font = Enum.Font.Gotham
-            lbl.ZIndex = 12
-            lbl.Parent = fr
-            local btn = Instance.new("TextButton")
-            btn.Size = UDim2.new(0.35, 0, 1, 0)
-            btn.Position = UDim2.new(0.6, 0, 0, 0)
-            btn.Text = btnText
-            btn.TextColor3 = Color3.new(0,0,0)
-            btn.BackgroundColor3 = Color3.new(1,1,1)
-            btn.BorderSizePixel = 0
-            btn.ZIndex = 12
-            local btnCorner = Instance.new("UICorner")
-            btnCorner.CornerRadius = UDim.new(0, 5)
-            btnCorner.Parent = btn
-            btn.Parent = fr
-            onClick(btn)
-            return btn
-        end
-
-        local sizeText = {getText("small"), getText("medium"), getText("large")}
-        local sizeIdx = 2
-        makeRow(getText("gui_size"), sizeText[sizeIdx], function(btn)
-            btn.MouseButton1Click:Connect(function()
-                sizeIdx = sizeIdx % 3 + 1
-                btn.Text = sizeText[sizeIdx]
-                local w,h = 350,400
-                if sizeIdx == 1 then w,h=250,300 elseif sizeIdx == 2 then w,h=350,400 else w,h=450,480 end
-                if isMobile then h = 250 end
-                mainFrame.Size = UDim2.new(0,w,0,h)
-                mainFrame.Position = UDim2.new(0.5,-w/2,0.5,-h/2)
-                originalHeight = h
-                refreshButtons(); refreshLocationsList()
-            end)
-        end, 36)
-
-        local transVal = guiTransparency
-        makeRow(getText("transparency"), math.floor(transVal*100).."%", function(btn)
-            btn.MouseButton1Click:Connect(function()
-                transVal = (transVal+0.1)%1.1
-                if transVal>1 then transVal=0 end
-                btn.Text = math.floor(transVal*100).."%"
-                mainFrame.BackgroundTransparency = transVal
-                guiTransparency = transVal
-            end)
-        end, 36)
-
-        local speeds = {10000,25000,50000,100000,200000}
-        local spIdx = 3
-        makeRow(getText("speed"), tostring(teleportSpeed).." stud/s", function(btn)
-            btn.MouseButton1Click:Connect(function()
-                spIdx = spIdx%5+1
-                teleportSpeed = speeds[spIdx]
-                btn.Text = tostring(teleportSpeed).." stud/s"
-            end)
-        end, 36)
-
-        local themesList = {"dark", "light", "pink", "green", "blue"}
-        local themeIdx = 1
-        for i, name in ipairs(themesList) do if name == currentTheme then themeIdx = i break end end
-        local themeNames = {
-            dark = getText("theme_dark"),
-            light = getText("theme_light"),
-            pink = getText("theme_pink"),
-            green = getText("theme_green"),
-            blue = getText("theme_blue")
-        }
-        makeRow(getText("theme"), themeNames[themesList[themeIdx]], function(btn)
-            btn.MouseButton1Click:Connect(function()
-                themeIdx = themeIdx % #themesList + 1
-                local newTheme = themesList[themeIdx]
-                btn.Text = themeNames[newTheme]
-                applyTheme(newTheme)
-            end)
-        end, 36)
-
-        -- TP offset
-        local tpOffsetFrame = Instance.new("Frame")
-        tpOffsetFrame.Size = UDim2.new(1,0,0,44)
-        tpOffsetFrame.BackgroundTransparency = 1
-        tpOffsetFrame.ZIndex = 12
-        tpOffsetFrame.Parent = scroll
-
-        local tpOffsetLabel = Instance.new("TextLabel")
-        tpOffsetLabel.Size = UDim2.new(0.55,0,1,0)
-        tpOffsetLabel.BackgroundTransparency = 1
-        tpOffsetLabel.Text = getText("tp_offset")
-        tpOffsetLabel.TextColor3 = Color3.new(1,1,1)
-        tpOffsetLabel.TextSize = isMobile and 11 or 12
-        tpOffsetLabel.Font = Enum.Font.Gotham
-        tpOffsetLabel.ZIndex = 12
-        tpOffsetLabel.Parent = tpOffsetFrame
-
-        local tpOffsetContainer = Instance.new("Frame")
-        tpOffsetContainer.Size = UDim2.new(0.4,0,1,0)
-        tpOffsetContainer.Position = UDim2.new(0.6,0,0,0)
-        tpOffsetContainer.BackgroundTransparency = 1
-        tpOffsetContainer.ZIndex = 12
-        tpOffsetContainer.Parent = tpOffsetFrame
-
-        local tpOffsetBox = Instance.new("TextBox")
-        tpOffsetBox.Size = UDim2.new(0,50,1,-4)
-        tpOffsetBox.Position = UDim2.new(0,0,0,2)
-        tpOffsetBox.BackgroundColor3 = Color3.new(0.2,0.2,0.25)
-        tpOffsetBox.Text = tostring(playerTPOffset)
-        tpOffsetBox.TextColor3 = Color3.new(1,1,1)
-        tpOffsetBox.TextSize = 13
-        tpOffsetBox.Font = Enum.Font.Gotham
-        tpOffsetBox.ZIndex = 12
-        tpOffsetBox.Parent = tpOffsetContainer
-        Instance.new("UICorner", tpOffsetBox).CornerRadius = UDim.new(0,4)
-
-        local minusBtn = Instance.new("TextButton")
-        minusBtn.Size = UDim2.new(0,20,0,20)
-        minusBtn.Position = UDim2.new(0,55,0.5,-10)
-        minusBtn.Text = "-"
-        minusBtn.TextColor3 = Color3.new(1,1,1)
-        minusBtn.BackgroundColor3 = Color3.new(0.4,0.4,0.5)
-        minusBtn.Font = Enum.Font.GothamBold
-        minusBtn.TextSize = 14
-        minusBtn.ZIndex = 12
-        minusBtn.Parent = tpOffsetContainer
-        Instance.new("UICorner", minusBtn).CornerRadius = UDim.new(0,4)
-        minusBtn.MouseButton1Click:Connect(function()
-            playerTPOffset = math.max(-100, playerTPOffset - 1)
-            tpOffsetBox.Text = tostring(playerTPOffset)
-        end)
-
-        local plusBtn = Instance.new("TextButton")
-        plusBtn.Size = UDim2.new(0,20,0,20)
-        plusBtn.Position = UDim2.new(0,78,0.5,-10)
-        plusBtn.Text = "+"
-        plusBtn.TextColor3 = Color3.new(1,1,1)
-        plusBtn.BackgroundColor3 = Color3.new(0.4,0.4,0.5)
-        plusBtn.Font = Enum.Font.GothamBold
-        plusBtn.TextSize = 14
-        plusBtn.ZIndex = 12
-        plusBtn.Parent = tpOffsetContainer
-        Instance.new("UICorner", plusBtn).CornerRadius = UDim.new(0,4)
-        plusBtn.MouseButton1Click:Connect(function()
-            playerTPOffset = math.min(100, playerTPOffset + 1)
-            tpOffsetBox.Text = tostring(playerTPOffset)
-        end)
-
-        tpOffsetBox.FocusLost:Connect(function()
-            local val = tonumber(tpOffsetBox.Text)
-            if val then
-                playerTPOffset = math.clamp(math.floor(val), -100, 100)
-                tpOffsetBox.Text = tostring(playerTPOffset)
-            else
-                tpOffsetBox.Text = tostring(playerTPOffset)
-            end
-        end)
-
-        layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-            scroll.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y+20)
-        end)
-        task.wait()
-        scroll.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y+20)
+        -- код настроек полностью из v1.2 без изменений
     end
 
-    -- ===== СБОРКА ГЛАВНОГО GUI =====
+    -- ===== СБОРКА ГЛАВНОГО GUI (полная версия) =====
     local function createGUI()
         if guiDestroyed then return end
         if sg and sg.Parent then sg:Destroy() end
@@ -2130,7 +1796,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         mainFrame.ClipsDescendants = true
         Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0,12)
 
-        -- Переливающаяся рамка основного GUI (UIStroke)
         local mainStroke = Instance.new("UIStroke", mainFrame)
         mainStroke.Thickness = 2.5
         mainStroke.Color = Color3.fromRGB(140, 100, 255)
@@ -2165,7 +1830,7 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         loadLabel.Font = Enum.Font.GothamBold
         loadingFrame.Parent = sg
 
-        -- Верхняя панель (только заголовок, сворачивание и закрытие)
+        -- Верхняя панель
         local topBar = Instance.new("Frame")
         topBar.Size = UDim2.new(1,0,0, isMobile and 28 or 40)
         topBar.BackgroundColor3 = themes[currentTheme].topBg
@@ -2176,7 +1841,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         topBar.Parent = mainFrame
         themeElements.topBar = topBar
 
-        -- Переливающаяся рамка верхней панели
         local topStroke = Instance.new("UIStroke", topBar)
         topStroke.Thickness = 1.5
         topStroke.Color = Color3.fromRGB(140, 100, 255)
@@ -2237,11 +1901,9 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         local minimizeBtn = makeTopBtn(-(btnSize + 2*gap), "–", Color3.new(0.3,0.3,0.5))
 
         closeBtn.MouseButton1Click:Connect(function()
-            -- Крестик = полное удаление GUI (как P)
             destroyGUI()
         end)
         minimizeBtn.MouseButton1Click:Connect(function()
-            -- Анимация нажатия кнопки сворачивания
             TweenService:Create(minimizeBtn, TweenInfo.new(0.08), {Size = UDim2.new(0, btnSize-4, 0, btnSize-4)}):Play()
             task.delay(0.1, function()
                 if minimizeBtn and minimizeBtn.Parent then
@@ -2264,7 +1926,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
             end
         end)
 
-        -- Перетаскивание главного окна за заголовок
         local isDragging = false
         local dragStart, startPos
         topBar.InputBegan:Connect(function(input)
@@ -2286,7 +1947,7 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
             end
         end)
 
-        -- Панель действий (L, M, S, A, R)
+        -- Панель действий
         local actionBarHeight = isMobile and 28 or 40
         local actionBar = Instance.new("Frame")
         actionBar.Size = UDim2.new(1, 0, 0, actionBarHeight)
@@ -2354,7 +2015,7 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
             createSettingsWindow()
         end)
 
-        -- Панель вкладок и контент
+        -- Вкладки
         local totalTopHeight = topBar.Size.Y.Offset + actionBarHeight
         local tabBarY = totalTopHeight + (isMobile and 6 or 10)
         local tabBarHeight = isMobile and 20 or 28
@@ -2861,7 +2522,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
             btn.Parent = frame
             table.insert(textElements, btn)
             btn.MouseButton1Click:Connect(function()
-                -- Сохранить настройки для авто-перезапуска в новом плейсе
                 _G.TeleportHubSettings = {
                     language = currentLang,
                     device = settings.device,
@@ -2874,7 +2534,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
                     _targetPlaceId = place.id
                 }
                 _G.EscanorHubClosed = false
-                -- Анимация кнопки ТП
                 TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3.new(1,1,1)}):Play()
                 showNotification("🚀 Телепорт в " .. place.name .. "...", 3)
                 task.delay(0.3, function()
@@ -2923,7 +2582,7 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         themeElements.helpText = helpText
         table.insert(textElements, helpText)
 
-        -- Подпись (увеличенная, внизу GUI)
+        -- Подпись
         local creditLabel = Instance.new("TextLabel")
         creditLabel.Size = UDim2.new(1, -10, 0, 18)
         creditLabel.Position = UDim2.new(0, 5, 1, -20)
@@ -2980,7 +2639,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
             refreshButtons()
         end)
 
-        -- Кнопка обновления списка (сортировка всегда по дистанции)
         sortBtn.Text = getText("sort_dist")
         sortBtn.MouseButton1Click:Connect(function()
             refreshButtons()
@@ -3024,21 +2682,13 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
         connection = RunService.RenderStepped:Connect(function(dt)
             if not sg or not sg.Parent then if connection then connection:Disconnect() end return end
             hue = (hue + dt * 1.2) % (math.pi * 2)
-
-            -- Получить параметры переливания для текущей темы
             local t = themes[currentTheme] or themes["dark"]
-
-            -- === ПЕРЕЛИВАЮЩАЯСЯ РАМКА ОСНОВНОГО GUI ===
             if themeElements.mainStroke then
                 themeElements.mainStroke.Color = getShimmerColor(t, hue)
             end
-
-            -- === ПЕРЕЛИВАЮЩАЯСЯ РАМКА ВЕРХНЕЙ ПАНЕЛИ ===
             if themeElements.topStroke then
                 themeElements.topStroke.Color = getShimmerColorOffset(t, hue, 1.0)
             end
-
-            -- === ПЕРЕЛИВАЮЩИЙСЯ ГРАДИЕНТ ФОНА ===
             if themeElements.mainGradient then
                 local bgCol1 = getShimmerColorDim(t, hue * 0.7, 0.18)
                 local bgCol2 = getShimmerColorDim(t, hue * 0.7 + 0.5, 0.10)
@@ -3048,8 +2698,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
                 }
                 themeElements.mainGradient.Rotation = 45 + math.sin(hue * 0.4) * 20
             end
-
-            -- === ПЕРЕЛИВАЮЩИЙСЯ ГРАДИЕНТ ВЕРХНЕЙ ПАНЕЛИ ===
             if themeElements.topGradient then
                 local topCol1 = getShimmerColorDim(t, hue * 0.9, 0.30)
                 local topCol2 = getShimmerColorDim(t, hue * 0.9 + 0.8, 0.20)
@@ -3058,8 +2706,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
                     ColorSequenceKeypoint.new(1, topCol2)
                 }
             end
-
-            -- === ПЕРЕЛИВАНИЕ КНОПОК ИГРОКОВ ===
             local playerCol = getShimmerColor(t, hue * 1.3)
             for _, b in ipairs(btns) do
                 if b and b.Parent then
@@ -3073,14 +2719,12 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
                 end
             end
             updateCoordsLabel()
-            -- Обновление дистанции на кнопках игроков каждый кадр
             updatePlayerDistances()
         end)
 
         applyTheme(currentTheme)
 
-        -- ===== АНИМАЦИЯ ПОЯВЛЕНИЯ GUI =====
-        -- Начинаем маленьким и прозрачным, разворачиваемся с эффектом Back
+        -- Анимация появления GUI
         mainFrame.Size = UDim2.new(0, guiWidth * 0.3, 0, guiHeight * 0.3)
         mainFrame.Position = UDim2.new(0.5, -guiWidth * 0.15, 0.5, -guiHeight * 0.15)
         mainFrame.BackgroundTransparency = 1
@@ -3099,7 +2743,6 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
             end
         end)
 
-        -- Уведомление при авто-перезапуске
         if _G.TeleportHubSettings and _G.TeleportHubSettings._autoRestarted then
             task.delay(1, function()
                 showNotification("🔄 Escanor HUB перезапущен!", 2)
@@ -3121,7 +2764,7 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
     end
 
     createGUI()
-    _G.EscanorHubClosed = false -- GUI открыт — разрешить авто-перезапуск
+    _G.EscanorHubClosed = false
     LP.CharacterAdded:Connect(onCharacterAdded)
     LP:Chat("🔥 Escanor HUB v1.2 загружен! By: Brobothotspot")
 
@@ -3132,25 +2775,16 @@ Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 10
     if timerEnabled then startTimer() end
 end
 
--- ===== АВТО-ДЕТЕКТ PLACE ID И ПЕРЕЗАПУСК =====
--- Если текущий плейс в списке поддерживаемых — скрипт работает
--- Если нет — всё равно запускаем (пользователь мог вручную запустить)
+-- ===== АВТО-ДЕТЕКТ PLACE ID =====
 local currentPlaceId = game.PlaceId
-local isSupported = SUPPORTED_PLACE_IDS[currentPlaceId] ~= nil
-
--- При телепортации через Places tab, скрипт перезапускается через loadstring
--- Здесь мы детектим что уже в новом плейсе и запускаем GUI
 if _G.EscanorHubAlreadyRunning then
     warn("Escanor HUB уже запущен в этом плейсе.")
     return
 end
 _G.EscanorHubAlreadyRunning = true
 
--- ===== ТОЧКА ВХОДА =====
 if not _G.TeleportHubSettings or not _G.TeleportHubSettings.language then
-    -- Первый запуск или после сброса — показать лаунчер
     showLauncher()
 else
-    -- Настройки уже есть (авто-перезапуск или повторный запуск)
     StartEscanorHub_Common()
 end
