@@ -1,0 +1,517 @@
+-- ==========================================
+-- Escanor HUB | Модуль: Локации (Locations)
+-- ==========================================
+
+return function(locationsContent, ctx)
+    ctx = ctx or {}
+
+    -- Сервисы
+    local Players = game:GetService("Players")
+    local LP = Players.LocalPlayer
+    local TweenService = game:GetService("TweenService")
+    local RunService = game:GetService("RunService")
+
+    -- Получение настроек и внешних функций из контекста (с безопасными заглушками)
+    local isMobile = ctx.isMobile or false
+    local currentLang = ctx.currentLang or "ru"
+    local currentTheme = ctx.currentTheme or "dark"
+    local themes = ctx.themes or {
+        dark = { textColor = Color3.new(1,1,1), inputBg = Color3.fromRGB(15,15,20) }
+    }
+    local themeColor = themes[currentTheme] or themes.dark
+
+    local favorites = ctx.favorites or _G.FavoriteLocations or {}
+    local locations = {}
+    local locationBtns = {}
+    local locationSearchFilter = ""
+
+    -- Вспомогательные функции
+    local showNotification = ctx.showNotification or function(text)
+        print("[Escanor HUB]", text)
+    end
+
+    local addHistoryEntry = ctx.addHistoryEntry or function(name, cf)
+        if _G.TeleportHistory then
+            table.insert(_G.TeleportHistory, 1, {name = name, cframe = cf, time = os.time()})
+        end
+    end
+
+    local SmartTP = ctx.SmartTP or function(targetCF)
+        local char = LP.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.CFrame = targetCF
+        end
+    end
+
+    local startAutoTeleportLocation = ctx.startAutoTeleportLocation
+
+    -- Словарь переводов названий мест
+    local locationTranslations = {
+        ["Debug room"] = { ru = "Дебаг комната", en = "Debug Room", ua = "Дебаг кімната" },
+        ["Main island"] = { ru = "Главный остров", en = "Main Island", ua = "Головний острів" },
+        ["Left island"] = { ru = "Левый остров", en = "Left Island", ua = "Лівий острів" },
+        ["Right island"] = { ru = "Правый остров", en = "Right Island", ua = "Правий острів" },
+        ["Moai"] = { ru = "Моаи", en = "Moai", ua = "Моаі" },
+        ["Castle"] = { ru = "Замок", en = "Castle", ua = "Замок" },
+        ["Kill cube"] = { ru = "Куб смерти", en = "Kill Cube", ua = "Куб смерті" },
+        ["Slapple island"] = { ru = "Остров Slapple", en = "Slapple Island", ua = "Острів Slapple" },
+        ["Lobby"] = { ru = "Лобби", en = "Lobby", ua = "Лобі" },
+        ["Basement"] = { ru = "Подвал", en = "Basement", ua = "Підвал" },
+        ["Blue portal"] = { ru = "Синий портал", en = "Blue Portal", ua = "Синій портал" },
+        ["Cloud"] = { ru = "Облако", en = "Cloud", ua = "Хмара" },
+        ["Brazil"] = { ru = "Бразил", en = "Brazil", ua = "Бразил" },
+        ["Plate"] = { ru = "Тарелка", en = "Plate", ua = "Тарілка" },
+        ["Spawn"] = { ru = "Спавн", en = "Spawn", ua = "Спавн" },
+        ["Clown (Fan)"] = { ru = "Клоун (Фан)", en = "Clown (Fan)", ua = "Клоун (Фан)" },
+        ["Angry Brazil"] = { ru = "Злой Бразил", en = "Angry Brazil", ua = "Злий Бразил" },
+        ["OOG"] = { ru = "OOG", en = "OOG", ua = "OOG" },
+        ["RiftShot"] = { ru = "RiftShot", en = "RiftShot", ua = "RiftShot" },
+        ["Библиотека"] = { ru = "Библиотека", en = "Library", ua = "Бібліотека" },
+        ["ФастФуд/Море"] = { ru = "ФастФуд/Море", en = "FastFood/Sea", ua = "ФастФуд/Море" },
+        ["Часы на водопаде"] = { ru = "Часы на водопаде", en = "Clock at waterfall", ua = "Годинник на водоспаді" },
+        ["Водопад - Наверху"] = { ru = "Водопад - Наверху", en = "Waterfall - Top", ua = "Водоспад - Вгорі" },
+        ["Пикник"] = { ru = "Пикник", en = "Picnic", ua = "Пікнік" },
+        ["Кирки/Топоры"] = { ru = "Кирки/Топоры", en = "Pickaxes/Axes", ua = "Кирки/Сокири" },
+        ["Карусель"] = { ru = "Карусель", en = "Carousel", ua = "Карусель" },
+        ["Metaverse"] = { ru = "Metaverse", en = "Metaverse", ua = "Metaverse" },
+        ["Clock"] = { ru = "Часы", en = "Clock", ua = "Годинник" },
+        ["Машина"] = { ru = "Машина", en = "Car", ua = "Машина" },
+        ["Мортис"] = { ru = "Мортис", en = "Mortis", ua = "Мортис" },
+        ["Ключ (Fan)"] = { ru = "Ключ (Фан)", en = "Key (Fan)", ua = "Ключ (Фан)" },
+        ["Untitled Tag"] = { ru = "Untitled Tag", en = "Untitled Tag", ua = "Untitled Tag" },
+        ["Прохождение"] = { ru = "Прохождение", en = "Walkthrough", ua = "Проходження" },
+        ["Спавн"] = { ru = "Спавн", en = "Spawn", ua = "Спавн" },
+        ["Рычаг"] = { ru = "Рычаг", en = "Lever", ua = "Важіль" },
+        ["2 комната"] = { ru = "2 комната", en = "Room 2", ua = "Кімната 2" },
+        ["Начальный Туннель (Паркур)"] = { ru = "Начальный Туннель (Паркур)", en = "Initial Tunnel (Parkour)", ua = "Початковий тунель (Паркур)" },
+        ["1 локация"] = { ru = "1 локация", en = "Location 1", ua = "Локація 1" },
+        ["Конец 1 локации"] = { ru = "Конец 1 локации", en = "End of Location 1", ua = "Кінець локації 1" },
+        ["Начальный Туннель (Голем)"] = { ru = "Начальный Туннель (Голем)", en = "Initial Tunnel (Golem)", ua = "Початковий тунель (Голем)" },
+        ["Голем начало"] = { ru = "Голем начало", en = "Golem Start", ua = "Початок голема" },
+        ["Конец голема"] = { ru = "Конец голема", en = "Golem End", ua = "Кінець голема" },
+        ["Паркур Sbeve"] = { ru = "Паркур Sbeve", en = "Sbeve Parkour", ua = "Паркур Sbeve" },
+        ["Лазеры начало"] = { ru = "Лазеры начало", en = "Lasers Start", ua = "Лазери початок" },
+        ["Лазеры конец"] = { ru = "Лазеры конец", en = "Lasers End", ua = "Лазери кінець" },
+        ["1 и 2 воссоединение"] = { ru = "1 и 2 воссоединение", en = "1&2 Reunion", ua = "1 і 2 возз'єднання" },
+        ["Огонь начало"] = { ru = "Огонь начало", en = "Fire Start", ua = "Вогонь початок" },
+        ["Конец огня"] = { ru = "Конец огня", en = "Fire End", ua = "Кінець вогню" },
+        ["Начало поездов"] = { ru = "Начало поездов", en = "Trains Start", ua = "Початок поїздів" },
+        ["Конец поездов"] = { ru = "Конец поездов", en = "Trains End", ua = "Кінець поїздів" },
+        ["Пвп картошка"] = { ru = "Пвп картошка", en = "PVP Potato", ua = "PVP картопля" },
+        ["Сжимание пола и потолка, перчатка"] = { ru = "Сжимание пола и потолка, перчатка", en = "Floor & Ceiling Crush", ua = "Стискання підлоги та стелі" },
+        ["Конец сжимания пола и потолка, перчатка"] = { ru = "Конец сжимания пола и потолка, перчатка", en = "End of Crush", ua = "Кінець стискання" },
+        ["Машина в лабиринте"] = { ru = "Машина в лабиринте", en = "Car in Maze", ua = "Машина в лабіринті" },
+        ["Конец лабиринта"] = { ru = "Конец лабиринта", en = "Maze End", ua = "Кінець лабіринту" },
+        ["Комната начала"] = { ru = "Комната начала", en = "Starting Room", ua = "Кімната початку" },
+        ["Регенерация"] = { ru = "Регенерация", en = "Regeneration", ua = "Регенерація" },
+        ["Доп хп"] = { ru = "Доп хп", en = "Extra HP", ua = "Додаткове HP" },
+        ["Аватар"] = { ru = "Аватар", en = "Avatar", ua = "Аватар" },
+        ["Relude, Hunter"] = { ru = "Relude, Hunter", en = "Relude, Hunter", ua = "Relude, Hunter" },
+        ["Зеленый портал"] = { ru = "Зеленый портал", en = "Green Portal", ua = "Зелений портал" },
+        ["Оранжевый портал"] = { ru = "Оранжевый портал", en = "Orange Portal", ua = "Помаранчевий портал" },
+        ["Конец"] = { ru = "Конец", en = "End", ua = "Кінець" },
+    }
+
+    local langTexts = {
+        en = {
+            search_loc = "🔍 Search locations...", coords_label = "📍 Your coords: ---",
+            coords_input = "Coords:", tp_btn = "TP", save_loc = "+ Save current location",
+            invalid_coords = "Invalid coordinates. Example: 220, -16, -15", pos_saved = "Position saved!"
+        },
+        ru = {
+            search_loc = "🔍 Поиск локаций...", coords_label = "📍 Твои координаты: ---",
+            coords_input = "Коорд:", tp_btn = "ТП", save_loc = "+ Сохранить текущее место",
+            invalid_coords = "Некорректные координаты. Пример: 220, -16, -15", pos_saved = "Позиция сохранена!"
+        },
+        ua = {
+            search_loc = "🔍 Пошук локацій...", coords_label = "📍 Твої координати: ---",
+            coords_input = "Коорд:", tp_btn = "ТП", save_loc = "+ Зберегти поточне місце",
+            invalid_coords = "Некоректні координати. Приклад: 220, -16, -15", pos_saved = "Позицію збережено!"
+        }
+    }
+
+    local function getTxt(key)
+        return langTexts[currentLang] and langTexts[currentLang][key] or langTexts.ru[key] or key
+    end
+
+    local function getLocalizedName(originalName)
+        local entry = locationTranslations[originalName]
+        if entry then return entry[currentLang] or originalName end
+        return originalName
+    end
+
+    -- База данных локаций по PlaceId
+    local function getLocationsForPlace(placeId)
+        if placeId == 6403373529 then
+            return {
+                {name="Debug room", cframe=CFrame.new(-17922,59,3561), isDefault=true},
+                {name="Main island", cframe=CFrame.new(5,-6,2), isDefault=true},
+                {name="Left island", cframe=CFrame.new(1,-6,164), isDefault=true},
+                {name="Right island", cframe=CFrame.new(-3,-6,-165), isDefault=true},
+                {name="Moai", cframe=CFrame.new(220,-16,-15), isDefault=true},
+                {name="Castle", cframe=CFrame.new(273,33,205), isDefault=true},
+                {name="Kill cube", cframe=CFrame.new(-242,-6,3), isDefault=true},
+                {name="Slapple island", cframe=CFrame.new(-378,51,-16), isDefault=true},
+                {name="Lobby", cframe=CFrame.new(-1197,327,-2), isDefault=true},
+                {name="Basement", cframe=CFrame.new(17895,-130,-3545), isDefault=true},
+                {name="Blue portal", cframe=CFrame.new(116,360,-3), isDefault=true},
+                {name="Cloud", cframe=CFrame.new(-124.3,-4.6,121.2), isDefault=true},
+                {name="Brazil", cframe=CFrame.new(-1124,310,0), isDefault=true},
+                {name="Plate", cframe=CFrame.new(0,0,0), isDefault=true}
+            }
+        elseif placeId == 7234087065 then
+            return {
+                {name="Spawn", cframe=CFrame.new(-1.4, 8.8, -8.5), isDefault=true},
+                {name="Clown (Fan)", cframe=CFrame.new(200, 3, 221), isDefault=true},
+                {name="Angry Brazil", cframe=CFrame.new(-65, 3, -164), isDefault=true},
+                {name="OOG", cframe=CFrame.new(-233, 3, 210), isDefault=true},
+                {name="RiftShot", cframe=CFrame.new(-261, 13, 460), isDefault=true},
+                {name="Библиотека", cframe=CFrame.new(318, 52, -43), isDefault=true},
+                {name="ФастФуд/Море", cframe=CFrame.new(303, 63, 200), isDefault=true},
+                {name="Часы на водопаде", cframe=CFrame.new(156, 231, 455), isDefault=true},
+                {name="Водопад - Наверху", cframe=CFrame.new(83, 287, 564), isDefault=true},
+                {name="Пикник", cframe=CFrame.new(35, 133, 423), isDefault=true},
+                {name="Кирки/Топоры", cframe=CFrame.new(42, 52, 330), isDefault=true},
+                {name="Карусель", cframe=CFrame.new(80, 3, 202), isDefault=true},
+                {name="Metaverse", cframe=CFrame.new(250, 94, -442), isDefault=true},
+                {name="Clock", cframe=CFrame.new(250, 150, -458.6), isDefault=true},
+                {name="Машина", cframe=CFrame.new(93.4, 60, -97.5), isDefault=true},
+                {name="Мортис", cframe=CFrame.new(251, -60, -361), isDefault=true},
+                {name="Ключ (Fan)", cframe=CFrame.new(247, -265, -366), isDefault=true},
+                {name="Untitled Tag", cframe=CFrame.new(-243, 300, -493), isDefault=true}
+            }
+        elseif placeId == 115782629143468 then
+            return {
+                {name="Прохождение", cframe=CFrame.new(0, 200, -2), isDefault=true}
+            }
+        elseif placeId == 127174121130060 then
+            return getLocationsForPlace(6403373529)
+        elseif placeId == 18550498098 then
+            return {
+                {name="Спавн", cframe=CFrame.new(570, 11, 112), isDefault=true},
+                {name="Рычаг", cframe=CFrame.new(613, 11, 146), isDefault=true},
+                {name="2 комната", cframe=CFrame.new(557, 6, 353), isDefault=true},
+                {name="Начальный Туннель (Паркур)", cframe=CFrame.new(602, 6, 360), isDefault=true},
+                {name="1 локация", cframe=CFrame.new(723, 28, 403), isDefault=true},
+                {name="Конец 1 локации", cframe=CFrame.new(831, 5, 404), isDefault=true},
+                {name="Начальный Туннель (Голем)", cframe=CFrame.new(535, 6, 364), isDefault=true},
+                {name="Голем начало", cframe=CFrame.new(487, 24, 510), isDefault=true},
+                {name="Конец голема", cframe=CFrame.new(486, 55, 641), isDefault=true},
+                {name="Паркур Sbeve", cframe=CFrame.new(690, -1, 720), isDefault=true},
+                {name="Лазеры начало", cframe=CFrame.new(1071, -30, 571), isDefault=true},
+                {name="Лазеры конец", cframe=CFrame.new(1218, -30, 572), isDefault=true},
+                {name="1 и 2 воссоединение", cframe=CFrame.new(1435, -63, 645), isDefault=true},
+                {name="Огонь начало", cframe=CFrame.new(1052, -36, 715), isDefault=true},
+                {name="Конец огня", cframe=CFrame.new(1200, -36, 715), isDefault=true},
+                {name="Начало поездов", cframe=CFrame.new(925, -4, 850), isDefault=true},
+                {name="Конец поездов", cframe=CFrame.new(1192, -4, 860), isDefault=true},
+                {name="Пвп картошка", cframe=CFrame.new(1917, -31, 893), isDefault=true},
+                {name="Сжимание пола и потолка, перчатка", cframe=CFrame.new(1821, -31, 400), isDefault=true},
+                {name="Конец сжимания пола и потолка, перчатка", cframe=CFrame.new(2066, -31, 397), isDefault=true},
+                {name="Машина в лабиринте", cframe=CFrame.new(2126, -31, 954), isDefault=true},
+                {name="Конец лабиринта", cframe=CFrame.new(2750, -31, 823), isDefault=true},
+                {name="Комната начала", cframe=CFrame.new(3231, -75, 822), isDefault=true},
+                {name="Регенерация", cframe=CFrame.new(3286, -75, 822), isDefault=true},
+                {name="Доп хп", cframe=CFrame.new(3271, -227, 822), isDefault=true},
+                {name="Аватар", cframe=CFrame.new(3270, -75, 821), isDefault=true},
+                {name="Relude, Hunter", waypoints = {
+                    CFrame.new(3286, -75, 822),
+                    CFrame.new(3271, -227, 822),
+                    CFrame.new(3270, -75, 821),
+                }, isDefault=true}
+            }
+        elseif placeId == 77283826005207 then
+            return {
+                {name="Синий портал", cframe=CFrame.new(847, 82, 381), isDefault=true},
+                {name="Зеленый портал", cframe=CFrame.new(-384, 82, 386), isDefault=true},
+                {name="Оранжевый портал", cframe=CFrame.new(142, 82, 923), isDefault=true},
+                {name="Конец", cframe=CFrame.new(142, 84, 287), isDefault=true}
+            }
+        else
+            return {}
+        end
+    end
+
+    locations = getLocationsForPlace(game.PlaceId)
+
+    -- Пошаговый телепорт
+    local function startSequentialTeleport(waypoints)
+        task.spawn(function()
+            for _, cf in ipairs(waypoints) do
+                local myChar = LP.Character
+                local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if myHrp then
+                    myHrp.AssemblyLinearVelocity = Vector3.zero
+                    myHrp.CFrame = cf
+                end
+                task.wait(1)
+            end
+        end)
+    end
+
+    -- Телепорт на Тарелку
+    local function teleportToPlate()
+        local arena = workspace:FindFirstChild("Arena")
+        if arena then
+            local plate = arena:FindFirstChild("Plate")
+            if plate then
+                local char = LP.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                    hrp.CFrame = plate.CFrame * CFrame.new(0, 5, 0)
+                end
+            end
+        end
+    end
+
+    -- ================= Отрисовка элементов UI =================
+    locationsContent:ClearAllChildren()
+
+    local coordsLabel = Instance.new("TextLabel")
+    coordsLabel.Size = UDim2.new(1, 0, 0, isMobile and 0 or 18)
+    coordsLabel.Position = UDim2.new(0, 4, 0, 2)
+    coordsLabel.BackgroundTransparency = 1
+    coordsLabel.Text = getTxt("coords_label")
+    coordsLabel.TextColor3 = themeColor.textColor
+    coordsLabel.TextSize = isMobile and 8 or 11
+    coordsLabel.Font = Enum.Font.GothamBold
+    coordsLabel.TextXAlignment = Enum.TextXAlignment.Left
+    coordsLabel.Visible = not isMobile
+    coordsLabel.Parent = locationsContent
+
+    local locSearchBox = Instance.new("TextBox")
+    locSearchBox.Size = UDim2.new(1, 0, 0, 18)
+    locSearchBox.Position = UDim2.new(0, 4, 0, isMobile and 2 or 22)
+    locSearchBox.BackgroundColor3 = themeColor.inputBg
+    locSearchBox.Text = ""
+    locSearchBox.PlaceholderText = getTxt("search_loc")
+    locSearchBox.TextColor3 = themeColor.textColor
+    locSearchBox.TextSize = 9
+    locSearchBox.Font = Enum.Font.Gotham
+    locSearchBox.Parent = locationsContent
+
+    local inputPanel = Instance.new("Frame")
+    inputPanel.Size = UDim2.new(1, -8, 0, isMobile and 32 or 40)
+    inputPanel.Position = UDim2.new(0, 4, 0, isMobile and 24 or 44)
+    inputPanel.BackgroundColor3 = Color3.new(0.15,0.15,0.2)
+    inputPanel.BackgroundTransparency = 0.4
+    inputPanel.BorderSizePixel = 1
+    inputPanel.BorderColor3 = Color3.new(0.5,0.5,0.6)
+    inputPanel.Parent = locationsContent
+
+    local coordLabel = Instance.new("TextLabel")
+    coordLabel.Size = UDim2.new(0, 40, 0, 14)
+    coordLabel.Position = UDim2.new(0, 4, 0, 2)
+    coordLabel.BackgroundTransparency = 1
+    coordLabel.Text = getTxt("coords_input")
+    coordLabel.TextColor3 = Color3.new(1,1,1)
+    coordLabel.TextSize = isMobile and 8 or 10
+    coordLabel.Font = Enum.Font.GothamBold
+    coordLabel.Parent = inputPanel
+
+    local coordInput = Instance.new("TextBox")
+    coordInput.Size = UDim2.new(1, -60, 0, 16)
+    coordInput.Position = UDim2.new(0, 4, 0, 18)
+    coordInput.BackgroundColor3 = Color3.new(0.05,0.05,0.07)
+    coordInput.Text = ""
+    coordInput.TextColor3 = Color3.new(1,1,1)
+    coordInput.TextSize = 9
+    coordInput.Font = Enum.Font.Gotham
+    coordInput.PlaceholderText = "X, Y, Z"
+    coordInput.Parent = inputPanel
+
+    local tpCoordBtn = Instance.new("TextButton")
+    tpCoordBtn.Size = UDim2.new(0, 50, 0, 16)
+    tpCoordBtn.Position = UDim2.new(1, -54, 0, 18)
+    tpCoordBtn.Text = getTxt("tp_btn")
+    tpCoordBtn.TextSize = 9
+    tpCoordBtn.BackgroundColor3 = Color3.new(0.2,0.5,0.2)
+    tpCoordBtn.TextColor3 = Color3.new(1,1,1)
+    tpCoordBtn.Parent = inputPanel
+
+    local locScroll = Instance.new("ScrollingFrame")
+    locScroll.Size = UDim2.new(1, -4, 1, isMobile and -60 or -95)
+    locScroll.Position = UDim2.new(0, 2, 0, isMobile and 60 or 90)
+    locScroll.BackgroundTransparency = 1
+    locScroll.BorderSizePixel = 0
+    locScroll.CanvasSize = UDim2.new(0,0,0,0)
+    locScroll.ScrollBarThickness = 2
+    locScroll.Parent = locationsContent
+
+    local locationListFrame = Instance.new("Frame")
+    locationListFrame.Size = UDim2.new(1,0,1,0)
+    locationListFrame.BackgroundTransparency = 1
+    locationListFrame.Parent = locScroll
+
+    local locLayout = Instance.new("UIListLayout")
+    locLayout.Padding = UDim.new(0, isMobile and 3 or 6)
+    locLayout.Parent = locationListFrame
+
+    -- Функция парсинга и ТП по координатам
+    local function teleportToCoordinates(inputText)
+        if not inputText or inputText == "" then return end
+        local coords = {}
+        for num in string.gmatch(inputText, "[-]?%d+[.]?%d*") do
+            table.insert(coords, tonumber(string.gsub(num, ",", ".")))
+        end
+        if #coords >= 3 then
+            SmartTP(CFrame.new(coords[1], coords[2], coords[3]) * CFrame.new(0,0,2))
+        else
+            showNotification(getTxt("invalid_coords"))
+        end
+    end
+
+    tpCoordBtn.MouseButton1Click:Connect(function()
+        teleportToCoordinates(coordInput.Text)
+    end)
+
+    -- Обновление списка кнопок локаций
+    local function refreshLocationsList()
+        for _, v in ipairs(locationBtns) do v:Destroy() end
+        locationBtns = {}
+
+        local filteredLocs = {}
+        for _, loc in ipairs(locations) do
+            if locationSearchFilter == "" or string.find(string.lower(getLocalizedName(loc.name)), string.lower(locationSearchFilter)) then
+                table.insert(filteredLocs, loc)
+            end
+        end
+
+        for i, loc in ipairs(filteredLocs) do
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, -40, 0, isMobile and 30 or 36)
+            btn.Position = UDim2.new(0, 5, 0, 0)
+            local displayName = getLocalizedName(loc.name)
+            if loc.waypoints then displayName = displayName .. " (sequence)" end
+            if isMobile then
+                btn.Text = displayName
+            else
+                btn.Text = displayName .. (loc.cframe and (" [" .. math.floor(loc.cframe.X) .. ", " .. math.floor(loc.cframe.Y) .. ", " .. math.floor(loc.cframe.Z) .. "]") or "")
+            end
+            btn.TextColor3 = Color3.new(1,1,1)
+            btn.TextSize = isMobile and 10 or 13
+            btn.Font = Enum.Font.GothamSemibold
+            btn.BackgroundColor3 = Color3.new(0.2,0.5,0.8)
+            btn.BackgroundTransparency = 0.2
+            btn.BorderSizePixel = 0
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+            btn.Parent = locationListFrame
+
+            -- Кнопка избранного (⭐)
+            local favBtn = Instance.new("TextButton")
+            favBtn.Size = UDim2.new(0, 22, 0, 22)
+            favBtn.Position = UDim2.new(1, -28, 0.5, -11)
+            favBtn.Text = table.find(favorites, loc.name) and "★" or "☆"
+            favBtn.TextColor3 = Color3.new(1, 1, 0)
+            favBtn.TextSize = 16
+            favBtn.Font = Enum.Font.GothamBold
+            favBtn.BackgroundColor3 = Color3.fromRGB(0,0,0)
+            favBtn.BackgroundTransparency = 0.6
+            favBtn.BorderSizePixel = 0
+            Instance.new("UICorner", favBtn).CornerRadius = UDim.new(0, 5)
+            favBtn.Parent = btn
+
+            favBtn.MouseButton1Click:Connect(function()
+                local idx = table.find(favorites, loc.name)
+                if idx then
+                    table.remove(favorites, idx)
+                else
+                    table.insert(favorites, loc.name)
+                end
+                _G.FavoriteLocations = favorites
+                refreshLocationsList()
+            end)
+
+            -- Кнопка удаления кастомного места
+            if not loc.isDefault then
+                local delBtn = Instance.new("TextButton")
+                delBtn.Size = UDim2.new(0, 22, 0, 22)
+                delBtn.Position = UDim2.new(1,-54,0.5,-11)
+                delBtn.Text = "X"
+                delBtn.TextColor3 = Color3.new(1,1,1)
+                delBtn.TextSize = 10
+                delBtn.BackgroundColor3 = Color3.new(0.5,0.1,0.1)
+                delBtn.BorderSizePixel = 0
+                Instance.new("UICorner", delBtn).CornerRadius = UDim.new(0,5)
+                delBtn.Parent = btn
+                delBtn.MouseButton1Click:Connect(function()
+                    table.remove(locations, table.find(locations, loc))
+                    refreshLocationsList()
+                end)
+            end
+
+            -- Телепортация по клику
+            btn.MouseButton1Click:Connect(function()
+                if loc.waypoints then
+                    startSequentialTeleport(loc.waypoints)
+                elseif loc.cframe then
+                    if loc.name == "Plate" then
+                        teleportToPlate()
+                    else
+                        SmartTP(loc.cframe * CFrame.new(0,0,2))
+                    end
+                end
+                addHistoryEntry(loc.name, loc.cframe)
+            end)
+            table.insert(locationBtns, btn)
+        end
+
+        -- Кнопка сохранения текущего места
+        local addLocBtn = Instance.new("TextButton")
+        addLocBtn.Size = UDim2.new(1, -10, 0, isMobile and 30 or 36)
+        addLocBtn.Position = UDim2.new(0, 5, 0, 0)
+        addLocBtn.Text = getTxt("save_loc")
+        addLocBtn.TextColor3 = Color3.new(1,1,1)
+        addLocBtn.TextSize = isMobile and 10 or 13
+        addLocBtn.Font = Enum.Font.GothamSemibold
+        addLocBtn.BackgroundColor3 = Color3.new(0.1,0.5,0.1)
+        addLocBtn.BackgroundTransparency = 0.2
+        addLocBtn.BorderSizePixel = 0
+        Instance.new("UICorner", addLocBtn).CornerRadius = UDim.new(0,6)
+        addLocBtn.Parent = locationListFrame
+
+        addLocBtn.MouseButton1Click:Connect(function()
+            local char = LP.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local pos = hrp.Position
+                local name = string.format("Saved #%d [%d, %d, %d]", #locations + 1, math.floor(pos.X), math.floor(pos.Y), math.floor(pos.Z))
+                table.insert(locations, {name = name, cframe = hrp.CFrame, isDefault = false})
+                refreshLocationsList()
+                showNotification(getTxt("pos_saved"))
+            end
+        end)
+        table.insert(locationBtns, addLocBtn)
+
+        local totalHeight = #locationBtns * ((isMobile and 30 or 36) + 6) + 50
+        locScroll.CanvasSize = UDim2.new(0,0,0,totalHeight)
+    end
+
+    locSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        locationSearchFilter = locSearchBox.Text
+        refreshLocationsList()
+    end)
+
+    -- Постоянное обновление координат вверху вкладки
+    task.spawn(function()
+        while locationsContent and locationsContent.Parent do
+            local char = LP.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp and coordsLabel then
+                local p = hrp.Position
+                coordsLabel.Text = string.format("📍 X: %.1f, Y: %.1f, Z: %.1f", p.X, p.Y, p.Z)
+            end
+            task.wait(0.3)
+        end
+    end)
+
+    refreshLocationsList()
+
+    -- Возвращаем метод обновления для вызова из главного скрипта
+    return {
+        refresh = refreshLocationsList
+    }
+end
