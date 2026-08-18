@@ -1,0 +1,15 @@
+return function(Tab)
+    Tab:CreateSection("Вторая страница")
+
+    Tab:CreateParagraph({
+        Title = "Пока",
+        Content = "Этот текст успешно подгружен из удаленного файла!"
+    })
+    
+    Tab:CreateButton({
+        Name = "Тестовая кнопка во 2 вкладке",
+        Callback = function()
+            print("Кнопка из подгруженной вкладки работает!")
+        end,
+    })
+end
