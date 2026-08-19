@@ -64,7 +64,7 @@ return function(locationsContent, ctx)
     end
 
     local locationTranslations = {
-        ["Debug room"] = { ru = "Дебаг комната", en = "67 Room", ua = "Дебаг кімната" },
+        ["Debug room"] = { ru = "Дебаг комната", en = "Debug Room", ua = "Дебаг кімната" },
         ["Main island"] = { ru = "Главный остров", en = "Main Island", ua = "Головний острів" },
         ["Left island"] = { ru = "Левый остров", en = "Left Island", ua = "Лівий острів" },
         ["Right island"] = { ru = "Правый остров", en = "Right Island", ua = "Правий острів" },
