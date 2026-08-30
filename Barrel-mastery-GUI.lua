@@ -1,7 +1,7 @@
 --[[
 ═══════════════════════════════════════════════════════════════════════════════
                  BARREL HUB UI ENGINE (Barrel-mastery-GUI.lua)
-                     v3.4.0 · Cross-Platform Fixed Edition
+                     v3.5.0 · Instant Close & Direct Destroy
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -371,7 +371,6 @@ function HubUI:BuildMain()
         Parent = Header,
     })
 
-    -- Кнопки заголовка с высоким ZIndex и поддержкой кликов
     local function headerButton(glyph, xOffset)
         local btn = create("TextButton", {
             Position = UDim2.new(1, xOffset, 0.5, 0),
@@ -464,10 +463,13 @@ function HubUI:BuildMain()
         })
         corner(btn, 4)
 
-        self.Maid:Give(btn.Activated:Connect(function()
+        local function onTrigger()
             self:SelectRole(roleKey)
             self.OnRoleSelect(roleKey)
-        end))
+        end
+
+        self.Maid:Give(btn.Activated:Connect(onTrigger))
+        self.Maid:Give(btn.MouseButton1Click:Connect(onTrigger))
 
         self.RoleButtons[roleKey] = btn
         return btn
@@ -601,7 +603,7 @@ function HubUI:BuildMain()
             Parent = checkBtn,
         })
 
-        self.Maid:Give(checkBtn.Activated:Connect(function()
+        local function onToggle()
             local newState = not self.SelectedQuests[questNum]
             self.SelectedQuests[questNum] = newState
 
@@ -611,7 +613,10 @@ function HubUI:BuildMain()
 
             self:UpdateMasterButtonState()
             self.OnQuestToggle(questNum, newState)
-        end))
+        end
+
+        self.Maid:Give(checkBtn.Activated:Connect(onToggle))
+        self.Maid:Give(checkBtn.MouseButton1Click:Connect(onToggle))
     end
 
     for q = 1, 4 do
@@ -634,7 +639,7 @@ function HubUI:BuildMain()
     })
     corner(self.MasterBtn, 5)
 
-    self.Maid:Give(self.MasterBtn.Activated:Connect(function()
+    local function onMasterClick()
         if self.SelectedRole == "Alt" then return end
 
         if self.IsRunning then
@@ -648,7 +653,10 @@ function HubUI:BuildMain()
                 self.OnStartMaster(self.SelectedQuests)
             end
         end
-    end))
+    end
+
+    self.Maid:Give(self.MasterBtn.Activated:Connect(onMasterClick))
+    self.Maid:Give(self.MasterBtn.MouseButton1Click:Connect(onMasterClick))
 
     -- 5. Статус-бар
     local statusBar = create("Frame", {
@@ -672,8 +680,8 @@ function HubUI:BuildMain()
 
     makeDraggable(Header, self.Main, self.Maid)
 
-    -- Обработчик сворачивания окна
-    self.Maid:Give(MinBtn.Activated:Connect(function()
+    -- Сворачивание
+    local function onMinClick()
         self.Minimized = not self.Minimized
         MinBtn.Text = self.Minimized and "+" or "-"
         if self.Minimized then
@@ -684,12 +692,19 @@ function HubUI:BuildMain()
             tw.Completed:Wait()
             self.ScrollBody.Visible = true
         end
-    end))
+    end
 
-    -- Обработчик крестика (полное выключение)
-    self.Maid:Give(CloseBtn.Activated:Connect(function()
-        self.OnShutdown()
-    end))
+    self.Maid:Give(MinBtn.Activated:Connect(onMinClick))
+    self.Maid:Give(MinBtn.MouseButton1Click:Connect(onMinClick))
+
+    -- Крестик (Прямое и моментальное удаление GUI)
+    local function onCloseClick()
+        pcall(function() self.OnShutdown() end)
+        self:Destroy()
+    end
+
+    self.Maid:Give(CloseBtn.Activated:Connect(onCloseClick))
+    self.Maid:Give(CloseBtn.MouseButton1Click:Connect(onCloseClick))
 
     self.Main.Visible = true
     self.Main.GroupTransparency = 1
@@ -744,12 +759,15 @@ function HubUI:SetAccountBox(slotKey, text, editable, isCurrentPlayer)
     refs.Box.BackgroundColor3 = isCurrentPlayer and Theme.PanelDim or Theme.PanelSoft
 end
 
+-- Прямое уничтожение GUI без зависаний
 function HubUI:Destroy()
-    if self.Main then
-        local fade = tween(self.Main, 0.2, { GroupTransparency = 1 })
-        fade.Completed:Wait()
+    if self.ScreenGui then
+        pcall(function() self.ScreenGui:Destroy() end)
+        self.ScreenGui = nil
     end
-    self.Maid:Clean()
+    if self.Maid and type(self.Maid.Clean) == "function" then
+        pcall(function() self.Maid:Clean() end)
+    end
 end
 
 return HubUI
