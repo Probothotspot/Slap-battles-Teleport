@@ -1,7 +1,7 @@
 --[[
 ═══════════════════════════════════════════════════════════════════════════════
                  BARREL HUB UI ENGINE (Barrel-mastery-GUI.lua)
-                        v3.3.0 · Smart Lock & Validation
+                     v3.4.0 · Cross-Platform Fixed Edition
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -18,6 +18,7 @@ end
 local HubUI = {}
 HubUI.__index = HubUI
 
+-- 1. Цветовая палитра
 local Theme = {
     Bg        = Color3.fromRGB(15, 12, 22),
     Panel     = Color3.fromRGB(24, 18, 38),
@@ -115,22 +116,23 @@ local function makeDraggable(handle, target, maid)
     end))
 end
 
+-- 2. Конструктор HubUI
 function HubUI.new(config)
     local self = setmetatable({}, HubUI)
     
     self.Config = config or {}
     self.Maid = config.Maid
-    self.OnStartMaster = config.OnStartMaster or function() end
-    self.OnStopMaster  = config.OnStopMaster  or function() end
-    self.OnRoleSelect  = config.OnRoleSelect  or function() end
-    self.OnQuestToggle = config.OnQuestToggle or function() end
+    self.OnStartMaster  = config.OnStartMaster  or function() end
+    self.OnStopMaster   = config.OnStopMaster   or function() end
+    self.OnRoleSelect   = config.OnRoleSelect   or function() end
+    self.OnQuestToggle  = config.OnQuestToggle  or function() end
     self.OnAccountInput = config.OnAccountInput or function() end
-    self.OnShutdown = config.OnShutdown or function() end
+    self.OnShutdown     = config.OnShutdown     or function() end
     
     self.AccountRefs = {}
     self.RoleButtons = {}
     self.SelectedRole = "Main"
-    self.SelectedQuests = { [1] = false, [2] = false, [3] = false, [4] = false } -- Все выключены
+    self.SelectedQuests = { [1] = false, [2] = false, [3] = false, [4] = false }
     self.IsRunning = false
     self.Minimized = false
     
@@ -158,6 +160,7 @@ function HubUI.new(config)
     return self
 end
 
+-- 3. Диагностика (Preloader)
 function HubUI:RunPreloader(checks, onComplete)
     local Preloader = create("CanvasGroup", {
         Name = "Preloader",
@@ -277,6 +280,7 @@ function HubUI:RunPreloader(checks, onComplete)
     end)
 end
 
+-- 4. Логика кнопки старта
 function HubUI:UpdateMasterButtonState()
     if not self.MasterBtn then return end
 
@@ -317,6 +321,7 @@ function HubUI:UpdateMasterButtonState()
     end
 end
 
+-- 5. Главное окно
 function HubUI:BuildMain()
     local EXPANDED_SIZE  = UDim2.fromOffset(250, 205)
     local COLLAPSED_SIZE = UDim2.fromOffset(250, 26)
@@ -343,11 +348,13 @@ function HubUI:BuildMain()
         Parent = mainStroke,
     }), 4, self.Maid)
 
+    -- Header
     local Header = create("Frame", {
         Name = "Header",
         Size = UDim2.new(1, 0, 0, 26),
         BackgroundColor3 = Theme.Panel,
         BorderSizePixel = 0,
+        ZIndex = 1,
         Parent = self.Main,
     })
 
@@ -360,9 +367,11 @@ function HubUI:BuildMain()
         TextXAlignment = Enum.TextXAlignment.Left,
         TextColor3 = Theme.Text,
         Text = "Slap Battles | Barrel Hub",
+        ZIndex = 2,
         Parent = Header,
     })
 
+    -- Кнопки заголовка с высоким ZIndex и поддержкой кликов
     local function headerButton(glyph, xOffset)
         local btn = create("TextButton", {
             Position = UDim2.new(1, xOffset, 0.5, 0),
@@ -370,7 +379,9 @@ function HubUI:BuildMain()
             Size = UDim2.fromOffset(18, 18),
             BackgroundColor3 = Theme.PanelSoft,
             BorderSizePixel = 0,
-            AutoButtonColor = false,
+            Active = true,
+            ZIndex = 10,
+            AutoButtonColor = true,
             Font = FONT_BOLD,
             TextSize = 10,
             TextColor3 = Theme.Text,
@@ -382,8 +393,9 @@ function HubUI:BuildMain()
     end
 
     local CloseBtn = headerButton("❌", -6)
-    local MinBtn = headerButton("-", -28)
+    local MinBtn   = headerButton("-", -28)
 
+    -- Scrolling Frame
     self.ScrollBody = create("ScrollingFrame", {
         Name = "ScrollBody",
         Position = UDim2.new(0, 0, 0, 26),
@@ -394,6 +406,7 @@ function HubUI:BuildMain()
         ScrollBarImageColor3 = Theme.Purple,
         CanvasSize = UDim2.new(0, 0, 0, 0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ZIndex = 2,
         Parent = self.Main,
     })
     create("UIPadding", {
@@ -424,7 +437,7 @@ function HubUI:BuildMain()
         })
     end
 
-    -- 1. Секция выбора роли
+    -- 1. Секция «WHO ARE YOU?»
     sectionTitle("● WHO ARE YOU?", 1)
     local roleSelectorFrame = create("Frame", {
         Size = UDim2.new(1, 0, 0, 22),
@@ -441,6 +454,7 @@ function HubUI:BuildMain()
             Size = UDim2.new(0.5, -4, 1, -4),
             BackgroundColor3 = Theme.PanelDim,
             BorderSizePixel = 0,
+            Active = true,
             AutoButtonColor = false,
             Font = FONT_BOLD,
             TextSize = 8.5,
@@ -450,7 +464,7 @@ function HubUI:BuildMain()
         })
         corner(btn, 4)
 
-        self.Maid:Give(btn.MouseButton1Click:Connect(function()
+        self.Maid:Give(btn.Activated:Connect(function()
             self:SelectRole(roleKey)
             self.OnRoleSelect(roleKey)
         end))
@@ -538,7 +552,7 @@ function HubUI:BuildMain()
     buildAccountRow("MAIN", "Main", 4)
     buildAccountRow("ALT", "Alt", 5)
 
-    -- 3. Секция квестов (Quest 1 - 4)
+    -- 3. Секция квестов
     sectionTitle("● QUEST SELECTOR", 6)
     local function buildQuestRow(questNum, order)
         local isEnabled = self.SelectedQuests[questNum] or false
@@ -571,6 +585,7 @@ function HubUI:BuildMain()
             Size = UDim2.fromOffset(16, 16),
             BackgroundColor3 = isEnabled and Theme.Purple or Theme.PanelDim,
             BorderSizePixel = 0,
+            Active = true,
             AutoButtonColor = false,
             Font = FONT_BOLD,
             TextSize = 10,
@@ -586,7 +601,7 @@ function HubUI:BuildMain()
             Parent = checkBtn,
         })
 
-        self.Maid:Give(checkBtn.MouseButton1Click:Connect(function()
+        self.Maid:Give(checkBtn.Activated:Connect(function()
             local newState = not self.SelectedQuests[questNum]
             self.SelectedQuests[questNum] = newState
 
@@ -608,6 +623,7 @@ function HubUI:BuildMain()
         Size = UDim2.new(1, 0, 0, 24),
         BackgroundColor3 = Theme.LockedBtn,
         BorderSizePixel = 0,
+        Active = true,
         AutoButtonColor = false,
         Font = FONT_BOLD,
         TextSize = 9,
@@ -618,7 +634,7 @@ function HubUI:BuildMain()
     })
     corner(self.MasterBtn, 5)
 
-    self.Maid:Give(self.MasterBtn.MouseButton1Click:Connect(function()
+    self.Maid:Give(self.MasterBtn.Activated:Connect(function()
         if self.SelectedRole == "Alt" then return end
 
         if self.IsRunning then
@@ -656,7 +672,8 @@ function HubUI:BuildMain()
 
     makeDraggable(Header, self.Main, self.Maid)
 
-    self.Maid:Give(MinBtn.MouseButton1Click:Connect(function()
+    -- Обработчик сворачивания окна
+    self.Maid:Give(MinBtn.Activated:Connect(function()
         self.Minimized = not self.Minimized
         MinBtn.Text = self.Minimized and "+" or "-"
         if self.Minimized then
@@ -669,7 +686,8 @@ function HubUI:BuildMain()
         end
     end))
 
-    self.Maid:Give(CloseBtn.MouseButton1Click:Connect(function()
+    -- Обработчик крестика (полное выключение)
+    self.Maid:Give(CloseBtn.Activated:Connect(function()
         self.OnShutdown()
     end))
 
