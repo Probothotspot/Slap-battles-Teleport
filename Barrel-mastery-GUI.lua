@@ -1,7 +1,7 @@
 --[[
 ═══════════════════════════════════════════════════════════════════════════════
                  BARREL HUB UI ENGINE (Barrel-mastery-GUI.lua)
-                        v3.2.0 · Explicit Role Selector
+                        v3.3.0 · Smart Lock & Validation
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -27,12 +27,13 @@ local Theme = {
     Purple    = Color3.fromRGB(160, 60, 255),
     Fuchsia   = Color3.fromRGB(225, 80, 255),
     Text      = Color3.fromRGB(255, 255, 255),
-    Dim       = Color3.fromRGB(200, 190, 220),
+    Dim       = Color3.fromRGB(140, 130, 160),
     Green     = Color3.fromRGB(46, 204, 113),
     GreenBtn  = Color3.fromRGB(39, 174, 96),
     Red       = Color3.fromRGB(231, 76, 60),
     RedBtn    = Color3.fromRGB(192, 57, 43),
     Amber     = Color3.fromRGB(241, 196, 15),
+    LockedBtn = Color3.fromRGB(38, 30, 52),
 }
 
 local FONT      = Enum.Font.Gotham
@@ -128,8 +129,8 @@ function HubUI.new(config)
     
     self.AccountRefs = {}
     self.RoleButtons = {}
-    self.SelectedRole = nil
-    self.SelectedQuests = { [1] = false, [2] = false, [3] = false, [4] = true }
+    self.SelectedRole = "Main"
+    self.SelectedQuests = { [1] = false, [2] = false, [3] = false, [4] = false } -- Все выключены
     self.IsRunning = false
     self.Minimized = false
     
@@ -276,6 +277,46 @@ function HubUI:RunPreloader(checks, onComplete)
     end)
 end
 
+function HubUI:UpdateMasterButtonState()
+    if not self.MasterBtn then return end
+
+    if self.SelectedRole == "Alt" then
+        self.MasterBtn.BackgroundColor3 = Theme.LockedBtn
+        self.MasterBtn.TextColor3 = Theme.Dim
+        self.MasterBtn.Text = "LOCKED (ALT AUTO-SYNC)"
+        self.MasterBtn.AutoButtonColor = false
+        return
+    end
+
+    if self.IsRunning then
+        self.MasterBtn.BackgroundColor3 = Theme.RedBtn
+        self.MasterBtn.TextColor3 = Theme.Text
+        self.MasterBtn.Text = "STOP QUESTS"
+        self.MasterBtn.AutoButtonColor = true
+        return
+    end
+
+    local hasAnyQuest = false
+    for q = 1, 4 do
+        if self.SelectedQuests[q] then
+            hasAnyQuest = true
+            break
+        end
+    end
+
+    if hasAnyQuest then
+        self.MasterBtn.BackgroundColor3 = Theme.GreenBtn
+        self.MasterBtn.TextColor3 = Theme.Text
+        self.MasterBtn.Text = "START QUESTS"
+        self.MasterBtn.AutoButtonColor = true
+    else
+        self.MasterBtn.BackgroundColor3 = Theme.LockedBtn
+        self.MasterBtn.TextColor3 = Theme.Dim
+        self.MasterBtn.Text = "SELECT A QUEST"
+        self.MasterBtn.AutoButtonColor = false
+    end
+end
+
 function HubUI:BuildMain()
     local EXPANDED_SIZE  = UDim2.fromOffset(250, 205)
     local COLLAPSED_SIZE = UDim2.fromOffset(250, 26)
@@ -383,7 +424,7 @@ function HubUI:BuildMain()
         })
     end
 
-    -- 1. Секция выбора роли «Кто ты?»
+    -- 1. Секция выбора роли
     sectionTitle("● WHO ARE YOU?", 1)
     local roleSelectorFrame = create("Frame", {
         Size = UDim2.new(1, 0, 0, 22),
@@ -421,7 +462,7 @@ function HubUI:BuildMain()
     buildRoleBtn("I AM MAIN", "Main", 0)
     buildRoleBtn("I AM ALT", "Alt", 0.5)
 
-    -- 2. Секция аккаунтов (Main & Alt)
+    -- 2. Секция аккаунтов
     sectionTitle("● ACCOUNT BINDING", 3)
     local function buildAccountRow(title, slotKey, order)
         local row = create("Frame", {
@@ -497,7 +538,7 @@ function HubUI:BuildMain()
     buildAccountRow("MAIN", "Main", 4)
     buildAccountRow("ALT", "Alt", 5)
 
-    -- 3. Секция квестов (Quest 1 - Quest 4)
+    -- 3. Секция квестов (Quest 1 - 4)
     sectionTitle("● QUEST SELECTOR", 6)
     local function buildQuestRow(questNum, order)
         local isEnabled = self.SelectedQuests[questNum] or false
@@ -553,6 +594,7 @@ function HubUI:BuildMain()
             checkBtn.Text = newState and "✓" or ""
             checkStroke.Color = newState and Theme.Fuchsia or Theme.Line
 
+            self:UpdateMasterButtonState()
             self.OnQuestToggle(questNum, newState)
         end))
     end
@@ -564,23 +606,31 @@ function HubUI:BuildMain()
     -- 4. Кнопка «Запустить квесты»
     self.MasterBtn = create("TextButton", {
         Size = UDim2.new(1, 0, 0, 24),
-        BackgroundColor3 = Theme.GreenBtn,
+        BackgroundColor3 = Theme.LockedBtn,
         BorderSizePixel = 0,
-        AutoButtonColor = true,
+        AutoButtonColor = false,
         Font = FONT_BOLD,
         TextSize = 9,
-        TextColor3 = Theme.Text,
-        Text = "START QUESTS",
+        TextColor3 = Theme.Dim,
+        Text = "SELECT A QUEST",
         LayoutOrder = 11,
         Parent = self.ScrollBody,
     })
     corner(self.MasterBtn, 5)
 
     self.Maid:Give(self.MasterBtn.MouseButton1Click:Connect(function()
+        if self.SelectedRole == "Alt" then return end
+
         if self.IsRunning then
             self.OnStopMaster()
         else
-            self.OnStartMaster(self.SelectedQuests)
+            local hasAnyQuest = false
+            for q = 1, 4 do
+                if self.SelectedQuests[q] then hasAnyQuest = true break end
+            end
+            if hasAnyQuest then
+                self.OnStartMaster(self.SelectedQuests)
+            end
         end
     end))
 
@@ -626,6 +676,8 @@ function HubUI:BuildMain()
     self.Main.Visible = true
     self.Main.GroupTransparency = 1
     tween(self.Main, 0.3, { GroupTransparency = 0 })
+
+    self:UpdateMasterButtonState()
 end
 
 function HubUI:SelectRole(roleKey)
@@ -635,19 +687,12 @@ function HubUI:SelectRole(roleKey)
         btn.BackgroundColor3 = isChosen and Theme.Purple or Theme.PanelDim
         btn.TextColor3 = isChosen and Theme.Text or Theme.Dim
     end
+    self:UpdateMasterButtonState()
 end
 
 function HubUI:SetMasterState(isRunning)
     self.IsRunning = isRunning
-    if not self.MasterBtn then return end
-    
-    if isRunning then
-        self.MasterBtn.BackgroundColor3 = Theme.RedBtn
-        self.MasterBtn.Text = "STOP QUESTS"
-    else
-        self.MasterBtn.BackgroundColor3 = Theme.GreenBtn
-        self.MasterBtn.Text = "START QUESTS"
-    end
+    self:UpdateMasterButtonState()
 end
 
 function HubUI:SetStatus(msg)
