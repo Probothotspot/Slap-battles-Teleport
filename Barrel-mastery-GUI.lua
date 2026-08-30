@@ -1,6 +1,7 @@
 --[[
 ═══════════════════════════════════════════════════════════════════════════════
                  BARREL HUB UI ENGINE (Barrel-mastery-GUI.lua)
+                        v3.0.0 · Quest Selector Edition
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -17,7 +18,7 @@ end
 local HubUI = {}
 HubUI.__index = HubUI
 
--- 1. Стили и палитра
+-- 1. Цветовая палитра и стили
 local Theme = {
     Bg        = Color3.fromRGB(15, 12, 22),
     Panel     = Color3.fromRGB(24, 18, 38),
@@ -120,14 +121,16 @@ function HubUI.new(config)
     
     self.Config = config or {}
     self.Maid = config.Maid
-    self.OnStartFeature = config.OnStartFeature or function() end
-    self.OnStopFeature = config.OnStopFeature or function() end
-    self.OnRoleChange = config.OnRoleChange or function() end
+    self.OnStartMaster = config.OnStartMaster or function() end
+    self.OnStopMaster  = config.OnStopMaster  or function() end
+    self.OnQuestToggle = config.OnQuestToggle or function() end
     self.OnAccountInput = config.OnAccountInput or function() end
     self.OnShutdown = config.OnShutdown or function() end
     
     self.AccountRefs = {}
-    self.FeatureCards = {}
+    self.QuestCheckboxes = {}
+    self.SelectedQuests = { [1] = false, [2] = false, [3] = false, [4] = true } -- 4-й квест по умолчанию
+    self.IsRunning = false
     self.Minimized = false
     
     local guiParent = (typeof(gethui) == "function" and gethui()) 
@@ -274,9 +277,9 @@ function HubUI:RunPreloader(checks, onComplete)
     end)
 end
 
--- 4. Главное окно
-function HubUI:BuildMain(featuresList)
-    local EXPANDED_SIZE  = UDim2.fromOffset(250, 150)
+-- 4. Главное окно (с секцией квестов)
+function HubUI:BuildMain()
+    local EXPANDED_SIZE  = UDim2.fromOffset(250, 185)
     local COLLAPSED_SIZE = UDim2.fromOffset(250, 26)
 
     self.Main = create("CanvasGroup", {
@@ -365,7 +368,7 @@ function HubUI:BuildMain(featuresList)
     })
     create("UIListLayout", {
         FillDirection = Enum.FillDirection.Vertical,
-        Padding = UDim.new(0, 5),
+        Padding = UDim.new(0, 4),
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent = self.ScrollBody,
     })
@@ -384,6 +387,7 @@ function HubUI:BuildMain(featuresList)
         })
     end
 
+    -- 1. Секция аккаунтов (Main & Alt)
     local function buildAccountRow(title, slotKey, order)
         local row = create("Frame", {
             Size = UDim2.new(1, 0, 0, 36),
@@ -420,7 +424,7 @@ function HubUI:BuildMain(featuresList)
             Font = FONT_BOLD,
             TextSize = 7.5,
             TextColor3 = Theme.Text,
-            Text = "Not found", -- Исправлено на Not found
+            Text = "Not found",
             Parent = tagFrame,
         })
 
@@ -455,161 +459,106 @@ function HubUI:BuildMain(featuresList)
         end))
     end
 
-    -- Секция аккаунтов
     sectionTitle("● ACCOUNT BINDING", 1)
     buildAccountRow("MAIN", "Main", 2)
     buildAccountRow("ALT", "Alt", 3)
 
-    -- Секция ролей
-    sectionTitle("● ROLE SELECTOR", 4)
-    local toggleTrack = create("Frame", {
-        Size = UDim2.new(1, 0, 0, 22),
-        BackgroundColor3 = Theme.PanelSoft,
-        BorderSizePixel = 0,
-        LayoutOrder = 5,
-        Parent = self.ScrollBody,
-    })
-    corner(toggleTrack, 6)
+    -- 2. Секция квестов (Quest 1 - Quest 4)
+    sectionTitle("● QUEST SELECTOR", 4)
 
-    self.RoleIndicator = create("Frame", {
-        Position = UDim2.new(0, 2, 0, 2),
-        Size = UDim2.new(0.5, -3, 1, -4),
-        BackgroundColor3 = Theme.Purple,
-        BorderSizePixel = 0,
-        ZIndex = 1,
-        Parent = toggleTrack,
-    })
-    corner(self.RoleIndicator, 4)
+    local function buildQuestRow(questNum, order)
+        local isEnabled = self.SelectedQuests[questNum] or false
 
-    local function roleButton(text, xScale)
-        return create("TextButton", {
-            Position = UDim2.new(xScale, 0, 0, 0),
-            Size = UDim2.new(0.5, 0, 1, 0),
-            BackgroundTransparency = 1,
-            AutoButtonColor = false,
-            Font = FONT_BOLD,
-            TextSize = 8.5,
-            TextColor3 = Theme.Text,
-            Text = text,
-            ZIndex = 2,
-            Parent = toggleTrack,
-        })
-    end
-    local RoleBtnMain = roleButton("MAIN MODE", 0)
-    local RoleBtnAlt  = roleButton("ALT MODE", 0.5)
-
-    self.Maid:Give(RoleBtnMain.MouseButton1Click:Connect(function() self.OnRoleChange("Main") end))
-    self.Maid:Give(RoleBtnAlt.MouseButton1Click:Connect(function() self.OnRoleChange("Alt") end))
-
-    -- Секция фичей
-    sectionTitle("● FEATURES", 6)
-    local function buildFeaturesGroup(role, order)
-        local grp = create("Frame", {
-            Name = role .. "Features",
-            Size = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            BackgroundTransparency = 1,
-            LayoutOrder = order,
-            Parent = self.ScrollBody,
-        })
-        create("UIListLayout", {
-            FillDirection = Enum.FillDirection.Vertical,
-            Padding = UDim.new(0, 4),
-            SortOrder = Enum.SortOrder.LayoutOrder,
-            Parent = grp,
-        })
-        return grp
-    end
-
-    self.FeaturesMainGroup = buildFeaturesGroup("Main", 7)
-    self.FeaturesAltGroup  = buildFeaturesGroup("Alt", 8)
-
-    local function actionButton(text, xOffset, bgColor, parent)
-        local btn = create("TextButton", {
-            Position = UDim2.new(1, xOffset, 0.5, 0),
-            AnchorPoint = Vector2.new(1, 0.5),
-            Size = UDim2.fromOffset(40, 18),
-            BackgroundColor3 = bgColor,
-            BorderSizePixel = 0,
-            AutoButtonColor = true,
-            Font = FONT_BOLD,
-            TextSize = 8,
-            TextColor3 = Theme.Text,
-            Text = text,
-            Parent = parent,
-        })
-        corner(btn, 4)
-        return btn
-    end
-
-    local function buildFeatureCard(def, parent, order)
-        local card = create("Frame", {
-            Name = def.Id,
-            Size = UDim2.new(1, 0, 0, 30),
+        local row = create("Frame", {
+            Size = UDim2.new(1, 0, 0, 22),
             BackgroundColor3 = Theme.PanelSoft,
             BorderSizePixel = 0,
             LayoutOrder = order,
-            Parent = parent,
+            Parent = self.ScrollBody,
+            Name = "QuestRow" .. questNum,
         })
-        corner(card, 6)
-
-        local dot = create("Frame", {
-            Position = UDim2.new(0, 6, 0.5, 0),
-            AnchorPoint = Vector2.new(0, 0.5),
-            Size = UDim2.fromOffset(6, 6),
-            BackgroundColor3 = Theme.Dim,
-            BorderSizePixel = 0,
-            Parent = card,
-        })
-        pill(dot)
+        corner(row, 4)
 
         create("TextLabel", {
-            Position = UDim2.new(0, 16, 0, 3),
-            Size = UDim2.new(0, 125, 0, 12),
+            Position = UDim2.new(0, 8, 0, 0),
+            Size = UDim2.new(1, -36, 1, 0),
             BackgroundTransparency = 1,
-            Font = FONT_MED,
+            Font = FONT_BOLD,
             TextSize = 8.5,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextColor3 = Theme.Text,
-            Text = def.Name,
-            TextTruncate = Enum.TextTruncate.AtEnd,
-            Parent = card,
+            Text = "Quest " .. questNum .. (questNum == 4 and " (Auto-Farm)" or ""),
+            Parent = row,
         })
-        local stateLbl = create("TextLabel", {
-            Position = UDim2.new(0, 16, 0, 15),
-            Size = UDim2.new(0, 125, 0, 10),
-            BackgroundTransparency = 1,
+
+        -- Чекбокс с галочкой
+        local checkBtn = create("TextButton", {
+            Position = UDim2.new(1, -5, 0.5, 0),
+            AnchorPoint = Vector2.new(1, 0.5),
+            Size = UDim2.fromOffset(16, 16),
+            BackgroundColor3 = isEnabled and Theme.Purple or Theme.PanelDim,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
             Font = FONT_BOLD,
-            TextSize = 7.5,
-            TextXAlignment = Enum.TextXAlignment.Left,
+            TextSize = 10,
             TextColor3 = Theme.Text,
-            Text = "● IDLE",
-            Parent = card,
+            Text = isEnabled and "✓" or "",
+            Parent = row,
+        })
+        corner(checkBtn, 3)
+
+        local checkStroke = create("UIStroke", {
+            Color = isEnabled and Theme.Fuchsia or Theme.Line,
+            Thickness = 1,
+            Parent = checkBtn,
         })
 
-        local startBtn = actionButton("START", -48, Theme.GreenBtn, card)
-        local stopBtn = actionButton("STOP", -4, Theme.RedBtn, card)
+        self.QuestCheckboxes[questNum] = { Btn = checkBtn, Stroke = checkStroke }
 
-        self.Maid:Give(startBtn.MouseButton1Click:Connect(function()
-            self.OnStartFeature(def.Id)
-        end))
-        self.Maid:Give(stopBtn.MouseButton1Click:Connect(function()
-            self.OnStopFeature(def.Id)
-        end))
+        self.Maid:Give(checkBtn.MouseButton1Click:Connect(function()
+            local newState = not self.SelectedQuests[questNum]
+            self.SelectedQuests[questNum] = newState
 
-        self.FeatureCards[def.Id] = { Dot = dot, Label = stateLbl }
+            checkBtn.BackgroundColor3 = newState and Theme.Purple or Theme.PanelDim
+            checkBtn.Text = newState and "✓" or ""
+            checkStroke.Color = newState and Theme.Fuchsia or Theme.Line
+
+            self.OnQuestToggle(questNum, newState)
+        end))
     end
 
-    for i, def in ipairs(featuresList) do
-        local parentGrp = (def.Role == "Main") and self.FeaturesMainGroup or self.FeaturesAltGroup
-        buildFeatureCard(def, parentGrp, i)
+    for q = 1, 4 do
+        buildQuestRow(q, 4 + q)
     end
 
-    -- Status Bar
+    -- 3. Кнопка «Запустить квесты»
+    self.MasterBtn = create("TextButton", {
+        Size = UDim2.new(1, 0, 0, 24),
+        BackgroundColor3 = Theme.GreenBtn,
+        BorderSizePixel = 0,
+        AutoButtonColor = true,
+        Font = FONT_BOLD,
+        TextSize = 9,
+        TextColor3 = Theme.Text,
+        Text = "START QUESTS",
+        LayoutOrder = 10,
+        Parent = self.ScrollBody,
+    })
+    corner(self.MasterBtn, 5)
+
+    self.Maid:Give(self.MasterBtn.MouseButton1Click:Connect(function()
+        if self.IsRunning then
+            self.OnStopMaster()
+        else
+            self.OnStartMaster(self.SelectedQuests)
+        end
+    end))
+
+    -- 4. Статус-бар
     local statusBar = create("Frame", {
-        Size = UDim2.new(1, 0, 0, 18),
+        Size = UDim2.new(1, 0, 0, 16),
         BackgroundTransparency = 1,
-        LayoutOrder = 9,
+        LayoutOrder = 11,
         Parent = self.ScrollBody,
     })
     self.StatusLabel = create("TextLabel", {
@@ -650,20 +599,17 @@ function HubUI:BuildMain(featuresList)
 end
 
 -- 5. Методы обновления состояний
-local CARD_STATES = {
-    idle    = { color = Theme.Dim,   text = "● IDLE" },
-    loading = { color = Theme.Amber, text = "● STARTING" },
-    active  = { color = Theme.Green, text = "● ACTIVE" },
-    error   = { color = Theme.Red,   text = "● ERROR" },
-}
-
-function HubUI:SetCardState(id, state)
-    local card = self.FeatureCards[id]
-    if not card then return end
-    local conf = CARD_STATES[state] or CARD_STATES.idle
-    card.Dot.BackgroundColor3 = conf.color
-    card.Label.Text = conf.text
-    card.Label.TextColor3 = Theme.Text
+function HubUI:SetMasterState(isRunning)
+    self.IsRunning = isRunning
+    if not self.MasterBtn then return end
+    
+    if isRunning then
+        self.MasterBtn.BackgroundColor3 = Theme.RedBtn
+        self.MasterBtn.Text = "STOP QUESTS"
+    else
+        self.MasterBtn.BackgroundColor3 = Theme.GreenBtn
+        self.MasterBtn.Text = "START QUESTS"
+    end
 end
 
 function HubUI:SetStatus(msg)
@@ -695,14 +641,6 @@ function HubUI:SetAccountBox(slotKey, text, editable, isCurrentPlayer)
     refs.Box.ClearTextOnFocus = editable
     refs.Box.Text = text
     refs.Box.BackgroundColor3 = isCurrentPlayer and Theme.PanelDim or Theme.PanelSoft
-end
-
-function HubUI:SetRoleUI(role)
-    tween(self.RoleIndicator, 0.25, {
-        Position = role == "Main" and UDim2.new(0, 2, 0, 2) or UDim2.new(0.5, 1, 0, 2),
-    })
-    self.FeaturesMainGroup.Visible = (role == "Main")
-    self.FeaturesAltGroup.Visible  = (role == "Alt")
 end
 
 function HubUI:Destroy()
