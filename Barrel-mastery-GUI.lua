@@ -1,7 +1,7 @@
 --[[
 ═══════════════════════════════════════════════════════════════════════════════
                  BARREL HUB UI ENGINE (Barrel-mastery-GUI.lua)
-                        v3.0.0 · Quest Selector Edition
+                        v3.2.0 · Explicit Role Selector
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -18,7 +18,6 @@ end
 local HubUI = {}
 HubUI.__index = HubUI
 
--- 1. Цветовая палитра и стили
 local Theme = {
     Bg        = Color3.fromRGB(15, 12, 22),
     Panel     = Color3.fromRGB(24, 18, 38),
@@ -115,7 +114,6 @@ local function makeDraggable(handle, target, maid)
     end))
 end
 
--- 2. Конструктор HubUI
 function HubUI.new(config)
     local self = setmetatable({}, HubUI)
     
@@ -123,13 +121,15 @@ function HubUI.new(config)
     self.Maid = config.Maid
     self.OnStartMaster = config.OnStartMaster or function() end
     self.OnStopMaster  = config.OnStopMaster  or function() end
+    self.OnRoleSelect  = config.OnRoleSelect  or function() end
     self.OnQuestToggle = config.OnQuestToggle or function() end
     self.OnAccountInput = config.OnAccountInput or function() end
     self.OnShutdown = config.OnShutdown or function() end
     
     self.AccountRefs = {}
-    self.QuestCheckboxes = {}
-    self.SelectedQuests = { [1] = false, [2] = false, [3] = false, [4] = true } -- 4-й квест по умолчанию
+    self.RoleButtons = {}
+    self.SelectedRole = nil
+    self.SelectedQuests = { [1] = false, [2] = false, [3] = false, [4] = true }
     self.IsRunning = false
     self.Minimized = false
     
@@ -157,7 +157,6 @@ function HubUI.new(config)
     return self
 end
 
--- 3. Диагностика (Preloader)
 function HubUI:RunPreloader(checks, onComplete)
     local Preloader = create("CanvasGroup", {
         Name = "Preloader",
@@ -277,9 +276,8 @@ function HubUI:RunPreloader(checks, onComplete)
     end)
 end
 
--- 4. Главное окно (с секцией квестов)
 function HubUI:BuildMain()
-    local EXPANDED_SIZE  = UDim2.fromOffset(250, 185)
+    local EXPANDED_SIZE  = UDim2.fromOffset(250, 205)
     local COLLAPSED_SIZE = UDim2.fromOffset(250, 26)
 
     self.Main = create("CanvasGroup", {
@@ -304,7 +302,6 @@ function HubUI:BuildMain()
         Parent = mainStroke,
     }), 4, self.Maid)
 
-    -- Header
     local Header = create("Frame", {
         Name = "Header",
         Size = UDim2.new(1, 0, 0, 26),
@@ -346,7 +343,6 @@ function HubUI:BuildMain()
     local CloseBtn = headerButton("❌", -6)
     local MinBtn = headerButton("-", -28)
 
-    -- Scrolling Frame
     self.ScrollBody = create("ScrollingFrame", {
         Name = "ScrollBody",
         Position = UDim2.new(0, 0, 0, 26),
@@ -387,7 +383,46 @@ function HubUI:BuildMain()
         })
     end
 
-    -- 1. Секция аккаунтов (Main & Alt)
+    -- 1. Секция выбора роли «Кто ты?»
+    sectionTitle("● WHO ARE YOU?", 1)
+    local roleSelectorFrame = create("Frame", {
+        Size = UDim2.new(1, 0, 0, 22),
+        BackgroundColor3 = Theme.PanelSoft,
+        BorderSizePixel = 0,
+        LayoutOrder = 2,
+        Parent = self.ScrollBody,
+    })
+    corner(roleSelectorFrame, 5)
+
+    local function buildRoleBtn(text, roleKey, posX)
+        local btn = create("TextButton", {
+            Position = UDim2.new(posX, 2, 0, 2),
+            Size = UDim2.new(0.5, -4, 1, -4),
+            BackgroundColor3 = Theme.PanelDim,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            Font = FONT_BOLD,
+            TextSize = 8.5,
+            TextColor3 = Theme.Text,
+            Text = text,
+            Parent = roleSelectorFrame,
+        })
+        corner(btn, 4)
+
+        self.Maid:Give(btn.MouseButton1Click:Connect(function()
+            self:SelectRole(roleKey)
+            self.OnRoleSelect(roleKey)
+        end))
+
+        self.RoleButtons[roleKey] = btn
+        return btn
+    end
+
+    buildRoleBtn("I AM MAIN", "Main", 0)
+    buildRoleBtn("I AM ALT", "Alt", 0.5)
+
+    -- 2. Секция аккаунтов (Main & Alt)
+    sectionTitle("● ACCOUNT BINDING", 3)
     local function buildAccountRow(title, slotKey, order)
         local row = create("Frame", {
             Size = UDim2.new(1, 0, 0, 36),
@@ -459,13 +494,11 @@ function HubUI:BuildMain()
         end))
     end
 
-    sectionTitle("● ACCOUNT BINDING", 1)
-    buildAccountRow("MAIN", "Main", 2)
-    buildAccountRow("ALT", "Alt", 3)
+    buildAccountRow("MAIN", "Main", 4)
+    buildAccountRow("ALT", "Alt", 5)
 
-    -- 2. Секция квестов (Quest 1 - Quest 4)
-    sectionTitle("● QUEST SELECTOR", 4)
-
+    -- 3. Секция квестов (Quest 1 - Quest 4)
+    sectionTitle("● QUEST SELECTOR", 6)
     local function buildQuestRow(questNum, order)
         local isEnabled = self.SelectedQuests[questNum] or false
 
@@ -491,7 +524,6 @@ function HubUI:BuildMain()
             Parent = row,
         })
 
-        -- Чекбокс с галочкой
         local checkBtn = create("TextButton", {
             Position = UDim2.new(1, -5, 0.5, 0),
             AnchorPoint = Vector2.new(1, 0.5),
@@ -513,8 +545,6 @@ function HubUI:BuildMain()
             Parent = checkBtn,
         })
 
-        self.QuestCheckboxes[questNum] = { Btn = checkBtn, Stroke = checkStroke }
-
         self.Maid:Give(checkBtn.MouseButton1Click:Connect(function()
             local newState = not self.SelectedQuests[questNum]
             self.SelectedQuests[questNum] = newState
@@ -528,10 +558,10 @@ function HubUI:BuildMain()
     end
 
     for q = 1, 4 do
-        buildQuestRow(q, 4 + q)
+        buildQuestRow(q, 6 + q)
     end
 
-    -- 3. Кнопка «Запустить квесты»
+    -- 4. Кнопка «Запустить квесты»
     self.MasterBtn = create("TextButton", {
         Size = UDim2.new(1, 0, 0, 24),
         BackgroundColor3 = Theme.GreenBtn,
@@ -541,7 +571,7 @@ function HubUI:BuildMain()
         TextSize = 9,
         TextColor3 = Theme.Text,
         Text = "START QUESTS",
-        LayoutOrder = 10,
+        LayoutOrder = 11,
         Parent = self.ScrollBody,
     })
     corner(self.MasterBtn, 5)
@@ -554,11 +584,11 @@ function HubUI:BuildMain()
         end
     end))
 
-    -- 4. Статус-бар
+    -- 5. Статус-бар
     local statusBar = create("Frame", {
         Size = UDim2.new(1, 0, 0, 16),
         BackgroundTransparency = 1,
-        LayoutOrder = 11,
+        LayoutOrder = 12,
         Parent = self.ScrollBody,
     })
     self.StatusLabel = create("TextLabel", {
@@ -598,7 +628,15 @@ function HubUI:BuildMain()
     tween(self.Main, 0.3, { GroupTransparency = 0 })
 end
 
--- 5. Методы обновления состояний
+function HubUI:SelectRole(roleKey)
+    self.SelectedRole = roleKey
+    for key, btn in pairs(self.RoleButtons) do
+        local isChosen = (key == roleKey)
+        btn.BackgroundColor3 = isChosen and Theme.Purple or Theme.PanelDim
+        btn.TextColor3 = isChosen and Theme.Text or Theme.Dim
+    end
+end
+
 function HubUI:SetMasterState(isRunning)
     self.IsRunning = isRunning
     if not self.MasterBtn then return end
