@@ -1,7 +1,7 @@
 --[[
 ═══════════════════════════════════════════════════════════════════════════════
                  BARREL HUB UI ENGINE (Barrel-mastery-GUI.lua)
-                     v3.5.0 · Instant Close & Direct Destroy
+                     v3.6.0 · Single-Event Debounce Fixed
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -463,13 +463,10 @@ function HubUI:BuildMain()
         })
         corner(btn, 4)
 
-        local function onTrigger()
+        self.Maid:Give(btn.Activated:Connect(function()
             self:SelectRole(roleKey)
             self.OnRoleSelect(roleKey)
-        end
-
-        self.Maid:Give(btn.Activated:Connect(onTrigger))
-        self.Maid:Give(btn.MouseButton1Click:Connect(onTrigger))
+        end))
 
         self.RoleButtons[roleKey] = btn
         return btn
@@ -603,7 +600,7 @@ function HubUI:BuildMain()
             Parent = checkBtn,
         })
 
-        local function onToggle()
+        self.Maid:Give(checkBtn.Activated:Connect(function()
             local newState = not self.SelectedQuests[questNum]
             self.SelectedQuests[questNum] = newState
 
@@ -613,10 +610,7 @@ function HubUI:BuildMain()
 
             self:UpdateMasterButtonState()
             self.OnQuestToggle(questNum, newState)
-        end
-
-        self.Maid:Give(checkBtn.Activated:Connect(onToggle))
-        self.Maid:Give(checkBtn.MouseButton1Click:Connect(onToggle))
+        end))
     end
 
     for q = 1, 4 do
@@ -639,7 +633,7 @@ function HubUI:BuildMain()
     })
     corner(self.MasterBtn, 5)
 
-    local function onMasterClick()
+    self.Maid:Give(self.MasterBtn.Activated:Connect(function()
         if self.SelectedRole == "Alt" then return end
 
         if self.IsRunning then
@@ -653,10 +647,7 @@ function HubUI:BuildMain()
                 self.OnStartMaster(self.SelectedQuests)
             end
         end
-    end
-
-    self.Maid:Give(self.MasterBtn.Activated:Connect(onMasterClick))
-    self.Maid:Give(self.MasterBtn.MouseButton1Click:Connect(onMasterClick))
+    end))
 
     -- 5. Статус-бар
     local statusBar = create("Frame", {
@@ -680,31 +671,35 @@ function HubUI:BuildMain()
 
     makeDraggable(Header, self.Main, self.Maid)
 
-    -- Сворачивание
-    local function onMinClick()
+    -- Сворачивание с защитой от быстрого спама (Debounce)
+    local minDebounce = false
+    self.Maid:Give(MinBtn.Activated:Connect(function()
+        if minDebounce then return end
+        minDebounce = true
+
         self.Minimized = not self.Minimized
         MinBtn.Text = self.Minimized and "+" or "-"
+
         if self.Minimized then
             self.ScrollBody.Visible = false
-            tween(self.Main, 0.2, { Size = COLLAPSED_SIZE })
+            local tw = tween(self.Main, 0.2, { Size = COLLAPSED_SIZE })
+            tw.Completed:Wait()
         else
             local tw = tween(self.Main, 0.2, { Size = EXPANDED_SIZE })
             tw.Completed:Wait()
-            self.ScrollBody.Visible = true
+            if not self.Minimized then
+                self.ScrollBody.Visible = true
+            end
         end
-    end
 
-    self.Maid:Give(MinBtn.Activated:Connect(onMinClick))
-    self.Maid:Give(MinBtn.MouseButton1Click:Connect(onMinClick))
+        minDebounce = false
+    end))
 
-    -- Крестик (Прямое и моментальное удаление GUI)
-    local function onCloseClick()
+    -- Крестик
+    self.Maid:Give(CloseBtn.Activated:Connect(function()
         pcall(function() self.OnShutdown() end)
         self:Destroy()
-    end
-
-    self.Maid:Give(CloseBtn.Activated:Connect(onCloseClick))
-    self.Maid:Give(CloseBtn.MouseButton1Click:Connect(onCloseClick))
+    end))
 
     self.Main.Visible = true
     self.Main.GroupTransparency = 1
@@ -759,7 +754,7 @@ function HubUI:SetAccountBox(slotKey, text, editable, isCurrentPlayer)
     refs.Box.BackgroundColor3 = isCurrentPlayer and Theme.PanelDim or Theme.PanelSoft
 end
 
--- Прямое уничтожение GUI без зависаний
+-- Прямое уничтожение GUI
 function HubUI:Destroy()
     if self.ScreenGui then
         pcall(function() self.ScreenGui:Destroy() end)
