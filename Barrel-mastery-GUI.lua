@@ -1,6 +1,6 @@
 --[[
 ═══════════════════════════════════════════════════════════════════════════════
-                 BARREL HUB UI ENGINE (Standalone Module)
+                 BARREL HUB UI ENGINE (Barrel-mastery-GUI.lua)
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -17,7 +17,7 @@ end
 local HubUI = {}
 HubUI.__index = HubUI
 
--- 1. Цветовая палитра и стили
+-- 1. Стили и палитра
 local Theme = {
     Bg        = Color3.fromRGB(15, 12, 22),
     Panel     = Color3.fromRGB(24, 18, 38),
@@ -39,7 +39,6 @@ local FONT      = Enum.Font.Gotham
 local FONT_MED  = Enum.Font.GothamMedium
 local FONT_BOLD = Enum.Font.GothamBold
 
--- Хелперы создания элементов
 local function create(className, props)
     local inst = Instance.new(className)
     for k, v in pairs(props) do
@@ -131,7 +130,6 @@ function HubUI.new(config)
     self.FeatureCards = {}
     self.Minimized = false
     
-    -- Поиск родительского контейнера GUI
     local guiParent = (typeof(gethui) == "function" and gethui()) 
         or (pcall(function() return game:GetService("CoreGui") end) and game:GetService("CoreGui")) 
         or LocalPlayer:WaitForChild("PlayerGui")
@@ -156,7 +154,7 @@ function HubUI.new(config)
     return self
 end
 
--- 3. Отображение Preloader (Экран диагностики)
+-- 3. Диагностика (Preloader)
 function HubUI:RunPreloader(checks, onComplete)
     local Preloader = create("CanvasGroup", {
         Name = "Preloader",
@@ -276,7 +274,7 @@ function HubUI:RunPreloader(checks, onComplete)
     end)
 end
 
--- 4. Построение основного окна
+-- 4. Главное окно
 function HubUI:BuildMain(featuresList)
     local EXPANDED_SIZE  = UDim2.fromOffset(250, 150)
     local COLLAPSED_SIZE = UDim2.fromOffset(250, 26)
@@ -422,7 +420,7 @@ function HubUI:BuildMain(featuresList)
             Font = FONT_BOLD,
             TextSize = 7.5,
             TextColor3 = Theme.Text,
-            Text = "Not bound",
+            Text = "Not found", -- Исправлено на Not found
             Parent = tagFrame,
         })
 
@@ -607,7 +605,7 @@ function HubUI:BuildMain(featuresList)
         buildFeatureCard(def, parentGrp, i)
     end
 
-    -- Статус-бар
+    -- Status Bar
     local statusBar = create("Frame", {
         Size = UDim2.new(1, 0, 0, 18),
         BackgroundTransparency = 1,
@@ -627,7 +625,6 @@ function HubUI:BuildMain(featuresList)
         Parent = statusBar,
     })
 
-    -- Перетаскивание, сворачивание, закрытие
     makeDraggable(Header, self.Main, self.Maid)
 
     self.Maid:Give(MinBtn.MouseButton1Click:Connect(function()
@@ -652,7 +649,7 @@ function HubUI:BuildMain(featuresList)
     tween(self.Main, 0.3, { GroupTransparency = 0 })
 end
 
--- 5. Методы обновления состояний UI
+-- 5. Методы обновления состояний
 local CARD_STATES = {
     idle    = { color = Theme.Dim,   text = "● IDLE" },
     loading = { color = Theme.Amber, text = "● STARTING" },
