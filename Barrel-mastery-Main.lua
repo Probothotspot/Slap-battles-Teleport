@@ -1,6 +1,6 @@
 --[[
 ═══════════════════════════════════════════════════════════════════════════════
-       BARREL MASTERY HUB · Controller v4.6 (Fixed Universal Barrel Snap)
+       BARREL MASTERY HUB · Controller v4.7 (Magnetized Slap & Dual-Q3)
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -15,12 +15,13 @@ local LocalPlayer = Players.LocalPlayer or Players:GetPropertyChangedSignal("Loc
 local GENV = (typeof(getgenv) == "function" and getgenv()) or _G
 GENV.BHUB_FLAGS = GENV.BHUB_FLAGS or {}
 
--- 1. Координаты этажей квестов
-local QUEST_FLOORS = {
-    [1] = -10000,
-    [2] = -20000,
-    [3] = -30000,
-    [4] = -40000,
+-- 1. Точные координаты точек спавна на платформах
+local QUEST_SPAWNS = {
+    [1]            = Vector3.new(0, -10000 + 3, 0),
+    [2]            = Vector3.new(0, -20000 + 3, 0),
+    ["Q3_Slap"]    = Vector3.new(-9999, -30000 + 3, -9999),
+    ["Q3_Ability"] = Vector3.new(9999, -30000 + 3, 9999),
+    [4]            = Vector3.new(0, -40000 + 3, 0),
 }
 
 local SavedQueries = {
@@ -93,29 +94,21 @@ local function loadAutoEquip()
     pcall(function() loadstring(game:HttpGet(equipUrl))() end)
 end
 
--- 3. Надежный поиск бочки (как было в рабочей версии + поддержка Root)
+-- Надежный поиск бочки
 local function getSpawnedBarrel()
-    -- 1. Сканируем детей Workspace
     for _, obj in ipairs(Workspace:GetChildren()) do
-        -- Пропускаем персонажей игроков
         if not obj:FindFirstChildOfClass("Humanoid") then
             local name = obj.Name:lower()
             if name:find("barrel") or name:find("roll") then
                 if obj:IsA("BasePart") then
                     return obj
                 elseif obj:IsA("Model") then
-                    local root = obj:FindFirstChild("Root") 
-                        or obj.PrimaryPart 
-                        or obj:FindFirstChildWhichIsA("BasePart")
-                    if root then
-                        return root
-                    end
+                    local root = obj:FindFirstChild("Root") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                    if root then return root end
                 end
             end
         end
     end
-
-    -- 2. Запасной поиск среди потомков Workspace
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("BasePart") and not obj:IsDescendantOf(Workspace.Terrain) then
             local model = obj:FindFirstAncestorOfClass("Model")
@@ -126,7 +119,6 @@ local function getSpawnedBarrel()
             end
         end
     end
-
     return nil
 end
 
@@ -189,14 +181,10 @@ findPlr = function(query)
     query = query:lower():gsub("^%s+", ""):gsub("%s+$", "")
     if query == "" then return nil end
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr.Name:lower() == query or plr.DisplayName:lower() == query then 
-            return plr 
-        end
+        if plr.Name:lower() == query or plr.DisplayName:lower() == query then return plr end
     end
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr.Name:lower():find(query, 1, true) or plr.DisplayName:lower():find(query, 1, true) then 
-            return plr 
-        end
+        if plr.Name:lower():find(query, 1, true) or plr.DisplayName:lower():find(query, 1, true) then return plr end
     end
     return nil
 end
@@ -272,13 +260,13 @@ give(Players.PlayerAdded:Connect(function() task.defer(updateAccountBindings) en
 give(Players.PlayerRemoving:Connect(function() task.defer(updateAccountBindings) end))
 
 -- Логика Main
-local function executeMainFloorSequence(questNum)
+local function executeMainSequence(questKey)
     if not Runtime.IsRunning or Runtime.CurrentRole ~= "Main" then return end
     local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     local hrp = char:WaitForChild("HumanoidRootPart", 5)
     if not hrp then return end
 
-    local targetY = QUEST_FLOORS[questNum] or -10000
+    local targetPos = QUEST_SPAWNS[questKey] or Vector3.new(0, -10000 + 3, 0)
 
     UI:SetStatus("[Main] Equipping Barrel…")
     loadAutoEquip()
@@ -293,18 +281,28 @@ local function executeMainFloorSequence(questNum)
     char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     hrp = char:WaitForChild("HumanoidRootPart", 5)
     if hrp and Runtime.IsRunning then
-        hrp.CFrame = CFrame.new(0, targetY + 3, 0)
-        UI:SetStatus("[Main] Active on Floor " .. questNum)
+        hrp.CFrame = CFrame.new(targetPos)
+        UI:SetStatus("[Main] Active on: " .. tostring(questKey))
     end
 end
 
+-- Авто-детект платформы Main по X, Y, Z
 local function detectMainQuestFloor(mainHrp)
     if not mainHrp then return nil end
-    local y = mainHrp.Position.Y
-    for qNum, floorY in pairs(QUEST_FLOORS) do
-        if math.abs(y - floorY) < 2000 then
-            return qNum, floorY
+    local pos = mainHrp.Position
+
+    if math.abs(pos.Y - (-10000)) < 2000 then
+        return 1, QUEST_SPAWNS[1]
+    elseif math.abs(pos.Y - (-20000)) < 2000 then
+        return 2, QUEST_SPAWNS[2]
+    elseif math.abs(pos.Y - (-30000)) < 2000 then
+        if pos.X < 0 then
+            return "Q3_Slap", QUEST_SPAWNS["Q3_Slap"]
+        else
+            return "Q3_Ability", QUEST_SPAWNS["Q3_Ability"]
         end
+    elseif math.abs(pos.Y - (-40000)) < 2000 then
+        return 4, QUEST_SPAWNS[4]
     end
     return nil
 end
@@ -324,8 +322,8 @@ setupAltDaemon = function()
     Runtime.AltDaemon = task.spawn(function()
         local isAltActive = false
         local altWorkerThread = nil
-        local currentFloorY = nil
-        local currentQuestNum = nil
+        local currentQuestKey = nil
+        local currentSpawnPos = nil
 
         while Runtime.CurrentRole == "Alt" do
             task.wait(0.04)
@@ -336,14 +334,14 @@ setupAltDaemon = function()
             local mainChar = mainPlr and mainPlr.Character
             local mainHrp  = mainChar and mainChar:FindFirstChild("HumanoidRootPart")
 
-            local detectedQuest, floorY = detectMainQuestFloor(mainHrp)
+            local detectedKey, spawnPos = detectMainQuestFloor(mainHrp)
 
-            if detectedQuest and (not isAltActive or currentQuestNum ~= detectedQuest) then
+            if detectedKey and (not isAltActive or currentQuestKey ~= detectedKey) then
                 isAltActive = true
-                currentQuestNum = detectedQuest
-                currentFloorY = floorY
+                currentQuestKey = detectedKey
+                currentSpawnPos = spawnPos
                 UI:SetMasterState(true)
-                UI:SetStatus("[Alt] Detected Quest " .. detectedQuest .. "! Syncing…")
+                UI:SetStatus("[Alt] Detected: " .. tostring(detectedKey) .. "! Syncing…")
 
                 if altWorkerThread then pcall(task.cancel, altWorkerThread) end
 
@@ -357,7 +355,7 @@ setupAltDaemon = function()
                         local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
                         local hrp = char:WaitForChild("HumanoidRootPart", 5)
                         if hrp then
-                            hrp.CFrame = CFrame.new(0, currentFloorY + 3, 0)
+                            hrp.CFrame = CFrame.new(currentSpawnPos)
                         end
                     end
 
@@ -383,32 +381,32 @@ setupAltDaemon = function()
                                 local mChar = mainTarget and mainTarget.Character
                                 local mHrp = mChar and mChar:FindFirstChild("HumanoidRootPart")
 
-                                if currentQuestNum == 4 then
-                                    -- ════════════════ КВЕСТ 4: МОМЕНТАЛЬНЫЙ СНЕП НА БОЧКУ ════════════════
-                                    local barrelPart = getSpawnedBarrel()
-                                    if barrelPart and barrelPart.Parent then
-                                        hrp.CFrame = barrelPart.CFrame * CFrame.new(0, 0.5, 0)
-                                        if firetouchinterest then
-                                            firetouchinterest(hrp, barrelPart, 0)
-                                            task.wait(0.01)
-                                            firetouchinterest(hrp, barrelPart, 1)
-                                        end
-                                        UI:SetStatus("[Alt] Q4: Snapped to Barrel! 💥")
-                                    elseif mHrp then
-                                        -- Стоим перед лицом Main в упор 2.2 студа
-                                        hrp.CFrame = mHrp.CFrame * CFrame.new(0, 0, -2.2) * CFrame.Angles(0, math.rad(180), 0)
-                                        UI:SetStatus("[Alt] Q4: Waiting for Barrel…")
+                                -- ════════════════ Q3 SLAP: ЖЕСТКИЙ МАГНИТ (3 СТУДА ПЕРЕД ЛИЦОМ) ════════════════
+                                if currentQuestKey == "Q3_Slap" then
+                                    if mHrp then
+                                        -- Примагничиваем перед лицом на 3 студа
+                                        hrp.CFrame = mHrp.CFrame * CFrame.new(0, 0, -3) * CFrame.Angles(0, math.rad(180), 0)
+                                        hrp.AssemblyLinearVelocity = Vector3.zero
+                                        hrp.AssemblyAngularVelocity = Vector3.zero
+                                        UI:SetStatus("[Alt] Q3 Slap: Magnetized to Main (3 studs) 🧲")
                                     end
 
-                                elseif currentQuestNum == 3 then
-                                    -- ════════════════ КВЕСТ 3: ABILITY / SLAP ════════════════
+                                    -- При получении удара — мгновенный ресет и новый круг
+                                    if tick() - lastHitTime < 0.5 or hum.Health < 100 then
+                                        UI:SetStatus("[Alt] Q3 Slap: Hit received! Resetting…")
+                                        task.wait(0.05)
+                                        if hum and hum.Health > 0 then hum.Health = 0 end
+                                    end
+
+                                -- ════════════════ Q3 ABILITY ════════════════
+                                elseif currentQuestKey == "Q3_Ability" then
                                     if mHrp then
                                         hrp.CFrame = mHrp.CFrame * CFrame.new(0, 0, -2.5) * CFrame.Angles(0, math.rad(180), 0)
                                     end
 
                                     local barrelPart = getSpawnedBarrel()
                                     if barrelPart and barrelPart.Parent then
-                                        UI:SetStatus("[Alt] Q3: Barrel detected! Waiting 1s…")
+                                        UI:SetStatus("[Alt] Q3 Ability: Barrel detected! Waiting 1s…")
                                         task.wait(1.0)
                                         if isAltActive and hum.Health > 0 and barrelPart.Parent then
                                             hrp.CFrame = barrelPart.CFrame * CFrame.new(0, 0.5, 0)
@@ -423,11 +421,22 @@ setupAltDaemon = function()
                                         end
                                     end
 
-                                    if tick() - lastHitTime < 0.6 then
-                                        UI:SetStatus("[Alt] Q3 (Slap): Hit registered! Resetting…")
-                                        task.wait(0.1)
-                                        if hum and hum.Health > 0 then hum.Health = 0 end
+                                -- ════════════════ Q4: МГНОВЕННЫЙ СНЕП НА БОЧКУ ════════════════
+                                elseif currentQuestKey == 4 then
+                                    local barrelPart = getSpawnedBarrel()
+                                    if barrelPart and barrelPart.Parent then
+                                        hrp.CFrame = barrelPart.CFrame * CFrame.new(0, 0.5, 0)
+                                        if firetouchinterest then
+                                            firetouchinterest(hrp, barrelPart, 0)
+                                            task.wait(0.01)
+                                            firetouchinterest(hrp, barrelPart, 1)
+                                        end
+                                        UI:SetStatus("[Alt] Q4: Snapped to Barrel! 💥")
+                                    elseif mHrp then
+                                        hrp.CFrame = mHrp.CFrame * CFrame.new(0, 0, -2.2) * CFrame.Angles(0, math.rad(180), 0)
+                                        UI:SetStatus("[Alt] Q4: Waiting for Barrel…")
                                     end
+
                                 else
                                     if mHrp then
                                         hrp.CFrame = mHrp.CFrame * CFrame.new(0, 0, -2.5) * CFrame.Angles(0, math.rad(180), 0)
@@ -440,15 +449,15 @@ setupAltDaemon = function()
                             hum.Died:Wait()
                             task.wait(0.3)
                         else
-                            task.wait(0.03)
+                            task.wait(0.02)
                         end
                     end
                 end)
 
-            elseif not detectedQuest and isAltActive then
+            elseif not detectedKey and isAltActive then
                 isAltActive = false
-                currentQuestNum = nil
-                currentFloorY = nil
+                currentQuestKey = nil
+                currentSpawnPos = nil
                 if altWorkerThread then
                     pcall(task.cancel, altWorkerThread)
                     altWorkerThread = nil
@@ -495,11 +504,16 @@ startQuests = function(chosenQuest)
     Runtime.ActiveQuestNum = chosenQuest
     GENV.BHUB_FLAGS.MasterRunning = true
 
+    local questKey = chosenQuest
+    if chosenQuest == 3 then
+        questKey = (Runtime.Q3Method == "Slap") and "Q3_Slap" or "Q3_Ability"
+    end
+
     UI:SetMasterState(true)
-    UI:SetStatus("Starting Quest " .. chosenQuest .. " on Floor " .. chosenQuest .. "…")
+    UI:SetStatus("Starting: " .. tostring(questKey) .. "…")
 
     loadPlatform()
-    task.spawn(function() executeMainFloorSequence(chosenQuest) end)
+    task.spawn(function() executeMainSequence(questKey) end)
 
     local stateWatcher = task.spawn(function()
         while Runtime.IsRunning do
@@ -511,7 +525,11 @@ startQuests = function(chosenQuest)
                 if hrp.Position.Y >= 200 and hrp.Position.Y <= 500 then
                     task.wait(0.5)
                     if Runtime.IsRunning and Runtime.CurrentRole == "Main" then
-                        executeMainFloorSequence(Runtime.ActiveQuestNum)
+                        local curKey = Runtime.ActiveQuestNum
+                        if curKey == 3 then
+                            curKey = (Runtime.Q3Method == "Slap") and "Q3_Slap" or "Q3_Ability"
+                        end
+                        executeMainSequence(curKey)
                     end
                 end
             end
@@ -575,5 +593,5 @@ UI:RunPreloader({
     loadPlatform()
     UI:BuildMain()
     setRole("Main")
-    UI:SetStatus("Hub ready — Universal Barrel Tracker active.")
+    UI:SetStatus("Hub ready — Dynamic Multi-Platform active.")
 end)
