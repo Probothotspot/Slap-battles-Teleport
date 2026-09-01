@@ -1,7 +1,7 @@
 --[[
 ═══════════════════════════════════════════════════════════════════════════════
                  BARREL HUB UI ENGINE (Barrel-mastery-GUI.lua)
-                     v3.7.0 · Quest 3 Sub-Methods Edition
+                 v3.8.0 · Single Quest & Strict Alt Validation
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -130,12 +130,19 @@ function HubUI.new(config)
     
     self.AccountRefs = {}
     self.RoleButtons = {}
+    self.QuestCheckBtns = {}
+    self.QuestCheckStrokes = {}
     self.Q3MethodButtons = {}
+    
     self.SelectedRole = "Main"
-    self.SelectedQuests = { [1] = false, [2] = false, [3] = false, [4] = false }
-    self.SelectedQ3Method = nil -- "Ability" или "Slap"
+    self.SelectedQuest = nil -- Только 1 выбранный квест (1..4) или nil
+    self.SelectedQ3Method = nil
     self.IsRunning = false
     self.Minimized = false
+    
+    -- Валидация напарника
+    self.PartnerValid = false
+    self.PartnerError = "ENTER ALT USERNAME"
     
     local guiParent = (typeof(gethui) == "function" and gethui()) 
         or (pcall(function() return game:GetService("CoreGui") end) and game:GetService("CoreGui")) 
@@ -280,6 +287,12 @@ function HubUI:RunPreloader(checks, onComplete)
     end)
 end
 
+function HubUI:SetPartnerStatus(isValid, errorMsg)
+    self.PartnerValid = isValid
+    self.PartnerError = errorMsg or "ENTER ALT USERNAME"
+    self:UpdateMasterButtonState()
+end
+
 function HubUI:UpdateMasterButtonState()
     if not self.MasterBtn then return end
 
@@ -299,12 +312,17 @@ function HubUI:UpdateMasterButtonState()
         return
     end
 
-    local hasAnyQuest = false
-    for q = 1, 4 do
-        if self.SelectedQuests[q] then hasAnyQuest = true break end
+    -- 1. Проверка наличия валидного напарника (Alt)
+    if not self.PartnerValid then
+        self.MasterBtn.BackgroundColor3 = Theme.LockedBtn
+        self.MasterBtn.TextColor3 = Theme.Amber
+        self.MasterBtn.Text = self.PartnerError:upper()
+        self.MasterBtn.AutoButtonColor = false
+        return
     end
 
-    if not hasAnyQuest then
+    -- 2. Проверка выбора квеста
+    if not self.SelectedQuest then
         self.MasterBtn.BackgroundColor3 = Theme.LockedBtn
         self.MasterBtn.TextColor3 = Theme.Dim
         self.MasterBtn.Text = "SELECT A QUEST"
@@ -312,8 +330,8 @@ function HubUI:UpdateMasterButtonState()
         return
     end
 
-    -- Валидация метода 3 квеста
-    if self.SelectedQuests[3] and not self.SelectedQ3Method then
+    -- 3. Проверка метода для 3 квеста
+    if self.SelectedQuest == 3 and not self.SelectedQ3Method then
         self.MasterBtn.BackgroundColor3 = Theme.LockedBtn
         self.MasterBtn.TextColor3 = Theme.Amber
         self.MasterBtn.Text = "SELECT Q3 METHOD"
@@ -516,7 +534,7 @@ function HubUI:BuildMain()
             Font = FONT_BOLD,
             TextSize = 7.5,
             TextColor3 = Theme.Text,
-            Text = "Not found",
+            Text = "Not set",
             Parent = tagFrame,
         })
 
@@ -554,10 +572,10 @@ function HubUI:BuildMain()
     buildAccountRow("MAIN", "Main", 4)
     buildAccountRow("ALT", "Alt", 5)
 
-    -- 3. Секция квестов (Quest 1 - 4 + Выпадающая панель для Q3)
-    sectionTitle("● QUEST SELECTOR", 6)
+    -- 3. Секция квестов
+    sectionTitle("● QUEST SELECTOR (CHOOSE 1)", 6)
 
-    -- Выпадающая панель методов для Квеста 3
+    -- Меню методов Q3
     self.Q3MethodFrame = create("Frame", {
         Size = UDim2.new(1, 0, 0, 22),
         BackgroundColor3 = Theme.PanelDim,
@@ -598,9 +616,30 @@ function HubUI:BuildMain()
     buildQ3MethodBtn("⚡ ABILITY", "Ability", 0)
     buildQ3MethodBtn("✋ SLAP", "Slap", 0.5)
 
-    local function buildQuestRow(questNum, order)
-        local isEnabled = self.SelectedQuests[questNum] or false
+    -- Одиночный выбор квеста (Radio Button)
+    local function updateQuestUI()
+        for q = 1, 4 do
+            local isChosen = (self.SelectedQuest == q)
+            local btn = self.QuestCheckBtns[q]
+            local strk = self.QuestCheckStrokes[q]
+            if btn and strk then
+                btn.BackgroundColor3 = isChosen and Theme.Purple or Theme.PanelDim
+                btn.Text = isChosen and "✓" or ""
+                strk.Color = isChosen and Theme.Fuchsia or Theme.Line
+            end
+        end
+        self.Q3MethodFrame.Visible = (self.SelectedQuest == 3)
+        if self.SelectedQuest ~= 3 then
+            self.SelectedQ3Method = nil
+            for _, b in pairs(self.Q3MethodButtons) do
+                b.BackgroundColor3 = Theme.PanelSoft
+                b.TextColor3 = Theme.Dim
+            end
+        end
+        self:UpdateMasterButtonState()
+    end
 
+    local function buildQuestRow(questNum, order)
         local row = create("Frame", {
             Size = UDim2.new(1, 0, 0, 22),
             BackgroundColor3 = Theme.PanelSoft,
@@ -627,53 +666,41 @@ function HubUI:BuildMain()
             Position = UDim2.new(1, -5, 0.5, 0),
             AnchorPoint = Vector2.new(1, 0.5),
             Size = UDim2.fromOffset(16, 16),
-            BackgroundColor3 = isEnabled and Theme.Purple or Theme.PanelDim,
+            BackgroundColor3 = Theme.PanelDim,
             BorderSizePixel = 0,
             Active = true,
             AutoButtonColor = false,
             Font = FONT_BOLD,
             TextSize = 10,
             TextColor3 = Theme.Text,
-            Text = isEnabled and "✓" or "",
+            Text = "",
             Parent = row,
         })
         corner(checkBtn, 3)
 
         local checkStroke = create("UIStroke", {
-            Color = isEnabled and Theme.Fuchsia or Theme.Line,
+            Color = Theme.Line,
             Thickness = 1,
             Parent = checkBtn,
         })
 
+        self.QuestCheckBtns[questNum] = checkBtn
+        self.QuestCheckStrokes[questNum] = checkStroke
+
         self.Maid:Give(checkBtn.Activated:Connect(function()
-            local newState = not self.SelectedQuests[questNum]
-            self.SelectedQuests[questNum] = newState
-
-            checkBtn.BackgroundColor3 = newState and Theme.Purple or Theme.PanelDim
-            checkBtn.Text = newState and "✓" or ""
-            checkStroke.Color = newState and Theme.Fuchsia or Theme.Line
-
-            -- Если это 3 квест — раскрываем/прячем меню методов
-            if questNum == 3 then
-                self.Q3MethodFrame.Visible = newState
-                if not newState then
-                    self.SelectedQ3Method = nil
-                    for _, b in pairs(self.Q3MethodButtons) do
-                        b.BackgroundColor3 = Theme.PanelSoft
-                        b.TextColor3 = Theme.Dim
-                    end
-                end
+            if self.SelectedQuest == questNum then
+                self.SelectedQuest = nil -- Отмена выбора
+            else
+                self.SelectedQuest = questNum -- Выбор только одного квеста
             end
-
-            self:UpdateMasterButtonState()
-            self.OnQuestToggle(questNum, newState)
+            updateQuestUI()
+            self.OnQuestToggle(self.SelectedQuest)
         end))
     end
 
     buildQuestRow(1, 7)
     buildQuestRow(2, 8)
     buildQuestRow(3, 9)
-    -- Q3MethodFrame имеет LayoutOrder = 10
     buildQuestRow(4, 11)
 
     -- 4. Кнопка «Запустить квесты»
@@ -686,7 +713,7 @@ function HubUI:BuildMain()
         Font = FONT_BOLD,
         TextSize = 9,
         TextColor3 = Theme.Dim,
-        Text = "SELECT A QUEST",
+        Text = "ENTER ALT USERNAME",
         LayoutOrder = 12,
         Parent = self.ScrollBody,
     })
@@ -698,14 +725,9 @@ function HubUI:BuildMain()
         if self.IsRunning then
             self.OnStopMaster()
         else
-            local hasAnyQuest = false
-            for q = 1, 4 do
-                if self.SelectedQuests[q] then hasAnyQuest = true break end
-            end
-            if hasAnyQuest then
-                if self.SelectedQuests[3] and not self.SelectedQ3Method then return end
-                self.OnStartMaster(self.SelectedQuests, self.SelectedQ3Method)
-            end
+            if not self.PartnerValid or not self.SelectedQuest then return end
+            if self.SelectedQuest == 3 and not self.SelectedQ3Method then return end
+            self.OnStartMaster(self.SelectedQuest, self.SelectedQ3Method)
         end
     end))
 
