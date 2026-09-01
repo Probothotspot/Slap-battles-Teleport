@@ -1,102 +1,53 @@
-local env = (getgenv and getgenv()) or _G
-
--- Очистка старого слушателя при перезапуске loadstring
-if env.BarrelTP and type(env.BarrelTP.Stop) == "function" then
-    env.BarrelTP:Stop()
-end
+--[[
+    BARREL MASTERY · Quest 4 Ability Spammer (Main Only)
+    Только спавн бочек без телепортации основы!
+]]
 
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local player = Players.LocalPlayer
+local LocalPlayer = Players.LocalPlayer
+local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 
-local BarrelTP = {
-    Enabled = true,
-    Delay = 1.0,    -- Время ожидания конца полета бочки (в секундах)
-    YOffset = 3.5,  -- Смещение по высоте над бочкой
-    _Connection = nil,
-    _LastTeleported = nil
-}
+local GENV = (typeof(getgenv) == "function" and getgenv()) or _G
+GENV.BHUB_FLAGS = GENV.BHUB_FLAGS or {}
 
--- Функция телепортации
-local function teleportTo(targetPart)
-    local char = player.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    
-    if hrp and targetPart and targetPart:IsA("BasePart") and targetPart.Parent then
-        local offset = (targetPart.Size.Y / 2) + BarrelTP.YOffset
-        hrp.CFrame = targetPart.CFrame + Vector3.new(0, offset, 0)
-    end
-end
+-- Цикл применения способности бочки
+task.spawn(function()
+    while GENV.BHUB_FLAGS.MasterRunning do
+        local cChar = LocalPlayer.Character
+        local hum = cChar and cChar:FindFirstChildOfClass("Humanoid")
+        local hrp = cChar and cChar:FindFirstChild("HumanoidRootPart")
+        local tool = cChar and cChar:FindFirstChild("Barrel")
 
--- Обработка найденной бочки
-local function processBarrel(rootPart)
-    if not BarrelTP.Enabled or not rootPart or rootPart == BarrelTP._LastTeleported then return end
-    BarrelTP._LastTeleported = rootPart
-
-    task.spawn(function()
-        task.wait(BarrelTP.Delay)
-        if BarrelTP.Enabled and rootPart and rootPart.Parent then
-            teleportTo(rootPart)
-        end
-    end)
-end
-
--- Детект появления в Workspace
-local function checkTarget(instance)
-    if not BarrelTP.Enabled then return end
-
-    if instance.Name == "Root" and instance:IsA("BasePart") and instance.Parent then
-        if string.find(instance.Parent.Name, "Barrel") then
-            processBarrel(instance)
-        end
-    elseif string.find(instance.Name, "Barrel") then
-        task.spawn(function()
-            local root = instance:WaitForChild("Root", 1.5)
-            if root and root:IsA("BasePart") then
-                processBarrel(root)
+        if hum and hum.Health > 0 and hrp and hrp.Position.Y < -5000 then
+            -- 1. Экипируем перчатку в руку, если она в рюкзаке
+            if not tool then
+                local bagTool = LocalPlayer.Backpack:FindFirstChild("Barrel")
+                if bagTool then hum:EquipTool(bagTool) end
             end
-        end)
-    end
-end
 
--- Поиск уже существующих бочек
-local function scanExisting()
-    for _, obj in ipairs(Workspace:GetChildren()) do
-        if string.find(obj.Name, "Barrel") then
-            local root = obj:FindFirstChild("Root")
-            if root and root:IsA("BasePart") and root ~= BarrelTP._LastTeleported then
-                processBarrel(root)
-                return
-            end
+            -- 2. Активация способности (E)
+            pcall(function()
+                -- Попытка через RemoteEvent
+                local barrelEvent = ReplicatedStorage:FindFirstChild("BarrelHit") or ReplicatedStorage:FindFirstChild("Barrel")
+                if barrelEvent and barrelEvent:IsA("RemoteEvent") then
+                    barrelEvent:FireServer()
+                end
+                -- Симуляция нажатия клавиши E
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                task.wait(0.05)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+            end)
+
+            -- 3. Клик мышью для детонации/броска
+            pcall(function()
+                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+                task.wait(0.05)
+                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+            end)
         end
+        task.wait(0.5)
     end
-end
-
--- Методы управления
-function BarrelTP:Start()
-    self.Enabled = true
-    self._LastTeleported = nil
-    if self._Connection then
-        self._Connection:Disconnect()
-    end
-    scanExisting()
-    self._Connection = Workspace.DescendantAdded:Connect(checkTarget)
-end
-
-function BarrelTP:Stop()
-    self.Enabled = false
-    if self._Connection then
-        self._Connection:Disconnect()
-        self._Connection = nil
-    end
-    self._LastTeleported = nil
-end
-
--- Автозапуск при инжекте
-BarrelTP:Start()
-
--- Экспорт
-env.BarrelTP = BarrelTP
-return BarrelTP
+end)
