@@ -1,6 +1,6 @@
 --[[
 ═══════════════════════════════════════════════════════════════════════════════
-       BARREL MASTERY HUB · Controller v4.4 (Proximity Barrel Detection)
+       BARREL MASTERY HUB · Controller v4.5 (Targeted [PlrName]Barrel Sync)
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -93,40 +93,39 @@ local function loadAutoEquip()
     pcall(function() loadstring(game:HttpGet(equipUrl))() end)
 end
 
--- 3. Улучшенный глубокий поиск бочки по близости к основе (Proximity Search)
-local function getSpawnedBarrel(mainHrp)
-    if not mainHrp then return nil end
-    local mainPos = mainHrp.Position
+-- 3. 100% Точный поиск бочки: Workspace[MainPlayer.Name .. "Barrel"].Root
+local function getSpawnedBarrel(mainPlr)
+    if not mainPlr then return nil end
+    local mainName = mainPlr.Name
 
-    -- 1. Проход по прямому Workspace
+    -- А. Прямой поиск модели: Workspace.<MainName>Barrel
+    local exactModel = Workspace:FindFirstChild(mainName .. "Barrel")
+    if exactModel then
+        local root = exactModel:FindFirstChild("Root") or exactModel.PrimaryPart or exactModel:FindFirstChildWhichIsA("BasePart")
+        if root then return root end
+    end
+
+    -- Б. Поиск по нечувствительному к регистру имени (на случай вариаций)
+    local targetLower = (mainName .. "barrel"):lower()
     for _, obj in ipairs(Workspace:GetChildren()) do
-        if not Players:GetPlayerFromCharacter(obj) then
-            local name = obj.Name:lower()
-            if name:find("barrel") or name:find("roll") then
-                if obj:IsA("BasePart") then
-                    if (obj.Position - mainPos).Magnitude <= 100 then
-                        return obj
-                    end
-                elseif obj:IsA("Model") and not obj:FindFirstChildOfClass("Humanoid") then
-                    local p = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-                    if p and (p.Position - mainPos).Magnitude <= 100 then
-                        return p
-                    end
-                end
-            end
+        if obj.Name:lower() == targetLower or (obj.Name:find(mainName) and obj.Name:lower():find("barrel")) then
+            local root = obj:FindFirstChild("Root") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+            if root then return root end
         end
     end
 
-    -- 2. Глубокий поиск среди всех дескендантов Workspace (на случай папок Debris / Effects / Spawns)
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and not obj:IsDescendantOf(Workspace.Terrain) then
-            local parentModel = obj:FindFirstAncestorOfClass("Model")
-            if not (parentModel and parentModel:FindFirstChildOfClass("Humanoid")) then
-                local name = obj.Name:lower()
-                local parentName = obj.Parent and obj.Parent.Name:lower() or ""
-                if name:find("barrel") or name:find("roll") or parentName:find("barrel") then
-                    if (obj.Position - mainPos).Magnitude <= 100 then
-                        return obj
+    -- В. Глубокий запасной поиск любой бесхозной бочки рядом с Main
+    local mChar = mainPlr.Character
+    local mHrp = mChar and mChar:FindFirstChild("HumanoidRootPart")
+    if mHrp then
+        for _, obj in ipairs(Workspace:GetChildren()) do
+            if obj.Name:lower():find("barrel") and not Players:GetPlayerFromCharacter(obj) then
+                if obj:IsA("BasePart") and (obj.Position - mHrp.Position).Magnitude <= 120 then
+                    return obj
+                elseif obj:IsA("Model") and not obj:FindFirstChildOfClass("Humanoid") then
+                    local root = obj:FindFirstChild("Root") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                    if root and (root.Position - mHrp.Position).Magnitude <= 120 then
+                        return root
                     end
                 end
             end
@@ -334,7 +333,7 @@ setupAltDaemon = function()
         local currentQuestNum = nil
 
         while Runtime.CurrentRole == "Alt" do
-            task.wait(0.05)
+            task.wait(0.04)
 
             local mainPlr = Runtime.Accounts.Main.Target or findPlr(Runtime.Accounts.Main.Query)
             if mainPlr == LocalPlayer then mainPlr = nil end
@@ -349,7 +348,7 @@ setupAltDaemon = function()
                 currentQuestNum = detectedQuest
                 currentFloorY = floorY
                 UI:SetMasterState(true)
-                UI:SetStatus("[Alt] Detected Quest " .. detectedQuest .. "! Running…")
+                UI:SetStatus("[Alt] Detected Quest " .. detectedQuest .. "! Syncing…")
 
                 if altWorkerThread then pcall(task.cancel, altWorkerThread) end
 
@@ -391,14 +390,14 @@ setupAltDaemon = function()
 
                                 if currentQuestNum == 4 then
                                     -- ════════════════ КВЕСТ 4: МОМЕНТАЛЬНЫЙ СНЕП НА БОЧКУ ════════════════
-                                    local barrel = getSpawnedBarrel(mHrp)
-                                    if barrel then
-                                        hrp.CFrame = barrel.CFrame * CFrame.new(0, 0.5, 0)
+                                    local barrelRoot = getSpawnedBarrel(mainTarget)
+                                    if barrelRoot and barrelRoot.Parent then
+                                        hrp.CFrame = barrelRoot.CFrame * CFrame.new(0, 0.5, 0)
                                         UI:SetStatus("[Alt] Q4: Snapped inside Barrel! 💥")
                                     elseif mHrp then
                                         -- Стоим перед лицом Main спиной к нему (в упор 2 студа)
                                         hrp.CFrame = mHrp.CFrame * CFrame.new(0, 0, -2.2) * CFrame.Angles(0, math.rad(180), 0)
-                                        UI:SetStatus("[Alt] Q4: Ready in front of Main…")
+                                        UI:SetStatus("[Alt] Q4: Waiting for Barrel…")
                                     end
 
                                 elseif currentQuestNum == 3 then
@@ -407,12 +406,12 @@ setupAltDaemon = function()
                                         hrp.CFrame = mHrp.CFrame * CFrame.new(0, 0, -2.5) * CFrame.Angles(0, math.rad(180), 0)
                                     end
 
-                                    local barrel = getSpawnedBarrel(mHrp)
-                                    if barrel then
+                                    local barrelRoot = getSpawnedBarrel(mainTarget)
+                                    if barrelRoot and barrelRoot.Parent then
                                         UI:SetStatus("[Alt] Q3: Barrel detected! Waiting 1s…")
                                         task.wait(1.0)
-                                        if isAltActive and hum.Health > 0 and barrel.Parent then
-                                            hrp.CFrame = barrel.CFrame * CFrame.new(0, 0.5, 0)
+                                        if isAltActive and hum.Health > 0 and barrelRoot.Parent then
+                                            hrp.CFrame = barrelRoot.CFrame * CFrame.new(0, 0.5, 0)
                                             UI:SetStatus("[Alt] Q3: Snapped! 0.5s timer…")
                                             task.wait(0.5)
                                             if hum and hum.Health > 0 then hum.Health = 0 end
@@ -436,7 +435,7 @@ setupAltDaemon = function()
                             hum.Died:Wait()
                             task.wait(0.3)
                         else
-                            task.wait(0.04)
+                            task.wait(0.03)
                         end
                     end
                 end)
@@ -526,7 +525,6 @@ startQuests = function(chosenQuest)
     table.insert(Runtime.Loops, stateWatcher)
     give(stateWatcher)
 
-    -- Подгрузка скрипта квеста
     if chosenQuest == 3 and Runtime.CurrentRole == "Main" then
         local q3Worker = task.spawn(function()
             task.wait(1.8)
@@ -572,5 +570,5 @@ UI:RunPreloader({
     loadPlatform()
     UI:BuildMain()
     setRole("Main")
-    UI:SetStatus("Hub ready — Configure Alt & Quest.")
+    UI:SetStatus("Hub ready — Target Barrel Tracker active.")
 end)
