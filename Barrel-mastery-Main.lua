@@ -1,6 +1,6 @@
 --[[
 ═══════════════════════════════════════════════════════════════════════════════
-       BARREL MASTERY HUB · Controller v4.5 (Targeted [PlrName]Barrel Sync)
+       BARREL MASTERY HUB · Controller v4.6 (Fixed Universal Barrel Snap)
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -93,40 +93,35 @@ local function loadAutoEquip()
     pcall(function() loadstring(game:HttpGet(equipUrl))() end)
 end
 
--- 3. 100% Точный поиск бочки: Workspace[MainPlayer.Name .. "Barrel"].Root
-local function getSpawnedBarrel(mainPlr)
-    if not mainPlr then return nil end
-    local mainName = mainPlr.Name
-
-    -- А. Прямой поиск модели: Workspace.<MainName>Barrel
-    local exactModel = Workspace:FindFirstChild(mainName .. "Barrel")
-    if exactModel then
-        local root = exactModel:FindFirstChild("Root") or exactModel.PrimaryPart or exactModel:FindFirstChildWhichIsA("BasePart")
-        if root then return root end
-    end
-
-    -- Б. Поиск по нечувствительному к регистру имени (на случай вариаций)
-    local targetLower = (mainName .. "barrel"):lower()
+-- 3. Надежный поиск бочки (как было в рабочей версии + поддержка Root)
+local function getSpawnedBarrel()
+    -- 1. Сканируем детей Workspace
     for _, obj in ipairs(Workspace:GetChildren()) do
-        if obj.Name:lower() == targetLower or (obj.Name:find(mainName) and obj.Name:lower():find("barrel")) then
-            local root = obj:FindFirstChild("Root") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-            if root then return root end
+        -- Пропускаем персонажей игроков
+        if not obj:FindFirstChildOfClass("Humanoid") then
+            local name = obj.Name:lower()
+            if name:find("barrel") or name:find("roll") then
+                if obj:IsA("BasePart") then
+                    return obj
+                elseif obj:IsA("Model") then
+                    local root = obj:FindFirstChild("Root") 
+                        or obj.PrimaryPart 
+                        or obj:FindFirstChildWhichIsA("BasePart")
+                    if root then
+                        return root
+                    end
+                end
+            end
         end
     end
 
-    -- В. Глубокий запасной поиск любой бесхозной бочки рядом с Main
-    local mChar = mainPlr.Character
-    local mHrp = mChar and mChar:FindFirstChild("HumanoidRootPart")
-    if mHrp then
-        for _, obj in ipairs(Workspace:GetChildren()) do
-            if obj.Name:lower():find("barrel") and not Players:GetPlayerFromCharacter(obj) then
-                if obj:IsA("BasePart") and (obj.Position - mHrp.Position).Magnitude <= 120 then
+    -- 2. Запасной поиск среди потомков Workspace
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and not obj:IsDescendantOf(Workspace.Terrain) then
+            local model = obj:FindFirstAncestorOfClass("Model")
+            if model and not model:FindFirstChildOfClass("Humanoid") then
+                if model.Name:lower():find("barrel") or obj.Name:lower():find("barrel") then
                     return obj
-                elseif obj:IsA("Model") and not obj:FindFirstChildOfClass("Humanoid") then
-                    local root = obj:FindFirstChild("Root") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-                    if root and (root.Position - mHrp.Position).Magnitude <= 120 then
-                        return root
-                    end
                 end
             end
         end
@@ -390,12 +385,17 @@ setupAltDaemon = function()
 
                                 if currentQuestNum == 4 then
                                     -- ════════════════ КВЕСТ 4: МОМЕНТАЛЬНЫЙ СНЕП НА БОЧКУ ════════════════
-                                    local barrelRoot = getSpawnedBarrel(mainTarget)
-                                    if barrelRoot and barrelRoot.Parent then
-                                        hrp.CFrame = barrelRoot.CFrame * CFrame.new(0, 0.5, 0)
-                                        UI:SetStatus("[Alt] Q4: Snapped inside Barrel! 💥")
+                                    local barrelPart = getSpawnedBarrel()
+                                    if barrelPart and barrelPart.Parent then
+                                        hrp.CFrame = barrelPart.CFrame * CFrame.new(0, 0.5, 0)
+                                        if firetouchinterest then
+                                            firetouchinterest(hrp, barrelPart, 0)
+                                            task.wait(0.01)
+                                            firetouchinterest(hrp, barrelPart, 1)
+                                        end
+                                        UI:SetStatus("[Alt] Q4: Snapped to Barrel! 💥")
                                     elseif mHrp then
-                                        -- Стоим перед лицом Main спиной к нему (в упор 2 студа)
+                                        -- Стоим перед лицом Main в упор 2.2 студа
                                         hrp.CFrame = mHrp.CFrame * CFrame.new(0, 0, -2.2) * CFrame.Angles(0, math.rad(180), 0)
                                         UI:SetStatus("[Alt] Q4: Waiting for Barrel…")
                                     end
@@ -406,12 +406,17 @@ setupAltDaemon = function()
                                         hrp.CFrame = mHrp.CFrame * CFrame.new(0, 0, -2.5) * CFrame.Angles(0, math.rad(180), 0)
                                     end
 
-                                    local barrelRoot = getSpawnedBarrel(mainTarget)
-                                    if barrelRoot and barrelRoot.Parent then
+                                    local barrelPart = getSpawnedBarrel()
+                                    if barrelPart and barrelPart.Parent then
                                         UI:SetStatus("[Alt] Q3: Barrel detected! Waiting 1s…")
                                         task.wait(1.0)
-                                        if isAltActive and hum.Health > 0 and barrelRoot.Parent then
-                                            hrp.CFrame = barrelRoot.CFrame * CFrame.new(0, 0.5, 0)
+                                        if isAltActive and hum.Health > 0 and barrelPart.Parent then
+                                            hrp.CFrame = barrelPart.CFrame * CFrame.new(0, 0.5, 0)
+                                            if firetouchinterest then
+                                                firetouchinterest(hrp, barrelPart, 0)
+                                                task.wait(0.01)
+                                                firetouchinterest(hrp, barrelPart, 1)
+                                            end
                                             UI:SetStatus("[Alt] Q3: Snapped! 0.5s timer…")
                                             task.wait(0.5)
                                             if hum and hum.Health > 0 then hum.Health = 0 end
@@ -570,5 +575,5 @@ UI:RunPreloader({
     loadPlatform()
     UI:BuildMain()
     setRole("Main")
-    UI:SetStatus("Hub ready — Target Barrel Tracker active.")
+    UI:SetStatus("Hub ready — Universal Barrel Tracker active.")
 end)
