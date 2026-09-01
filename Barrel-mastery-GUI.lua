@@ -1,7 +1,7 @@
 --[[
 ═══════════════════════════════════════════════════════════════════════════════
                  BARREL HUB UI ENGINE (Barrel-mastery-GUI.lua)
-                     v3.6.0 · Single-Event Debounce Fixed
+                     v3.7.0 · Quest 3 Sub-Methods Edition
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -18,7 +18,6 @@ end
 local HubUI = {}
 HubUI.__index = HubUI
 
--- 1. Цветовая палитра
 local Theme = {
     Bg        = Color3.fromRGB(15, 12, 22),
     Panel     = Color3.fromRGB(24, 18, 38),
@@ -116,23 +115,25 @@ local function makeDraggable(handle, target, maid)
     end))
 end
 
--- 2. Конструктор HubUI
 function HubUI.new(config)
     local self = setmetatable({}, HubUI)
     
     self.Config = config or {}
     self.Maid = config.Maid
-    self.OnStartMaster  = config.OnStartMaster  or function() end
-    self.OnStopMaster   = config.OnStopMaster   or function() end
-    self.OnRoleSelect   = config.OnRoleSelect   or function() end
-    self.OnQuestToggle  = config.OnQuestToggle  or function() end
-    self.OnAccountInput = config.OnAccountInput or function() end
-    self.OnShutdown     = config.OnShutdown     or function() end
+    self.OnStartMaster    = config.OnStartMaster    or function() end
+    self.OnStopMaster     = config.OnStopMaster     or function() end
+    self.OnRoleSelect     = config.OnRoleSelect     or function() end
+    self.OnQuestToggle    = config.OnQuestToggle    or function() end
+    self.OnQ3MethodSelect = config.OnQ3MethodSelect or function() end
+    self.OnAccountInput   = config.OnAccountInput   or function() end
+    self.OnShutdown       = config.OnShutdown       or function() end
     
     self.AccountRefs = {}
     self.RoleButtons = {}
+    self.Q3MethodButtons = {}
     self.SelectedRole = "Main"
     self.SelectedQuests = { [1] = false, [2] = false, [3] = false, [4] = false }
+    self.SelectedQ3Method = nil -- "Ability" или "Slap"
     self.IsRunning = false
     self.Minimized = false
     
@@ -160,7 +161,6 @@ function HubUI.new(config)
     return self
 end
 
--- 3. Диагностика (Preloader)
 function HubUI:RunPreloader(checks, onComplete)
     local Preloader = create("CanvasGroup", {
         Name = "Preloader",
@@ -280,7 +280,6 @@ function HubUI:RunPreloader(checks, onComplete)
     end)
 end
 
--- 4. Логика кнопки старта
 function HubUI:UpdateMasterButtonState()
     if not self.MasterBtn then return end
 
@@ -302,28 +301,34 @@ function HubUI:UpdateMasterButtonState()
 
     local hasAnyQuest = false
     for q = 1, 4 do
-        if self.SelectedQuests[q] then
-            hasAnyQuest = true
-            break
-        end
+        if self.SelectedQuests[q] then hasAnyQuest = true break end
     end
 
-    if hasAnyQuest then
-        self.MasterBtn.BackgroundColor3 = Theme.GreenBtn
-        self.MasterBtn.TextColor3 = Theme.Text
-        self.MasterBtn.Text = "START QUESTS"
-        self.MasterBtn.AutoButtonColor = true
-    else
+    if not hasAnyQuest then
         self.MasterBtn.BackgroundColor3 = Theme.LockedBtn
         self.MasterBtn.TextColor3 = Theme.Dim
         self.MasterBtn.Text = "SELECT A QUEST"
         self.MasterBtn.AutoButtonColor = false
+        return
     end
+
+    -- Валидация метода 3 квеста
+    if self.SelectedQuests[3] and not self.SelectedQ3Method then
+        self.MasterBtn.BackgroundColor3 = Theme.LockedBtn
+        self.MasterBtn.TextColor3 = Theme.Amber
+        self.MasterBtn.Text = "SELECT Q3 METHOD"
+        self.MasterBtn.AutoButtonColor = false
+        return
+    end
+
+    self.MasterBtn.BackgroundColor3 = Theme.GreenBtn
+    self.MasterBtn.TextColor3 = Theme.Text
+    self.MasterBtn.Text = "START QUESTS"
+    self.MasterBtn.AutoButtonColor = true
 end
 
--- 5. Главное окно
 function HubUI:BuildMain()
-    local EXPANDED_SIZE  = UDim2.fromOffset(250, 205)
+    local EXPANDED_SIZE  = UDim2.fromOffset(250, 215)
     local COLLAPSED_SIZE = UDim2.fromOffset(250, 26)
 
     self.Main = create("CanvasGroup", {
@@ -348,7 +353,6 @@ function HubUI:BuildMain()
         Parent = mainStroke,
     }), 4, self.Maid)
 
-    -- Header
     local Header = create("Frame", {
         Name = "Header",
         Size = UDim2.new(1, 0, 0, 26),
@@ -394,7 +398,6 @@ function HubUI:BuildMain()
     local CloseBtn = headerButton("❌", -6)
     local MinBtn   = headerButton("-", -28)
 
-    -- Scrolling Frame
     self.ScrollBody = create("ScrollingFrame", {
         Name = "ScrollBody",
         Position = UDim2.new(0, 0, 0, 26),
@@ -551,8 +554,50 @@ function HubUI:BuildMain()
     buildAccountRow("MAIN", "Main", 4)
     buildAccountRow("ALT", "Alt", 5)
 
-    -- 3. Секция квестов
+    -- 3. Секция квестов (Quest 1 - 4 + Выпадающая панель для Q3)
     sectionTitle("● QUEST SELECTOR", 6)
+
+    -- Выпадающая панель методов для Квеста 3
+    self.Q3MethodFrame = create("Frame", {
+        Size = UDim2.new(1, 0, 0, 22),
+        BackgroundColor3 = Theme.PanelDim,
+        BorderSizePixel = 0,
+        Visible = false,
+        LayoutOrder = 10,
+        Parent = self.ScrollBody,
+        Name = "Q3MethodFrame",
+    })
+    corner(self.Q3MethodFrame, 4)
+    create("UIStroke", { Color = Theme.Line, Thickness = 1, Parent = self.Q3MethodFrame })
+
+    local function buildQ3MethodBtn(text, methodKey, posX)
+        local btn = create("TextButton", {
+            Position = UDim2.new(posX, 2, 0, 2),
+            Size = UDim2.new(0.5, -4, 1, -4),
+            BackgroundColor3 = Theme.PanelSoft,
+            BorderSizePixel = 0,
+            Active = true,
+            AutoButtonColor = false,
+            Font = FONT_BOLD,
+            TextSize = 8,
+            TextColor3 = Theme.Dim,
+            Text = text,
+            Parent = self.Q3MethodFrame,
+        })
+        corner(btn, 3)
+
+        self.Maid:Give(btn.Activated:Connect(function()
+            self:SelectQ3Method(methodKey)
+            self.OnQ3MethodSelect(methodKey)
+        end))
+
+        self.Q3MethodButtons[methodKey] = btn
+        return btn
+    end
+
+    buildQ3MethodBtn("⚡ ABILITY", "Ability", 0)
+    buildQ3MethodBtn("✋ SLAP", "Slap", 0.5)
+
     local function buildQuestRow(questNum, order)
         local isEnabled = self.SelectedQuests[questNum] or false
 
@@ -574,7 +619,7 @@ function HubUI:BuildMain()
             TextSize = 8.5,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextColor3 = Theme.Text,
-            Text = "Quest " .. questNum .. (questNum == 4 and " (Auto-Farm)" or ""),
+            Text = "Quest " .. questNum .. (questNum == 4 and " (Auto-Farm)" or (questNum == 3 and " (Methods)" or "")),
             Parent = row,
         })
 
@@ -608,14 +653,28 @@ function HubUI:BuildMain()
             checkBtn.Text = newState and "✓" or ""
             checkStroke.Color = newState and Theme.Fuchsia or Theme.Line
 
+            -- Если это 3 квест — раскрываем/прячем меню методов
+            if questNum == 3 then
+                self.Q3MethodFrame.Visible = newState
+                if not newState then
+                    self.SelectedQ3Method = nil
+                    for _, b in pairs(self.Q3MethodButtons) do
+                        b.BackgroundColor3 = Theme.PanelSoft
+                        b.TextColor3 = Theme.Dim
+                    end
+                end
+            end
+
             self:UpdateMasterButtonState()
             self.OnQuestToggle(questNum, newState)
         end))
     end
 
-    for q = 1, 4 do
-        buildQuestRow(q, 6 + q)
-    end
+    buildQuestRow(1, 7)
+    buildQuestRow(2, 8)
+    buildQuestRow(3, 9)
+    -- Q3MethodFrame имеет LayoutOrder = 10
+    buildQuestRow(4, 11)
 
     -- 4. Кнопка «Запустить квесты»
     self.MasterBtn = create("TextButton", {
@@ -628,7 +687,7 @@ function HubUI:BuildMain()
         TextSize = 9,
         TextColor3 = Theme.Dim,
         Text = "SELECT A QUEST",
-        LayoutOrder = 11,
+        LayoutOrder = 12,
         Parent = self.ScrollBody,
     })
     corner(self.MasterBtn, 5)
@@ -644,7 +703,8 @@ function HubUI:BuildMain()
                 if self.SelectedQuests[q] then hasAnyQuest = true break end
             end
             if hasAnyQuest then
-                self.OnStartMaster(self.SelectedQuests)
+                if self.SelectedQuests[3] and not self.SelectedQ3Method then return end
+                self.OnStartMaster(self.SelectedQuests, self.SelectedQ3Method)
             end
         end
     end))
@@ -653,7 +713,7 @@ function HubUI:BuildMain()
     local statusBar = create("Frame", {
         Size = UDim2.new(1, 0, 0, 16),
         BackgroundTransparency = 1,
-        LayoutOrder = 12,
+        LayoutOrder = 13,
         Parent = self.ScrollBody,
     })
     self.StatusLabel = create("TextLabel", {
@@ -671,15 +731,12 @@ function HubUI:BuildMain()
 
     makeDraggable(Header, self.Main, self.Maid)
 
-    -- Сворачивание с защитой от быстрого спама (Debounce)
     local minDebounce = false
     self.Maid:Give(MinBtn.Activated:Connect(function()
         if minDebounce then return end
         minDebounce = true
-
         self.Minimized = not self.Minimized
         MinBtn.Text = self.Minimized and "+" or "-"
-
         if self.Minimized then
             self.ScrollBody.Visible = false
             local tw = tween(self.Main, 0.2, { Size = COLLAPSED_SIZE })
@@ -687,15 +744,11 @@ function HubUI:BuildMain()
         else
             local tw = tween(self.Main, 0.2, { Size = EXPANDED_SIZE })
             tw.Completed:Wait()
-            if not self.Minimized then
-                self.ScrollBody.Visible = true
-            end
+            if not self.Minimized then self.ScrollBody.Visible = true end
         end
-
         minDebounce = false
     end))
 
-    -- Крестик
     self.Maid:Give(CloseBtn.Activated:Connect(function()
         pcall(function() self.OnShutdown() end)
         self:Destroy()
@@ -705,6 +758,16 @@ function HubUI:BuildMain()
     self.Main.GroupTransparency = 1
     tween(self.Main, 0.3, { GroupTransparency = 0 })
 
+    self:UpdateMasterButtonState()
+end
+
+function HubUI:SelectQ3Method(methodKey)
+    self.SelectedQ3Method = methodKey
+    for k, btn in pairs(self.Q3MethodButtons) do
+        local isChosen = (k == methodKey)
+        btn.BackgroundColor3 = isChosen and Theme.Purple or Theme.PanelSoft
+        btn.TextColor3 = isChosen and Theme.Text or Theme.Dim
+    end
     self:UpdateMasterButtonState()
 end
 
@@ -754,7 +817,6 @@ function HubUI:SetAccountBox(slotKey, text, editable, isCurrentPlayer)
     refs.Box.BackgroundColor3 = isCurrentPlayer and Theme.PanelDim or Theme.PanelSoft
 end
 
--- Прямое уничтожение GUI
 function HubUI:Destroy()
     if self.ScreenGui then
         pcall(function() self.ScreenGui:Destroy() end)
