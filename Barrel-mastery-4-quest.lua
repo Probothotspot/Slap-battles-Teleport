@@ -1,53 +1,49 @@
 --[[
-    BARREL MASTERY · Quest 4 Ability Spammer (Main Only)
-    Только спавн бочек без телепортации основы!
+═══════════════════════════════════════════════════════════════════════════════
+       BARREL MASTERY · Quest 4 (GeneralAbility Spammer every 1.0s)
+═══════════════════════════════════════════════════════════════════════════════
 ]]
 
-local Players = game:GetService("Players")
-local VirtualInputManager = game:GetService("VirtualInputManager")
+local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
-local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-
 local GENV = (typeof(getgenv) == "function" and getgenv()) or _G
 GENV.BHUB_FLAGS = GENV.BHUB_FLAGS or {}
 
--- Цикл применения способности бочки
+local GeneralAbility = ReplicatedStorage:WaitForChild("GeneralAbility", 5)
+
 task.spawn(function()
     while GENV.BHUB_FLAGS.MasterRunning do
-        local cChar = LocalPlayer.Character
-        local hum = cChar and cChar:FindFirstChildOfClass("Humanoid")
-        local hrp = cChar and cChar:FindFirstChild("HumanoidRootPart")
-        local tool = cChar and cChar:FindFirstChild("Barrel")
+        local char = LocalPlayer.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        local tool = char and char:FindFirstChild("Barrel")
 
-        if hum and hum.Health > 0 and hrp and hrp.Position.Y < -5000 then
-            -- 1. Экипируем перчатку в руку, если она в рюкзаке
+        -- Проверяем, что Main находится на 4 этаже (-40000) и жив
+        if hum and hum.Health > 0 and hrp and hrp.Position.Y < -35000 then
+            
+            -- Экипировка перчатки Barrel в руку
             if not tool then
                 local bagTool = LocalPlayer.Backpack:FindFirstChild("Barrel")
                 if bagTool then hum:EquipTool(bagTool) end
             end
 
-            -- 2. Активация способности (E)
-            pcall(function()
-                -- Попытка через RemoteEvent
-                local barrelEvent = ReplicatedStorage:FindFirstChild("BarrelHit") or ReplicatedStorage:FindFirstChild("Barrel")
-                if barrelEvent and barrelEvent:IsA("RemoteEvent") then
-                    barrelEvent:FireServer()
-                end
-                -- Симуляция нажатия клавиши E
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                task.wait(0.05)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-            end)
+            -- Вызов способности через RemoteEvent
+            if not GeneralAbility then
+                GeneralAbility = ReplicatedStorage:FindFirstChild("GeneralAbility")
+            end
 
-            -- 3. Клик мышью для детонации/броска
-            pcall(function()
-                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
-                task.wait(0.05)
-                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
-            end)
+            if GeneralAbility then
+                pcall(function()
+                    GeneralAbility:FireServer()
+                end)
+            end
+
+            -- Ровно 1 секунда кулдауна
+            task.wait(1.0)
+        else
+            task.wait(0.2)
         end
-        task.wait(0.5)
     end
 end)
