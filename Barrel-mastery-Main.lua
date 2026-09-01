@@ -1,6 +1,6 @@
 --[[
 ═══════════════════════════════════════════════════════════════════════════════
-       BARREL MASTERY HUB · Controller v4.7 (Magnetized Slap & Dual-Q3)
+       BARREL MASTERY HUB · Controller v5.0 (Zero-Latency Event Engine)
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -15,7 +15,7 @@ local LocalPlayer = Players.LocalPlayer or Players:GetPropertyChangedSignal("Loc
 local GENV = (typeof(getgenv) == "function" and getgenv()) or _G
 GENV.BHUB_FLAGS = GENV.BHUB_FLAGS or {}
 
--- 1. Точные координаты точек спавна на платформах
+-- 1. Точки спавна на платформах
 local QUEST_SPAWNS = {
     [1]            = Vector3.new(0, -10000 + 3, 0),
     [2]            = Vector3.new(0, -20000 + 3, 0),
@@ -92,34 +92,6 @@ end
 local function loadAutoEquip()
     local equipUrl = "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Auto-equip-barrel.lua?t=" .. tostring(os.time())
     pcall(function() loadstring(game:HttpGet(equipUrl))() end)
-end
-
--- Надежный поиск бочки
-local function getSpawnedBarrel()
-    for _, obj in ipairs(Workspace:GetChildren()) do
-        if not obj:FindFirstChildOfClass("Humanoid") then
-            local name = obj.Name:lower()
-            if name:find("barrel") or name:find("roll") then
-                if obj:IsA("BasePart") then
-                    return obj
-                elseif obj:IsA("Model") then
-                    local root = obj:FindFirstChild("Root") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-                    if root then return root end
-                end
-            end
-        end
-    end
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and not obj:IsDescendantOf(Workspace.Terrain) then
-            local model = obj:FindFirstAncestorOfClass("Model")
-            if model and not model:FindFirstChildOfClass("Humanoid") then
-                if model.Name:lower():find("barrel") or obj.Name:lower():find("barrel") then
-                    return obj
-                end
-            end
-        end
-    end
-    return nil
 end
 
 -- Состояние
@@ -307,7 +279,7 @@ local function detectMainQuestFloor(mainHrp)
     return nil
 end
 
--- Логика Alt
+-- ==================== ЛОГИКА ALT: ДВИЖОК НУЛЕВОЙ ЗАДЕРЖКИ ====================
 stopAltDaemon = function()
     if Runtime.AltDaemon then
         pcall(task.cancel, Runtime.AltDaemon)
@@ -341,12 +313,22 @@ setupAltDaemon = function()
                 currentQuestKey = detectedKey
                 currentSpawnPos = spawnPos
                 UI:SetMasterState(true)
-                UI:SetStatus("[Alt] Detected: " .. tostring(detectedKey) .. "! Syncing…")
+                UI:SetStatus("[Alt] Detected: " .. tostring(detectedKey) .. "! Event Engine ON.")
 
                 if altWorkerThread then pcall(task.cancel, altWorkerThread) end
 
                 altWorkerThread = task.spawn(function()
                     loadPlatform()
+
+                    local activeBarrelInstance = nil
+                    local altScopedCleanups = {}
+                    local function cleanAltScoped()
+                        for _, c in ipairs(altScopedCleanups) do
+                            if typeof(c) == "RBXScriptConnection" then c:Disconnect()
+                            elseif typeof(c) == "thread" then pcall(task.cancel, c) end
+                        end
+                        table.clear(altScopedCleanups)
+                    end
 
                     local function enterBluePortal()
                         UI:SetStatus("[Alt] Entering Blue Portal…")
@@ -359,21 +341,106 @@ setupAltDaemon = function()
                         end
                     end
 
+                    -- Слушатель GeneralHit для Q3 Slap
                     local generalHitEvent = ReplicatedStorage:FindFirstChild("GeneralHit")
                     local lastHitTime = 0
                     if generalHitEvent and generalHitEvent:IsA("RemoteEvent") then
-                        give(generalHitEvent.OnClientEvent:Connect(function(...)
+                        table.insert(altScopedCleanups, generalHitEvent.OnClientEvent:Connect(function(...)
                             lastHitTime = tick()
                         end))
                     end
 
+                    -- Обработчик мгновенного появления бочки
+                    local function onBarrelDetected(rootPart, modelInst)
+                        if not isAltActive or activeBarrelInstance == modelInst then return end
+                        activeBarrelInstance = modelInst
+
+                        local char = LocalPlayer.Character
+                        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                        local hum = char and char:FindFirstChildOfClass("Humanoid")
+                        if not (hrp and hum and hum.Health > 0) then return end
+
+                        -- ════════════════ КВЕСТ 4: МОМЕНТАЛЬНЫЙ СНЕП (0ms) ════════════════
+                        if currentQuestKey == 4 then
+                            hrp.CFrame = rootPart.CFrame * CFrame.new(0, 0.5, 0)
+                            if firetouchinterest then
+                                firetouchinterest(hrp, rootPart, 0)
+                                task.wait(0.01)
+                                firetouchinterest(hrp, rootPart, 1)
+                            end
+                            UI:SetStatus("[Alt] Q4: Instant Snap to Barrel! 💥")
+
+                        -- ════════════════ КВЕСТ 3: ABILITY (1с задержка -> ТП -> 0.5с -> Ресет) ════════════════
+                        elseif currentQuestKey == "Q3_Ability" then
+                            task.spawn(function()
+                                UI:SetStatus("[Alt] Q3 Ability: Barrel detected! Waiting 1s…")
+                                task.wait(1.0)
+                                if isAltActive and hum.Health > 0 and rootPart.Parent then
+                                    hrp.CFrame = rootPart.CFrame * CFrame.new(0, 0.5, 0)
+                                    if firetouchinterest then
+                                        firetouchinterest(hrp, rootPart, 0)
+                                        task.wait(0.01)
+                                        firetouchinterest(hrp, rootPart, 1)
+                                    end
+                                    UI:SetStatus("[Alt] Q3: Snapped! 0.5s timer…")
+                                    task.wait(0.5)
+                                    if hum and hum.Health > 0 then hum.Health = 0 end
+                                end
+                            end)
+                        end
+
+                        -- Сброс активной бочки при ее уничтожении
+                        local removeConn
+                        removeConn = modelInst.AncestryChanged:Connect(function(_, parent)
+                            if not parent then
+                                removeConn:Disconnect()
+                                if activeBarrelInstance == modelInst then
+                                    activeBarrelInstance = nil
+                                end
+                            end
+                        end)
+                        table.insert(altScopedCleanups, removeConn)
+                    end
+
+                    local function checkBarrelCandidate(inst)
+                        if not isAltActive or not inst then return end
+                        local mainName = (mainPlr and mainPlr.Name or Runtime.Accounts.Main.Query):lower()
+                        if mainName == "" then return end
+
+                        local targetPattern = mainName .. "barrel"
+                        local nameLower = inst.Name:lower()
+
+                        if nameLower == targetPattern or (nameLower:find(mainName, 1, true) and nameLower:find("barrel", 1, true)) then
+                            local root = inst:FindFirstChild("Root") or inst:FindFirstChildWhichIsA("BasePart")
+                            if root then
+                                onBarrelDetected(root, inst)
+                            else
+                                local childConn
+                                childConn = inst.ChildAdded:Connect(function(sub)
+                                    if sub.Name == "Root" or sub:IsA("BasePart") then
+                                        childConn:Disconnect()
+                                        onBarrelDetected(sub, inst)
+                                    end
+                                end)
+                                table.insert(altScopedCleanups, childConn)
+                            end
+                        end
+                    end
+
+                    -- 1. Слушатель появления объектов Workspace в реальном времени (0ms)
+                    table.insert(altScopedCleanups, Workspace.ChildAdded:Connect(checkBarrelCandidate))
+
+                    -- 2. Быстрая проверка уже стоящей бочки
+                    local existing = Workspace:FindFirstChild((mainPlr and mainPlr.Name or Runtime.Accounts.Main.Query) .. "Barrel")
+                    if existing then checkBarrelCandidate(existing) end
+
+                    -- Основной цикл поддержания позиции альта
                     while isAltActive and Runtime.CurrentRole == "Alt" do
                         local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
                         local hrp = char:WaitForChild("HumanoidRootPart", 5)
                         local hum = char:WaitForChild("Humanoid", 5)
 
                         if hrp and hum and hum.Health > 0 then
-                            -- Возврат на этаж при респавне в лобби
                             if hrp.Position.Y >= 200 and hrp.Position.Y <= 500 then
                                 enterBluePortal()
                             else
@@ -381,77 +448,39 @@ setupAltDaemon = function()
                                 local mChar = mainTarget and mainTarget.Character
                                 local mHrp = mChar and mChar:FindFirstChild("HumanoidRootPart")
 
-                                -- ════════════════ Q3 SLAP: ЖЕСТКИЙ МАГНИТ (3 СТУДА ПЕРЕД ЛИЦОМ) ════════════════
+                                -- ════════════════ Q3 SLAP: ЖЕСТКИЙ МАГНИТ (3 СТУДА) ════════════════
                                 if currentQuestKey == "Q3_Slap" then
                                     if mHrp then
-                                        -- Примагничиваем перед лицом на 3 студа
                                         hrp.CFrame = mHrp.CFrame * CFrame.new(0, 0, -3) * CFrame.Angles(0, math.rad(180), 0)
                                         hrp.AssemblyLinearVelocity = Vector3.zero
                                         hrp.AssemblyAngularVelocity = Vector3.zero
                                         UI:SetStatus("[Alt] Q3 Slap: Magnetized to Main (3 studs) 🧲")
                                     end
 
-                                    -- При получении удара — мгновенный ресет и новый круг
                                     if tick() - lastHitTime < 0.5 or hum.Health < 100 then
-                                        UI:SetStatus("[Alt] Q3 Slap: Hit received! Resetting…")
+                                        UI:SetStatus("[Alt] Q3 Slap: Hit registered! Resetting…")
                                         task.wait(0.05)
                                         if hum and hum.Health > 0 then hum.Health = 0 end
                                     end
 
-                                -- ════════════════ Q3 ABILITY ════════════════
-                                elseif currentQuestKey == "Q3_Ability" then
-                                    if mHrp then
-                                        hrp.CFrame = mHrp.CFrame * CFrame.new(0, 0, -2.5) * CFrame.Angles(0, math.rad(180), 0)
-                                    end
-
-                                    local barrelPart = getSpawnedBarrel()
-                                    if barrelPart and barrelPart.Parent then
-                                        UI:SetStatus("[Alt] Q3 Ability: Barrel detected! Waiting 1s…")
-                                        task.wait(1.0)
-                                        if isAltActive and hum.Health > 0 and barrelPart.Parent then
-                                            hrp.CFrame = barrelPart.CFrame * CFrame.new(0, 0.5, 0)
-                                            if firetouchinterest then
-                                                firetouchinterest(hrp, barrelPart, 0)
-                                                task.wait(0.01)
-                                                firetouchinterest(hrp, barrelPart, 1)
-                                            end
-                                            UI:SetStatus("[Alt] Q3: Snapped! 0.5s timer…")
-                                            task.wait(0.5)
-                                            if hum and hum.Health > 0 then hum.Health = 0 end
-                                        end
-                                    end
-
-                                -- ════════════════ Q4: МГНОВЕННЫЙ СНЕП НА БОЧКУ ════════════════
-                                elseif currentQuestKey == 4 then
-                                    local barrelPart = getSpawnedBarrel()
-                                    if barrelPart and barrelPart.Parent then
-                                        hrp.CFrame = barrelPart.CFrame * CFrame.new(0, 0.5, 0)
-                                        if firetouchinterest then
-                                            firetouchinterest(hrp, barrelPart, 0)
-                                            task.wait(0.01)
-                                            firetouchinterest(hrp, barrelPart, 1)
-                                        end
-                                        UI:SetStatus("[Alt] Q4: Snapped to Barrel! 💥")
-                                    elseif mHrp then
-                                        hrp.CFrame = mHrp.CFrame * CFrame.new(0, 0, -2.2) * CFrame.Angles(0, math.rad(180), 0)
-                                        UI:SetStatus("[Alt] Q4: Waiting for Barrel…")
-                                    end
-
-                                else
-                                    if mHrp then
-                                        hrp.CFrame = mHrp.CFrame * CFrame.new(0, 0, -2.5) * CFrame.Angles(0, math.rad(180), 0)
-                                    end
+                                -- Если бочка еще не заспавнена в Q4 / Q3 Ability — стоим перед лицом
+                                elseif not activeBarrelInstance and mHrp then
+                                    hrp.CFrame = mHrp.CFrame * CFrame.new(0, 0, -2.2) * CFrame.Angles(0, math.rad(180), 0)
+                                    UI:SetStatus("[Alt] " .. tostring(currentQuestKey) .. ": Ready (Waiting for Barrel Event…)")
                                 end
                             end
                         end
 
                         if hum then
                             hum.Died:Wait()
+                            activeBarrelInstance = nil
                             task.wait(0.3)
                         else
                             task.wait(0.02)
                         end
                     end
+
+                    cleanAltScoped()
                 end)
 
             elseif not detectedKey and isAltActive then
@@ -593,5 +622,5 @@ UI:RunPreloader({
     loadPlatform()
     UI:BuildMain()
     setRole("Main")
-    UI:SetStatus("Hub ready — Dynamic Multi-Platform active.")
+    UI:SetStatus("Hub ready — Zero-Latency Engine active.")
 end)
