@@ -1,12 +1,15 @@
 --[[
-    Escanor HUB 🔥 — Модуль переводов и локализации
-    Файл: localization.lua
+    Escanor HUB 🔥 – Translates Module
+    File: Escanor-Hub-translates.lua
+    By: Brobothotspot
 --]]
 
-local Localization = {}
+local Translates = {}
 
--- 1. Переводы интерфейса (EN, RU, UA)
-Localization.lang = {
+-- =========================================================================
+-- 1. СЛОВАРЬ ПЕРЕВОДОВ ИНТЕРФЕЙСА
+-- =========================================================================
+Translates.lang = {
     en = {
         tab_players = "Players", tab_locations = "Locations", tab_places = "Places", tab_help = "Help",
         tab_favorites = "⭐ Favorites", tab_history = "📜 History", tab_other = "Other",
@@ -36,12 +39,41 @@ Localization.lang = {
         timer = "⏱️ Timer/Stopwatch",
         help_title = "How to use Escanor HUB",
         help_text = [[
-• TAB "Players" – click on any player name to teleport.
-• TAB "Locations" – list of saved locations.
+• TAB "Players" – click on any player name to teleport to him.
+  Use search field and sorting (ByName/ByDist).
+  Button "A" (green checkmark) – enables auto-teleport mode.
+  Button "R" refreshes the list.
+
+• TAB "Locations" – list of saved locations. Click to teleport.
+  Search box filters locations by name.
+  Click the star (⭐) to add/remove from Favorites.
+  "Plate" – teleports to the moving platform (one-time).
+  "+ Save current location" – saves your current position.
+
 • TAB "Favorites" – your favorite locations.
-• TAB "History" – recent teleports.
-• TAB "Other" – utilities (Anti-AFK, FPS, Fullbright, Timer).
-• TAB "Places" – quick teleport to other games.
+
+• TAB "History" – recent teleports (click to repeat).
+
+• TAB "Other" – utilities: Anti-AFK, FPS/Ping, Fullbright, Coordinates, Timer.
+
+• TAB "Places" – quick teleport to other games by Place ID.
+
+• TOP BUTTONS:
+  P – hide GUI (floating button appears). K – bring GUI back.
+  R – refresh player list.
+  A – toggle auto-teleport (green when active).
+  S – open settings.
+  M – save current position.
+  L – load saved position.
+  – (minimize) – collapse GUI to top bar.
+
+• HOTKEYS:
+  K – toggle GUI / floating button.
+  M – save position.
+  L – toggle auto-teleport.
+  P – permanently delete GUI and reset settings (launcher will appear on restart).
+
+Settings: change GUI size, transparency, speed, theme, and TP offset (-100 to 100).
         ]],
     },
     ru = {
@@ -74,11 +106,40 @@ Localization.lang = {
         help_title = "Как пользоваться Escanor HUB",
         help_text = [[
 • ВКЛАДКА "Игроки" – кликните по имени игрока для телепортации.
-• ВКЛАДКА "Локации" – список сохранённых мест.
+  Используйте поиск и сортировку (По имени/По дистанции).
+  Кнопка "A" (зелёная галочка) – включает режим авто-телепорта.
+  Кнопка "R" обновляет список.
+
+• ВКЛАДКА "Локации" – список сохранённых мест. Кликните для телепортации.
+  Поисковая строка фильтрует локации по названию.
+  Нажмите на звёздочку (⭐), чтобы добавить/удалить из Избранного.
+  "Тарелка" – разовая телепортация на платформу.
+  "+ Сохранить текущее место" – сохраняет вашу текущую позицию.
+
 • ВКЛАДКА "Избранное" – ваши избранные локации.
-• ВКЛАДКА "История" – последние телепорты.
-• ВКЛАДКА "Другое" – утилиты (Анти-АФК, FPS, Fullbright, Таймер).
-• ВКЛАДКА "Плейсы" – быстрая телепортация по Place ID.
+
+• ВКЛАДКА "История" – последние телепорты (нажмите для повтора).
+
+• ВКЛАДКА "Другое" – утилиты: Анти-АФК, FPS/Пинг, Fullbright, Координаты, Таймер.
+
+• ВКЛАДКА "Плейсы" – быстрая телепортация в другие игры по ID.
+
+• ВЕРХНИЕ КНОПКИ:
+  P – скрыть GUI (появляется плавающая иконка). K – вернуть GUI.
+  R – обновить список игроков.
+  A – авто-телепорт.
+  S – настройки.
+  M – сохранить позицию.
+  L – загрузить сохранённую позицию.
+  – (свернуть) – свернуть GUI до верхней панели.
+
+• ГОРЯЧИЕ КЛАВИШИ:
+  K – переключить GUI / плавающую кнопку.
+  M – сохранить позицию.
+  L – авто-телепорт.
+  P – безвозвратно удалить GUI и сбросить настройки (при следующем запуске появится лаунчер).
+
+В настройках можно изменить размер GUI, прозрачность, скорость, тему и дистанцию до игрока (-100..100).
         ]],
     },
     ua = {
@@ -110,18 +171,49 @@ Localization.lang = {
         timer = "⏱️ Таймер/Секундомір",
         help_title = "Як користуватися Escanor HUB",
         help_text = [[
-• ВКЛАДКА "Гравці" – телепортація до гравця.
-• ВКЛАДКА "Локації" – список збережених локацій.
-• ВКЛАДКА "Обране" – обрані точки.
-• ВКЛАДКА "Історія" – історія переміщень.
-• ВКЛАДКА "Інше" – утиліти.
-• ВКЛАДКА "Плейси" – ТП до других ігор.
+• ВКЛАДКА "Гравці" – натисніть на ім'я гравця для телепортації.
+  Використовуйте пошук і сортування (За ім'ям/За відстанню).
+  Кнопка "A" (зелена галочка) – вмикає режим авто-телепорту.
+  Кнопка "R" оновлює список.
+
+• ВКЛАДКА "Локації" – список збережених місць. Натисніть для телепортації.
+  Пошуковий рядок фільтрує локації за назвою.
+  Натисніть на зірочку (⭐), щоб додати/видалити з Обраного.
+  "Тарілка" – разова телепортація на платформу.
+  "+ Зберегти поточне місце" – зберігає вашу поточну позицію.
+
+• ВКЛАДКА "Обране" – ваші обрані локації.
+
+• ВКЛАДКА "Історія" – останні телепорти (натисніть для повтору).
+
+• ВКЛАДКА "Інше" – утиліти: Анти-АФК, FPS/Пінг, Fullbright, Координати, Таймер.
+
+• ВКЛАДКА "Плейси" – швидка телепортація в інші ігри за ID.
+
+• ВЕРХНІ КНОПКИ:
+  P – приховати GUI (з'являється плавуча іконка). K – повернути GUI.
+  R – оновити список гравців.
+  A – авто-телепорт.
+  S – налаштування.
+  M – зберегти позицію.
+  L – завантажити збережену позицію.
+  – (згорнути) – згорнути GUI до верхньої панелі.
+
+• ГАРЯЧІ КЛАВІШІ:
+  K – перемкнути GUI / плавучу кнопку.
+  M – зберегти позицію.
+  L – авто-телепорт.
+  P – безповоротно видалити GUI та скинути налаштування (при наступному запуску з'явиться лаунчер).
+
+У налаштуваннях можна змінити розмір GUI, прозорість, швидкість, тему та дистанцію до гравця (-100..100).
         ]],
     }
 }
 
--- 2. Переводы названий локаций
-Localization.locationTranslations = {
+-- =========================================================================
+-- 2. СЛОВАРЬ ПЕРЕВОДОВ НАЗВАНИЙ ЛОКАЦИЙ
+-- =========================================================================
+Translates.locationTranslations = {
     ["Debug room"] = { ru = "Дебаг комната", en = "Debug Room", ua = "Дебаг кімната" },
     ["Main island"] = { ru = "Главный остров", en = "Main Island", ua = "Головний острів" },
     ["Left island"] = { ru = "Левый остров", en = "Left Island", ua = "Лівий острів" },
@@ -155,6 +247,7 @@ Localization.locationTranslations = {
     ["Ключ (Fan)"] = { ru = "Ключ (Фан)", en = "Key (Fan)", ua = "Ключ (Фан)" },
     ["Untitled Tag"] = { ru = "Untitled Tag", en = "Untitled Tag", ua = "Untitled Tag" },
     ["Прохождение"] = { ru = "Прохождение", en = "Walkthrough", ua = "Проходження" },
+    ["Спавн"] = { ru = "Спавн", en = "Spawn", ua = "Спавн" },
     ["Рычаг"] = { ru = "Рычаг", en = "Lever", ua = "Важіль" },
     ["2 комната"] = { ru = "2 комната", en = "Room 2", ua = "Кімната 2" },
     ["Начальный Туннель (Паркур)"] = { ru = "Начальный Туннель (Паркур)", en = "Initial Tunnel (Parkour)", ua = "Початковий тунель (Паркур)" },
@@ -187,16 +280,40 @@ Localization.locationTranslations = {
     ["Конец"] = { ru = "Конец", en = "End", ua = "Кінець" },
 }
 
--- 3. Вспомогательные функции получения текста
-function Localization.getText(currentLang, key)
-    local l = Localization.lang
-    return (l[currentLang] and l[currentLang][key]) or (l["en"] and l["en"][key]) or key
+-- =========================================================================
+-- 3. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+-- =========================================================================
+function Translates.getLanguage()
+    if _G.TeleportHubSettings and _G.TeleportHubSettings.language then
+        return _G.TeleportHubSettings.language
+    end
+    return "ru"
 end
 
-function Localization.getLocalizedLocationName(currentLang, originalName)
-    local entry = Localization.locationTranslations[originalName]
-    if entry then return entry[currentLang] or originalName end
+function Translates.getText(key, langCode)
+    local l = langCode or Translates.getLanguage()
+    local dict = Translates.lang[l] or Translates.lang["en"]
+    if dict and dict[key] then
+        return dict[key]
+    end
+    return key
+end
+
+function Translates.getLocalizedLocationName(originalName, langCode)
+    local l = langCode or Translates.getLanguage()
+    local entry = Translates.locationTranslations[originalName]
+    if entry and entry[l] then
+        return entry[l]
+    end
     return originalName
 end
 
-return Localization
+-- Поддержка прямого вызова Translates("key")
+setmetatable(Translates, {
+    __call = function(_, key, langCode)
+        return Translates.getText(key, langCode)
+    end
+})
+
+-- ОБЯЗАТЕЛЬНЫЙ ЭКСПОРТ ДЛЯ LOADSTRING
+return Translates
