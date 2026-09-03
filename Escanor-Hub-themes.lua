@@ -1,14 +1,16 @@
 --[[
-    Escanor HUB 🔥 — Модуль тем оформления
-    Файл: themes.lua
+    Escanor HUB 🔥 – Themes & Shimmer Module
+    File: Escanor-Hub-themes.lua
+    By: Brobothotspot
 --]]
 
-local ThemesModule = {}
+local Themes = {}
 
--- 1. Таблица всех цветовых палитр
-ThemesModule.list = {
+-- =========================================================================
+-- 1. БАЗА ДАННЫХ ТЕМ
+-- =========================================================================
+Themes.data = {
     dark = {
-        name = "dark",
         mainBg = Color3.fromRGB(25, 28, 40),
         mainGradStart = Color3.fromRGB(25, 28, 40),
         mainGradEnd = Color3.fromRGB(15, 18, 30),
@@ -27,7 +29,6 @@ ThemesModule.list = {
         shimmerVal = 0.85
     },
     light = {
-        name = "light",
         mainBg = Color3.fromRGB(240, 240, 245),
         mainGradStart = Color3.fromRGB(240, 240, 245),
         mainGradEnd = Color3.fromRGB(220, 220, 225),
@@ -46,7 +47,6 @@ ThemesModule.list = {
         shimmerVal = 0.70
     },
     pink = {
-        name = "pink",
         mainBg = Color3.fromRGB(40, 20, 30),
         mainGradStart = Color3.fromRGB(40, 20, 30),
         mainGradEnd = Color3.fromRGB(30, 15, 25),
@@ -65,7 +65,6 @@ ThemesModule.list = {
         shimmerVal = 0.90
     },
     green = {
-        name = "green",
         mainBg = Color3.fromRGB(20, 35, 25),
         mainGradStart = Color3.fromRGB(20, 35, 25),
         mainGradEnd = Color3.fromRGB(15, 28, 20),
@@ -84,7 +83,6 @@ ThemesModule.list = {
         shimmerVal = 0.80
     },
     blue = {
-        name = "blue",
         mainBg = Color3.fromRGB(15, 20, 40),
         mainGradStart = Color3.fromRGB(15, 20, 40),
         mainGradEnd = Color3.fromRGB(10, 15, 30),
@@ -103,9 +101,18 @@ ThemesModule.list = {
         shimmerVal = 0.90
     }
 }
+Themes.data["default"] = Themes.data.dark
 
--- 2. Вспомогательные функции для расчёта шиммера и переливаний
-function ThemesModule.getShimmerColor(t, phase)
+-- =========================================================================
+-- 2. ФУНКЦИИ ПЕРЕЛИВАНИЯ (SHIMMER)
+-- =========================================================================
+function Themes.getTheme(themeName)
+    local name = themeName or (_G.TeleportHubSettings and _G.TeleportHubSettings.theme) or "dark"
+    return Themes.data[name] or Themes.data.dark
+end
+
+function Themes.getShimmerColor(themeOrName, phase)
+    local t = (type(themeOrName) == "table") and themeOrName or Themes.getTheme(themeOrName)
     local baseH = t.shimmerHue or 0.75
     local range = t.shimmerRange or 0.12
     local sat = t.shimmerSat or 0.7
@@ -114,16 +121,18 @@ function ThemesModule.getShimmerColor(t, phase)
     return Color3.fromHSV(h, sat, val)
 end
 
-function ThemesModule.getShimmerColorOffset(t, phase, offset)
+function Themes.getShimmerColorOffset(themeOrName, phase, offset)
+    local t = (type(themeOrName) == "table") and themeOrName or Themes.getTheme(themeOrName)
     local baseH = t.shimmerHue or 0.75
     local range = t.shimmerRange or 0.12
     local sat = t.shimmerSat or 0.7
     local val = t.shimmerVal or 0.85
-    local h = (baseH + math.sin(phase + offset) * range) % 1
+    local h = (baseH + math.sin(phase + (offset or 0)) * range) % 1
     return Color3.fromHSV(h, sat, val)
 end
 
-function ThemesModule.getShimmerColorDim(t, phase, dimFactor)
+function Themes.getShimmerColorDim(themeOrName, phase, dimFactor)
+    local t = (type(themeOrName) == "table") and themeOrName or Themes.getTheme(themeOrName)
     local baseH = t.shimmerHue or 0.75
     local range = t.shimmerRange or 0.12
     local sat = t.shimmerSat or 0.7
@@ -132,4 +141,67 @@ function ThemesModule.getShimmerColorDim(t, phase, dimFactor)
     return Color3.fromHSV(h, sat, val)
 end
 
-return ThemesModule
+-- =========================================================================
+-- 3. ПРИМЕНЕНИЕ ТЕМЫ К ЭЛЕМЕНТАМ GUI
+-- =========================================================================
+function Themes.apply(themeName, elements, currentTab)
+    local t = Themes.getTheme(themeName)
+    elements = elements or {}
+
+    if elements.mainFrame then
+        elements.mainFrame.BackgroundColor3 = t.mainBg
+    end
+    if elements.mainStroke then
+        elements.mainStroke.Color = Themes.getShimmerColor(t, 0)
+    end
+    if elements.topStroke then
+        elements.topStroke.Color = Themes.getShimmerColorOffset(t, 0, 1.0)
+    end
+    if elements.mainGradient then
+        elements.mainGradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, t.mainGradStart),
+            ColorSequenceKeypoint.new(1, t.mainGradEnd)
+        }
+    end
+    if elements.topBar then
+        elements.topBar.BackgroundColor3 = t.topBg
+    end
+    if elements.topGradient then
+        elements.topGradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, t.topGradStart),
+            ColorSequenceKeypoint.new(1, t.topGradEnd)
+        }
+    end
+
+    -- Перекрашивание текста
+    for _, elem in ipairs(elements.textElements or {}) do
+        if elem and elem.Parent then
+            elem.TextColor3 = t.textColor
+        end
+    end
+
+    -- Вкладки
+    local cur = currentTab or "players"
+    if elements.tabPlayers then elements.tabPlayers.BackgroundColor3 = (cur == "players") and t.tabActive or t.tabInactive end
+    if elements.tabLocations then elements.tabLocations.BackgroundColor3 = (cur == "locations") and t.tabActive or t.tabInactive end
+    if elements.tabPlaces then elements.tabPlaces.BackgroundColor3 = (cur == "places") and t.tabActive or t.tabInactive end
+    if elements.tabHelp then elements.tabHelp.BackgroundColor3 = (cur == "help") and t.tabActive or t.tabInactive end
+    if elements.tabFavorites then elements.tabFavorites.BackgroundColor3 = (cur == "favorites") and t.tabActive or t.tabInactive end
+    if elements.tabHistory then elements.tabHistory.BackgroundColor3 = (cur == "history") and t.tabActive or t.tabInactive end
+    if elements.tabOther then elements.tabOther.BackgroundColor3 = (cur == "other") and t.tabActive or t.tabInactive end
+
+    -- Поля ввода
+    if elements.searchBox then elements.searchBox.TextColor3 = t.textColor end
+    if elements.locSearchBox then elements.locSearchBox.TextColor3 = t.textColor end
+    if elements.sortBtn then elements.sortBtn.TextColor3 = t.textColor end
+end
+
+-- Быстрый доступ: Themes["dark"] возвращает таблицу темы
+setmetatable(Themes, {
+    __index = function(tbl, key)
+        return tbl.data[key]
+    end
+})
+
+-- ОБЯЗАТЕЛЬНЫЙ ЭКСПОРТ ДЛЯ LOADSTRING
+return Themes
