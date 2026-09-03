@@ -1,38 +1,47 @@
 --[[
-    Escanor HUB 🔥 — Модуль Лаунчера (Launcher Module)
-    Файл: launcher.lua
+    Escanor HUB 🔥 – Launcher Module
+    File: Escanor-Hub-launcher.lua
+    By: Brobothotspot
 --]]
 
-return function(onLaunchCallback)
-    local Players = game:GetService("Players")
-    local LP = Players.LocalPlayer
-    local UserInput = game:GetService("UserInputService")
-    local RunService = game:GetService("RunService")
-    local TweenService = game:GetService("TweenService")
-    local CoreGui = game:GetService("CoreGui")
+local LauncherModule = {}
 
-    -- Очистка старого лаунчера, если он уже открыт
-    if CoreGui:FindFirstChild("LauncherGui") then
-        CoreGui.LauncherGui:Destroy()
-    end
-    if LP:WaitForChild("PlayerGui"):FindFirstChild("LauncherGui") then
-        LP.PlayerGui.LauncherGui:Destroy()
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+
+local LP = Players.LocalPlayer
+
+local function getGuiParent()
+    if gethui then return gethui() end
+    local ok, res = pcall(function() return CoreGui end)
+    if ok and res then return res end
+    return LP:WaitForChild("PlayerGui")
+end
+
+function LauncherModule.Show(onLaunchCallback)
+    local parentGui = getGuiParent()
+
+    -- Удаляем предыдущий лаунчер, если он уже открыт
+    if parentGui:FindFirstChild("EscanorLauncherGUI") then
+        parentGui:FindFirstChild("EscanorLauncherGUI"):Destroy()
     end
 
     local launcherGui = Instance.new("ScreenGui")
-    launcherGui.Name = "LauncherGui"
+    launcherGui.Name = "EscanorLauncherGUI"
     launcherGui.ResetOnSpawn = false
     launcherGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    pcall(function() launcherGui.Parent = CoreGui end)
-    if not launcherGui.Parent then launcherGui.Parent = LP.PlayerGui end
+    launcherGui.DisplayOrder = 1000
+    launcherGui.Parent = parentGui
 
     local main = Instance.new("Frame", launcherGui)
+    main.Name = "LauncherFrame"
     main.Size = UDim2.new(0, 300, 0, 200)
     main.Position = UDim2.new(0.5, -150, 0.5, -100)
     main.BackgroundColor3 = Color3.fromRGB(20, 20, 35)
     main.BorderSizePixel = 0
     main.ClipsDescendants = true
-    main.Active = true
     Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
 
     local gradient = Instance.new("UIGradient", main)
@@ -47,16 +56,25 @@ return function(onLaunchCallback)
     launcherStroke.Color = Color3.fromRGB(140, 100, 255)
     launcherStroke.Transparency = 0.15
 
-    -- Анимация переливающегося контура
+    -- Анимация переливания
     local launcherHue = 0
-    local launcherShimmerConn = RunService.Heartbeat:Connect(function(dt)
-        if not main or not main.Parent then return end
+    local launcherShimmerConn
+    launcherShimmerConn = RunService.Heartbeat:Connect(function(dt)
+        if not main or not main.Parent then
+            if launcherShimmerConn then launcherShimmerConn:Disconnect() end
+            return
+        end
         launcherHue = (launcherHue + dt * 1.2) % (math.pi * 2)
         local h = (0.75 + math.sin(launcherHue) * 0.12) % 1
         launcherStroke.Color = Color3.fromHSV(h, 0.7, 0.9)
+        local bgH = (0.75 + math.sin(launcherHue * 0.7) * 0.05) % 1
+        gradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, Color3.fromHSV(bgH, 0.3, 0.15)),
+            ColorSequenceKeypoint.new(1, Color3.fromHSV((bgH + 0.03) % 1, 0.25, 0.08))
+        }
     end)
 
-    -- Верхняя панель заголовка
+    -- Верхняя панель (Header)
     local titleBar = Instance.new("Frame", main)
     titleBar.Size = UDim2.new(1, 0, 0, 24)
     titleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
@@ -67,7 +85,7 @@ return function(onLaunchCallback)
     titleText.Size = UDim2.new(1, -60, 1, 0)
     titleText.Position = UDim2.new(0, 8, 0, 0)
     titleText.BackgroundTransparency = 1
-    titleText.Text = "🚀 Escanor HUB 🔥 Launcher"
+    titleText.Text = "🚀 Escanor HUB 🔥 v1.2"
     titleText.TextColor3 = Color3.new(1, 1, 1)
     titleText.Font = Enum.Font.GothamBold
     titleText.TextSize = 12
@@ -81,7 +99,6 @@ return function(onLaunchCallback)
     minBtn.TextColor3 = Color3.new(1, 1, 1)
     minBtn.Font = Enum.Font.GothamBold
     minBtn.TextSize = 14
-    minBtn.BorderSizePixel = 0
     Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 5)
 
     local closeBtn = Instance.new("TextButton", titleBar)
@@ -92,7 +109,6 @@ return function(onLaunchCallback)
     closeBtn.TextColor3 = Color3.new(1, 1, 1)
     closeBtn.Font = Enum.Font.GothamBold
     closeBtn.TextSize = 14
-    closeBtn.BorderSizePixel = 0
     Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 5)
 
     local contentFrame = Instance.new("Frame", main)
@@ -100,19 +116,18 @@ return function(onLaunchCallback)
     contentFrame.Position = UDim2.new(0, 0, 0, 24)
     contentFrame.BackgroundTransparency = 1
 
-    -- Сворачивание / Разворачивание
+    -- Сворачивание лаунчера
     local launcherMinimized = false
     minBtn.MouseButton1Click:Connect(function()
-        if not launcherMinimized then
+        launcherMinimized = not launcherMinimized
+        if launcherMinimized then
             main:TweenSize(UDim2.new(0, 300, 0, 24), Enum.EasingDirection.InOut, Enum.EasingStyle.Quad, 0.25, true)
             minBtn.Text = "+"
             contentFrame.Visible = false
-            launcherMinimized = true
         else
             main:TweenSize(UDim2.new(0, 300, 0, 200), Enum.EasingDirection.InOut, Enum.EasingStyle.Quad, 0.25, true)
             minBtn.Text = "–"
             contentFrame.Visible = true
-            launcherMinimized = false
         end
     end)
 
@@ -121,7 +136,7 @@ return function(onLaunchCallback)
         launcherGui:Destroy()
     end)
 
-    -- Перетаскивание для мыши и сенсорных экранов
+    -- Перетаскивание
     local dragging = false
     local dragStart, startPos
     titleBar.InputBegan:Connect(function(input)
@@ -136,19 +151,15 @@ return function(onLaunchCallback)
             dragging = false
         end
     end)
-    UserInput.InputChanged:Connect(function(input)
+    UserInputService.InputChanged:Connect(function(input, gp)
+        if gp then return end
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local delta = input.Position - dragStart
             main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
 
-    -- Состояние выбора
-    local selectedLang = (_G.TeleportHubSettings and _G.TeleportHubSettings.language) or "ru"
-    local selectedDevice = (_G.TeleportHubSettings and _G.TeleportHubSettings.device) or (UserInput.TouchEnabled and "Mobile" or "PC")
-    local selectedTheme = (_G.TeleportHubSettings and _G.TeleportHubSettings.theme) or "dark"
-
-    -- 1. Выбор Языка
+    -- ================= 1. Выбор Языка =================
     local langLabel = Instance.new("TextLabel", contentFrame)
     langLabel.Size = UDim2.new(1, -16, 0, 16)
     langLabel.Position = UDim2.new(0, 8, 0, 8)
@@ -159,15 +170,17 @@ return function(onLaunchCallback)
     langLabel.Font = Enum.Font.Gotham
     langLabel.TextXAlignment = Enum.TextXAlignment.Left
 
+    local selectedLang = "ru"
     local langButtons = {}
+    local langs = {"English", "Русский", "Українська"}
+    local langCodes = {"en", "ru", "ua"}
+
     local function updateLangButtons()
         for code, btn in pairs(langButtons) do
             btn.BackgroundColor3 = (code == selectedLang) and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(60, 60, 120)
         end
     end
 
-    local langs = {"English", "Русский", "Українська"}
-    local langCodes = {"en", "ru", "ua"}
     for i, name in ipairs(langs) do
         local btn = Instance.new("TextButton", contentFrame)
         btn.Size = UDim2.new(0.3, -4, 0, 22)
@@ -185,7 +198,7 @@ return function(onLaunchCallback)
         langButtons[langCodes[i]] = btn
     end
 
-    -- 2. Выбор Устройства
+    -- ================= 2. Выбор Устройства =================
     local devLabel = Instance.new("TextLabel", contentFrame)
     devLabel.Size = UDim2.new(1, -16, 0, 16)
     devLabel.Position = UDim2.new(0, 8, 0, 58)
@@ -196,14 +209,16 @@ return function(onLaunchCallback)
     devLabel.Font = Enum.Font.Gotham
     devLabel.TextXAlignment = Enum.TextXAlignment.Left
 
+    local selectedDevice = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled and "Mobile" or "PC"
     local deviceButtons = {}
+    local devs = {"PC", "Mobile"}
+
     local function updateDevButtons()
         for dev, btn in pairs(deviceButtons) do
             btn.BackgroundColor3 = (dev == selectedDevice) and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(60, 60, 120)
         end
     end
 
-    local devs = {"PC", "Mobile"}
     for i, dev in ipairs(devs) do
         local btn = Instance.new("TextButton", contentFrame)
         btn.Size = UDim2.new(0.4, -4, 0, 22)
@@ -221,7 +236,7 @@ return function(onLaunchCallback)
         deviceButtons[dev] = btn
     end
 
-    -- 3. Выбор Темы
+    -- ================= 3. Выбор Темы =================
     local themeLabel = Instance.new("TextLabel", contentFrame)
     themeLabel.Size = UDim2.new(1, -16, 0, 16)
     themeLabel.Position = UDim2.new(0, 8, 0, 108)
@@ -232,15 +247,17 @@ return function(onLaunchCallback)
     themeLabel.Font = Enum.Font.Gotham
     themeLabel.TextXAlignment = Enum.TextXAlignment.Left
 
+    local selectedTheme = "dark"
     local themeButtons = {}
+    local themes = {"dark", "light"}
+    local themeNames = { dark = "🌙 Тёмная", light = "☀️ Светлая" }
+
     local function updateThemeButtons()
         for theme, btn in pairs(themeButtons) do
             btn.BackgroundColor3 = (theme == selectedTheme) and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(60, 60, 120)
         end
     end
 
-    local themes = {"dark", "light"}
-    local themeNames = { dark = "🌙 Тёмная", light = "☀️ Светлая" }
     for i, theme in ipairs(themes) do
         local btn = Instance.new("TextButton", contentFrame)
         btn.Size = UDim2.new(0.4, -4, 0, 22)
@@ -271,7 +288,7 @@ return function(onLaunchCallback)
         themeButtons[theme] = btn
     end
 
-    -- Кнопка запуска
+    -- ================= Кнопка Execute =================
     local execBtn = Instance.new("TextButton", contentFrame)
     execBtn.Size = UDim2.new(0.8, 0, 0, 30)
     execBtn.Position = UDim2.new(0.1, 0, 1, -36)
@@ -301,3 +318,13 @@ return function(onLaunchCallback)
     updateDevButtons()
     updateThemeButtons()
 end
+
+-- Поддержка прямого вызова LauncherModule(callback)
+setmetatable(LauncherModule, {
+    __call = function(_, callback)
+        return LauncherModule.Show(callback)
+    end
+})
+
+-- ОБЯЗАТЕЛЬНЫЙ ЭКСПОРТ ДЛЯ LOADSTRING
+return LauncherModule
