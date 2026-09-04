@@ -1,7 +1,7 @@
 --[[
 ═══════════════════════════════════════════════════════════════════════════════
                  BARREL HUB UI ENGINE (Barrel-mastery-GUI.lua)
-                 v3.8.0 · Single Quest & Strict Alt Validation
+                     v4.0.0 · Nexer Helper Mode Edition
 ═══════════════════════════════════════════════════════════════════════════════
 ]]
 
@@ -135,12 +135,11 @@ function HubUI.new(config)
     self.Q3MethodButtons = {}
     
     self.SelectedRole = "Main"
-    self.SelectedQuest = nil -- Только 1 выбранный квест (1..4) или nil
+    self.SelectedQuest = nil
     self.SelectedQ3Method = nil
     self.IsRunning = false
     self.Minimized = false
     
-    -- Валидация напарника
     self.PartnerValid = false
     self.PartnerError = "ENTER ALT USERNAME"
     
@@ -312,7 +311,6 @@ function HubUI:UpdateMasterButtonState()
         return
     end
 
-    -- 1. Проверка наличия валидного напарника (Alt)
     if not self.PartnerValid then
         self.MasterBtn.BackgroundColor3 = Theme.LockedBtn
         self.MasterBtn.TextColor3 = Theme.Amber
@@ -321,7 +319,6 @@ function HubUI:UpdateMasterButtonState()
         return
     end
 
-    -- 2. Проверка выбора квеста
     if not self.SelectedQuest then
         self.MasterBtn.BackgroundColor3 = Theme.LockedBtn
         self.MasterBtn.TextColor3 = Theme.Dim
@@ -330,7 +327,6 @@ function HubUI:UpdateMasterButtonState()
         return
     end
 
-    -- 3. Проверка метода для 3 квеста
     if self.SelectedQuest == 3 and not self.SelectedQ3Method then
         self.MasterBtn.BackgroundColor3 = Theme.LockedBtn
         self.MasterBtn.TextColor3 = Theme.Amber
@@ -575,7 +571,6 @@ function HubUI:BuildMain()
     -- 3. Секция квестов
     sectionTitle("● QUEST SELECTOR (CHOOSE 1)", 6)
 
-    -- Меню методов Q3
     self.Q3MethodFrame = create("Frame", {
         Size = UDim2.new(1, 0, 0, 22),
         BackgroundColor3 = Theme.PanelDim,
@@ -616,7 +611,6 @@ function HubUI:BuildMain()
     buildQ3MethodBtn("⚡ ABILITY", "Ability", 0)
     buildQ3MethodBtn("✋ SLAP", "Slap", 0.5)
 
-    -- Одиночный выбор квеста (Radio Button)
     local function updateQuestUI()
         for q = 1, 4 do
             local isChosen = (self.SelectedQuest == q)
@@ -689,9 +683,9 @@ function HubUI:BuildMain()
 
         self.Maid:Give(checkBtn.Activated:Connect(function()
             if self.SelectedQuest == questNum then
-                self.SelectedQuest = nil -- Отмена выбора
+                self.SelectedQuest = nil
             else
-                self.SelectedQuest = questNum -- Выбор только одного квеста
+                self.SelectedQuest = questNum
             end
             updateQuestUI()
             self.OnQuestToggle(self.SelectedQuest)
@@ -776,11 +770,83 @@ function HubUI:BuildMain()
         self:Destroy()
     end))
 
+    -- ==================== NEXER HELPER WIDGET (ДЛЯ ALT) ====================
+    self.HelperWidget = create("CanvasGroup", {
+        Name = "NexerHelperBar",
+        Visible = false,
+        AnchorPoint = Vector2.new(0.5, 0),
+        Position = UDim2.new(0.5, 0, 0, 20),
+        Size = UDim2.fromOffset(230, 36),
+        BackgroundColor3 = Theme.Bg,
+        BorderSizePixel = 0,
+        Parent = self.ScreenGui,
+    })
+    corner(self.HelperWidget, 8)
+    local helperStroke = create("UIStroke", { Color = Theme.Purple, Thickness = 1.2, Parent = self.HelperWidget })
+    spinGradient(create("UIGradient", { Color = ColorSequence.new(Theme.Purple, Theme.Fuchsia), Parent = helperStroke }), 4, self.Maid)
+
+    create("TextLabel", {
+        Position = UDim2.new(0, 8, 0, 4),
+        Size = UDim2.new(0, 150, 0, 12),
+        BackgroundTransparency = 1,
+        Font = FONT_BOLD,
+        TextSize = 8.5,
+        TextColor3 = Theme.Text,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Text = "⚡ BARREL HELPER (ALT MODE)",
+        Parent = self.HelperWidget,
+    })
+
+    self.HelperStatus = create("TextLabel", {
+        Position = UDim2.new(0, 8, 0, 18),
+        Size = UDim2.new(1, -50, 0, 14),
+        BackgroundTransparency = 1,
+        Font = FONT_MED,
+        TextSize = 8,
+        TextColor3 = Color3.fromRGB(180, 160, 230),
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        Text = "Waiting for Main…",
+        Parent = self.HelperWidget,
+    })
+
+    local expandBtn = create("TextButton", {
+        Position = UDim2.new(1, -6, 0.5, 0),
+        AnchorPoint = Vector2.new(1, 0.5),
+        Size = UDim2.fromOffset(36, 22),
+        BackgroundColor3 = Theme.PanelSoft,
+        BorderSizePixel = 0,
+        Font = FONT_BOLD,
+        TextSize = 8,
+        TextColor3 = Theme.Text,
+        Text = "MENU",
+        Parent = self.HelperWidget,
+    })
+    corner(expandBtn, 4)
+
+    self.Maid:Give(expandBtn.Activated:Connect(function()
+        self:SetHelperMode(false)
+    end))
+
+    makeDraggable(self.HelperWidget, self.HelperWidget, self.Maid)
+
     self.Main.Visible = true
     self.Main.GroupTransparency = 1
     tween(self.Main, 0.3, { GroupTransparency = 0 })
 
     self:UpdateMasterButtonState()
+end
+
+-- Переключение между Full GUI и ультралегким виджетом Nexer
+function HubUI:SetHelperMode(enabled)
+    if not self.HelperWidget or not self.Main then return end
+    if enabled then
+        self.Main.Visible = false
+        self.HelperWidget.Visible = true
+    else
+        self.HelperWidget.Visible = false
+        self.Main.Visible = true
+    end
 end
 
 function HubUI:SelectQ3Method(methodKey)
@@ -801,6 +867,11 @@ function HubUI:SelectRole(roleKey)
         btn.TextColor3 = isChosen and Theme.Text or Theme.Dim
     end
     self:UpdateMasterButtonState()
+    if roleKey == "Alt" then
+        self:SetHelperMode(true) -- Мгновенно переключаем в легкий режим для экономии FPS
+    else
+        self:SetHelperMode(false)
+    end
 end
 
 function HubUI:SetMasterState(isRunning)
@@ -809,9 +880,8 @@ function HubUI:SetMasterState(isRunning)
 end
 
 function HubUI:SetStatus(msg)
-    if self.StatusLabel then
-        self.StatusLabel.Text = msg
-    end
+    if self.StatusLabel then self.StatusLabel.Text = msg end
+    if self.HelperStatus then self.HelperStatus.Text = msg end
 end
 
 local TAG_STYLES = {
@@ -840,13 +910,8 @@ function HubUI:SetAccountBox(slotKey, text, editable, isCurrentPlayer)
 end
 
 function HubUI:Destroy()
-    if self.ScreenGui then
-        pcall(function() self.ScreenGui:Destroy() end)
-        self.ScreenGui = nil
-    end
-    if self.Maid and type(self.Maid.Clean) == "function" then
-        pcall(function() self.Maid:Clean() end)
-    end
+    if self.ScreenGui then pcall(function() self.ScreenGui:Destroy() end) self.ScreenGui = nil end
+    if self.Maid and type(self.Maid.Clean) == "function" then pcall(function() self.Maid:Clean() end) end
 end
 
 return HubUI
