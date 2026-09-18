@@ -1,4 +1,3 @@
--- Ожидание полной загрузки игры и игрока
 repeat task.wait(0.2) until game:IsLoaded()
 
 local Players = game:GetService("Players")
@@ -20,6 +19,9 @@ local farming = false
 local farmThread = nil
 local timerThread = nil
 local tgPollingThread = nil
+
+-- Ссылка на сырой код на GitHub
+local RAW_GITHUB_URL = "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Auto-farm-BABFT"
 
 -- Настройки по умолчанию
 local farmMode = "Chest"
@@ -44,8 +46,9 @@ local startTime = 0
 local goldValObject = nil
 local CONFIG_FILE = "babft_farm_config.json"
 
--- HTTP-функция эксплоита
+-- Функции эксплоита
 local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+local queue_on_teleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
 
 -- База цен BABFT (ToyBlock = 250 Gold)
 local KNOWN_ITEMS = {
@@ -307,7 +310,7 @@ local function placeOnPlatform(targetPos, hrp)
     setSpin(hrp, true)
 end
 
--- Безопасная инициализация GUI
+-- GUI
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "BabftPurpleUI"
 screenGui.ResetOnSpawn = false
@@ -669,7 +672,7 @@ creditsLabel.Font = Enum.Font.GothamBold
 creditsLabel.TextSize = 11
 creditsLabel.Parent = scrollFrame
 
--- Сохранение конфига
+-- Сохранение конфигурации
 saveConfig = function(customAutoStart)
     tgToken = tgTokenInputBox.Text
     tgChatId = tgChatIdInputBox.Text
@@ -701,11 +704,24 @@ saveConfig = function(customAutoStart)
     end
 end
 
--- Надежный перезаход
+-- Перезаход с автоматической подгрузкой через queue_on_teleport и GitHub
 executeRejoin = function()
     sendTelegramMessage("🔄 <b>Перезахожу на сервер... Фарм продолжится автоматически!</b>")
     saveConfig(true)
-    task.wait(1)
+
+    if queue_on_teleport then
+        pcall(function()
+            queue_on_teleport(string.format([[
+                repeat task.wait() until game:IsLoaded()
+                task.wait(1)
+                pcall(function()
+                    loadstring(game:HttpGet("%s"))()
+                end)
+            ]], RAW_GITHUB_URL))
+        end)
+    end
+
+    task.wait(0.8)
     pcall(function()
         TeleportService:Teleport(game.PlaceId, player)
     end)
@@ -717,7 +733,6 @@ GuiService.ErrorMessageChanged:Connect(function()
     end
 end)
 
--- Загрузка конфига
 local function loadConfig()
     if isfile and readfile and isfile(CONFIG_FILE) then
         pcall(function()
@@ -773,10 +788,9 @@ local function loadConfig()
                     end
                 end
 
-                -- Ожидание мира и автоматический старт
                 if data.autoStart then
                     autoStartOnJoin = true
-                    sendTelegramMessage("🔔 <b>Скрипт запущен из Autoexec! Ожидаю загрузку персонажа...</b>")
+                    sendTelegramMessage("🔔 <b>Скрипт подгружен через GitHub! Запускаю авто-фарм...</b>")
                     task.spawn(function()
                         local char = player.Character or player.CharacterAdded:Wait()
                         local hrp = char:WaitForChild("HumanoidRootPart", 15)
@@ -786,7 +800,6 @@ local function loadConfig()
                             if char then hrp = char:FindFirstChild("HumanoidRootPart") end
                         end
                         
-                        -- Ожидание появления золота в памяти
                         local gObj = getGoldObject()
                         local t = 0
                         while not gObj and t < 15 do
@@ -1280,5 +1293,5 @@ tgPollingThread = task.spawn(function()
     end
 end)
 
--- Загрузка настроек при старте
+-- Загрузка сохраненного конфига
 loadConfig()
