@@ -1,3 +1,5 @@
+repeat task.wait() until game:IsLoaded()
+
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
@@ -36,9 +38,8 @@ local startTime = 0
 local goldValObject = nil
 local CONFIG_FILE = "babft_farm_config.json"
 
--- HTTP-функции и функции телепорта эксплоита
+-- HTTP-функция эксплоита
 local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-local queue_on_teleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
 
 -- База цен BABFT (ToyBlock = 250 Gold)
 local KNOWN_ITEMS = {
@@ -140,7 +141,7 @@ local STAGE_COORDINATES = {
 local CHEST_POSITION = Vector3.new(-55, -356, 9489)
 local SPAWN_Z_MAX = 1200
 
--- Защита от AFK
+-- Анти-АФК
 player.Idled:Connect(function()
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new(0, 0))
@@ -149,7 +150,6 @@ end)
 -- Объявление функций
 local startFarming, stopFarming, saveConfig, executeRejoin
 
--- Отключение урона
 local function disableHazards()
     pcall(function()
         local stages = Workspace:FindFirstChild("BoatStages")
@@ -665,7 +665,7 @@ creditsLabel.Font = Enum.Font.GothamBold
 creditsLabel.TextSize = 11
 creditsLabel.Parent = scrollFrame
 
--- Функция сохранения конфига с поддержкой autoStart
+-- Функция сохранения конфигурации
 saveConfig = function(customAutoStart)
     tgToken = tgTokenInputBox.Text
     tgChatId = tgChatIdInputBox.Text
@@ -697,28 +697,12 @@ saveConfig = function(customAutoStart)
     end
 end
 
--- Функция безопасного перезахода с авто-стартом
+-- Перезаход через чистый PlaceId
 executeRejoin = function()
-    sendTelegramMessage("🔄 <b>Перезахожу на сервер... Фарм продолжится автоматически!</b>")
+    sendTelegramMessage("🔄 <b>Перезахожу на сервер...</b>")
     saveConfig(true)
-
-    if queue_on_teleport then
-        pcall(function()
-            queue_on_teleport([[
-                repeat task.wait() until game:IsLoaded()
-                if isfile and isfile("babft_farm.lua") then
-                    loadstring(readfile("babft_farm.lua"))()
-                end
-            ]])
-        end)
-    end
-
     task.wait(0.5)
-    if #Players:GetPlayers() <= 1 then
-        TeleportService:Teleport(game.PlaceId, player)
-    else
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, player)
-    end
+    TeleportService:Teleport(game.PlaceId, player)
 end
 
 -- Перезаход при системном вылете Roblox
@@ -784,20 +768,19 @@ local function loadConfig()
                     end
                 end
 
-                -- Автоматический старт, если был перезаход
+                -- Авто-старт при подтвержденном флаге
                 if data.autoStart then
                     autoStartOnJoin = true
                     task.spawn(function()
-                        repeat task.wait(0.5) until game:IsLoaded()
                         local hrp = getCurrentHRP()
                         while not hrp do
                             task.wait(0.5)
                             hrp = getCurrentHRP()
                         end
-                        task.wait(1.5)
+                        task.wait(2)
                         if not farming then
                             startFarming()
-                            sendTelegramMessage("✅ <b>Успешный перезаход! Фарм автоматически продолжен.</b>")
+                            sendTelegramMessage("✅ <b>Успешный перезаход! Фарм автоматически запущен.</b>")
                         end
                     end)
                 end
