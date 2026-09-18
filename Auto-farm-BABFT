@@ -6,10 +6,13 @@ local VirtualUser = game:GetService("VirtualUser")
 local player = Players.LocalPlayer
 local farming = false
 local farmThread = nil
-local farmMode = "Chest" -- "Chest" (сундук на 2 сек) или "Gold" (сброс на 10)
+local timerThread = nil
+local farmMode = "Chest" -- "Chest" (сундук) или "Gold" (сброс на 10)
+local chestDelay = 2     -- Время задержки на сундуке по умолчанию
 
--- Переменные для подсчета золота
+-- Переменные для статистики
 local startGold = 0
+local startTime = 0
 local goldValObject = nil
 
 -- Координаты стадий
@@ -35,7 +38,15 @@ player.Idled:Connect(function()
     VirtualUser:ClickButton2(Vector2.new(0, 0))
 end)
 
--- Поиск объекта золота в игре
+-- Форматирование секунд в ЧЧ:ММ:СС
+local function formatTime(seconds)
+    local hrs = math.floor(seconds / 3600)
+    local mins = math.floor((seconds % 3600) / 60)
+    local secs = seconds % 60
+    return string.format("%02d:%02d:%02d", hrs, mins, secs)
+end
+
+-- Поиск объекта золота
 local function getGoldObject()
     if goldValObject and goldValObject.Parent then
         return goldValObject
@@ -53,7 +64,6 @@ local function getGoldObject()
     return nil
 end
 
--- Получение текущего количества золота
 local function getCurrentGold()
     local obj = getGoldObject()
     if obj then
@@ -91,7 +101,7 @@ local function setSpin(hrp, enabled)
     end
 end
 
--- Поиск персонажа и HRP
+-- Поиск живого персонажа и HRP
 local function getCurrentHRP()
     local char = player.Character
     if char and char.Parent then
@@ -123,7 +133,7 @@ local success, parent = pcall(function() return game:GetService("CoreGui") end)
 screenGui.Parent = (success and parent) or player:WaitForChild("PlayerGui")
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 260, 0, 225)
+mainFrame.Size = UDim2.new(0, 260, 0, 250)
 mainFrame.Position = UDim2.new(0.5, -130, 0.35, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(20, 16, 28)
 mainFrame.BorderSizePixel = 0
@@ -135,7 +145,7 @@ local frameCorner = Instance.new("UICorner")
 frameCorner.CornerRadius = UDim.new(0, 10)
 frameCorner.Parent = mainFrame
 
--- Анимированный фиолетовый контур
+-- Анимированный контур
 local frameStroke = Instance.new("UIStroke")
 frameStroke.Thickness = 1.8
 frameStroke.Color = Color3.fromRGB(180, 100, 255)
@@ -213,9 +223,9 @@ contentFrame.Position = UDim2.new(0, 0, 0, 36)
 contentFrame.BackgroundTransparency = 1
 contentFrame.Parent = mainFrame
 
--- Панель переключения режимов
+-- Панель выбора режима
 local modeContainer = Instance.new("Frame")
-modeContainer.Size = UDim2.new(1, -24, 0, 28)
+modeContainer.Size = UDim2.new(1, -24, 0, 24)
 modeContainer.Position = UDim2.new(0, 12, 0, 4)
 modeContainer.BackgroundTransparency = 1
 modeContainer.Parent = contentFrame
@@ -227,7 +237,7 @@ chestModeBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 chestModeBtn.Text = "Сундук"
 chestModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 chestModeBtn.Font = Enum.Font.GothamBold
-chestModeBtn.TextSize = 12
+chestModeBtn.TextSize = 11
 chestModeBtn.BorderSizePixel = 0
 chestModeBtn.Parent = modeContainer
 
@@ -242,7 +252,7 @@ goldModeBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
 goldModeBtn.Text = "Золото"
 goldModeBtn.TextColor3 = Color3.fromRGB(160, 145, 185)
 goldModeBtn.Font = Enum.Font.GothamBold
-goldModeBtn.TextSize = 12
+goldModeBtn.TextSize = 11
 goldModeBtn.BorderSizePixel = 0
 goldModeBtn.Parent = modeContainer
 
@@ -266,52 +276,119 @@ goldModeBtn.MouseButton1Click:Connect(function()
     chestModeBtn.TextColor3 = Color3.fromRGB(160, 145, 185)
 end)
 
+-- Строка настройки задержки на сундуке
+local delayContainer = Instance.new("Frame")
+delayContainer.Size = UDim2.new(1, -24, 0, 20)
+delayContainer.Position = UDim2.new(0, 12, 0, 31)
+delayContainer.BackgroundTransparency = 1
+delayContainer.Parent = contentFrame
+
+local delayLabel = Instance.new("TextLabel")
+delayLabel.Size = UDim2.new(1, -55, 1, 0)
+delayLabel.Position = UDim2.new(0, 0, 0, 0)
+delayLabel.BackgroundTransparency = 1
+delayLabel.Text = "Задержка сундука (сек):"
+delayLabel.TextColor3 = Color3.fromRGB(200, 190, 225)
+delayLabel.Font = Enum.Font.Gotham
+delayLabel.TextSize = 11
+delayLabel.TextXAlignment = Enum.TextXAlignment.Left
+delayLabel.Parent = delayContainer
+
+local delayBox = Instance.new("TextBox")
+delayBox.Size = UDim2.new(0, 48, 1, 0)
+delayBox.Position = UDim2.new(1, -48, 0, 0)
+delayBox.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
+delayBox.Text = tostring(chestDelay)
+delayBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+delayBox.Font = Enum.Font.GothamBold
+delayBox.TextSize = 11
+delayBox.BorderSizePixel = 0
+delayBox.ClearTextOnFocus = false
+delayBox.Parent = delayContainer
+
+local delayBoxCorner = Instance.new("UICorner")
+delayBoxCorner.CornerRadius = UDim.new(0, 5)
+delayBoxCorner.Parent = delayBox
+
+delayBox.FocusLost:Connect(function()
+    local val = tonumber(delayBox.Text)
+    if val and val > 0 then
+        chestDelay = val
+    else
+        delayBox.Text = tostring(chestDelay)
+    end
+end)
+
 local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, -24, 0, 20)
-statusLabel.Position = UDim2.new(0, 12, 0, 36)
+statusLabel.Size = UDim2.new(1, -24, 0, 15)
+statusLabel.Position = UDim2.new(0, 12, 0, 54)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Text = "Статус: Оффлайн"
 statusLabel.TextColor3 = Color3.fromRGB(180, 165, 205)
 statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextSize = 12
+statusLabel.TextSize = 11
 statusLabel.Parent = contentFrame
 
--- Плашка подсчета заработанного золота
+-- Плашка баланса
+local startAndCurrentGoldLabel = Instance.new("TextLabel")
+startAndCurrentGoldLabel.Size = UDim2.new(1, -24, 0, 15)
+startAndCurrentGoldLabel.Position = UDim2.new(0, 12, 0, 71)
+startAndCurrentGoldLabel.BackgroundTransparency = 1
+startAndCurrentGoldLabel.Text = "Старт: 0  |  Сейчас: " .. tostring(getCurrentGold())
+startAndCurrentGoldLabel.TextColor3 = Color3.fromRGB(200, 190, 225)
+startAndCurrentGoldLabel.Font = Enum.Font.Gotham
+startAndCurrentGoldLabel.TextSize = 11
+startAndCurrentGoldLabel.Parent = contentFrame
+
+-- Плашка заработанного золота
 local goldTrackerLabel = Instance.new("TextLabel")
-goldTrackerLabel.Size = UDim2.new(1, -24, 0, 20)
-goldTrackerLabel.Position = UDim2.new(0, 12, 0, 58)
+goldTrackerLabel.Size = UDim2.new(1, -24, 0, 15)
+goldTrackerLabel.Position = UDim2.new(0, 12, 0, 88)
 goldTrackerLabel.BackgroundTransparency = 1
 goldTrackerLabel.Text = "Заработано: +0 Gold"
 goldTrackerLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
 goldTrackerLabel.Font = Enum.Font.GothamBold
-goldTrackerLabel.TextSize = 12
+goldTrackerLabel.TextSize = 11
 goldTrackerLabel.Parent = contentFrame
 
--- Функция обновления счетчика золота
-local function updateGoldTracker()
-    if not farming then return end
+-- Плашка времени
+local timeTrackerLabel = Instance.new("TextLabel")
+timeTrackerLabel.Size = UDim2.new(1, -24, 0, 15)
+timeTrackerLabel.Position = UDim2.new(0, 12, 0, 105)
+timeTrackerLabel.BackgroundTransparency = 1
+timeTrackerLabel.Text = "Время фарма: 00:00:00"
+timeTrackerLabel.TextColor3 = Color3.fromRGB(165, 195, 255)
+timeTrackerLabel.Font = Enum.Font.GothamBold
+timeTrackerLabel.TextSize = 11
+timeTrackerLabel.Parent = contentFrame
+
+-- Функция обновления статистики золота
+local function updateGoldStats()
     local current = getCurrentGold()
-    local earned = math.max(0, current - startGold)
-    goldTrackerLabel.Text = "Заработано: +" .. tostring(earned) .. " Gold"
+    if farming then
+        local earned = math.max(0, current - startGold)
+        startAndCurrentGoldLabel.Text = "Старт: " .. tostring(startGold) .. "  |  Сейчас: " .. tostring(current)
+        goldTrackerLabel.Text = "Заработано: +" .. tostring(earned) .. " Gold"
+    else
+        startAndCurrentGoldLabel.Text = "Старт: 0  |  Сейчас: " .. tostring(current)
+    end
 end
 
--- Отслеживание изменения значения золота в реальном времени
 task.spawn(function()
     local obj = getGoldObject()
     while not obj do
         task.wait(1)
         obj = getGoldObject()
     end
+    updateGoldStats()
     obj.Changed:Connect(function()
-        if farming then
-            updateGoldTracker()
-        end
+        updateGoldStats()
     end)
 end)
 
 local toggleButton = Instance.new("TextButton")
-toggleButton.Size = UDim2.new(1, -24, 0, 38)
-toggleButton.Position = UDim2.new(0, 12, 0, 84)
+toggleButton.Size = UDim2.new(1, -24, 0, 34)
+toggleButton.Position = UDim2.new(0, 12, 0, 124)
 toggleButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 toggleButton.Text = "START AUTO FARM"
 toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -324,17 +401,18 @@ local btnCorner = Instance.new("UICorner")
 btnCorner.CornerRadius = UDim.new(0, 8)
 btnCorner.Parent = toggleButton
 
-local infoLabel = Instance.new("TextLabel")
-infoLabel.Size = UDim2.new(1, 0, 0, 16)
-infoLabel.Position = UDim2.new(0, 0, 0, 130)
-infoLabel.BackgroundTransparency = 1
-infoLabel.Text = "Сенсорное перемещение активно"
-infoLabel.TextColor3 = Color3.fromRGB(110, 95, 135)
-infoLabel.Font = Enum.Font.Gotham
-infoLabel.TextSize = 10
-infoLabel.Parent = contentFrame
+-- Подпись внизу GUI
+local creditsLabel = Instance.new("TextLabel")
+creditsLabel.Size = UDim2.new(1, 0, 0, 16)
+creditsLabel.Position = UDim2.new(0, 0, 0, 162)
+creditsLabel.BackgroundTransparency = 1
+creditsLabel.Text = "By: Probothotspot"
+creditsLabel.TextColor3 = Color3.fromRGB(175, 150, 220)
+creditsLabel.Font = Enum.Font.GothamBold
+creditsLabel.TextSize = 11
+creditsLabel.Parent = contentFrame
 
--- Логика сворачивания
+-- Сворачивание
 local isMinimized = false
 minBtn.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
@@ -343,16 +421,19 @@ minBtn.MouseButton1Click:Connect(function()
         mainFrame.Size = UDim2.new(0, 260, 0, 36)
         minBtn.Text = "+"
     else
-        mainFrame.Size = UDim2.new(0, 260, 0, 225)
+        mainFrame.Size = UDim2.new(0, 260, 0, 250)
         minBtn.Text = "-"
     end
 end)
 
--- Логика закрытия
+-- Закрытие
 closeBtn.MouseButton1Click:Connect(function()
     farming = false
     if farmThread then
         task.cancel(farmThread)
+    end
+    if timerThread then
+        task.cancel(timerThread)
     end
     if rotConn then
         rotConn:Disconnect()
@@ -367,7 +448,7 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
--- Сенсорное перемещение
+-- Перемещение (мышь и тачскрин)
 local dragging, dragStart, startPos
 topBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -446,15 +527,15 @@ local function startFarmingLoop()
                     continue
                 end
 
-                -- 2. Телепорт к сундуку на 2 секунды
+                -- 2. Телепорт к сундуку на кастомное время
                 hrp, char, hum = getCurrentHRP()
                 if hrp then
-                    statusLabel.Text = "Сундук (ожидание 2 сек)..."
+                    statusLabel.Text = "Сундук (ожидание " .. tostring(chestDelay) .. " сек)..."
                     setNoclip(char)
                     placeOnPlatform(CHEST_POSITION, hrp)
 
                     local chestStart = tick()
-                    while tick() - chestStart < 2 do
+                    while tick() - chestStart < chestDelay do
                         task.wait(0.1)
                         if not farming then break end
                         local curHrp = getCurrentHRP()
@@ -509,7 +590,7 @@ local function startFarmingLoop()
                     continue
                 end
 
-                -- 5. Ожидание спавна после 10 этапа
+                -- 5. Ожидание спавна
                 statusLabel.Text = "10 этап: ожидание спавна..."
                 while farming do
                     task.wait(0.1)
@@ -523,7 +604,7 @@ local function startFarmingLoop()
                 task.wait(0.8)
 
             elseif farmMode == "Gold" then
-                -- Режим «Золото»: проход 1-10 + ресет
+                -- Режим «Золото»: 1-10 + ресет
                 for index, coord in ipairs(STAGE_COORDINATES) do
                     if not farming then break end
                     hrp, char, hum = getCurrentHRP()
@@ -578,19 +659,36 @@ toggleButton.MouseButton1Click:Connect(function()
     farming = not farming
 
     if farming then
-        -- Фиксация золота на момент запуска
+        -- Старт сессии
         startGold = getCurrentGold()
-        goldTrackerLabel.Text = "Заработано: +0 Gold"
+        updateGoldStats()
+
+        startTime = os.time()
+        timeTrackerLabel.Text = "Время фарма: 00:00:00"
+
+        timerThread = task.spawn(function()
+            while farming do
+                local elapsed = os.time() - startTime
+                timeTrackerLabel.Text = "Время фарма: " .. formatTime(elapsed)
+                task.wait(1)
+            end
+        end)
 
         toggleButton.Text = "STOP AUTO FARM"
         toggleButton.BackgroundColor3 = Color3.fromRGB(220, 50, 70)
         statusLabel.Text = "Запуск: " .. (farmMode == "Chest" and "Сундук" or "Золото")
         startFarmingLoop()
     else
+        -- Остановка
         toggleButton.Text = "START AUTO FARM"
         toggleButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
         statusLabel.Text = "Статус: Остановлен"
         
+        if timerThread then
+            task.cancel(timerThread)
+            timerThread = nil
+        end
+
         local hrp = getCurrentHRP()
         if hrp then
             setSpin(hrp, false)
