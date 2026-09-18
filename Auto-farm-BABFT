@@ -1,6 +1,13 @@
-repeat task.wait() until game:IsLoaded()
+-- Ожидание полной загрузки игры и игрока
+repeat task.wait(0.2) until game:IsLoaded()
 
 local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+while not player do
+    task.wait(0.2)
+    player = Players.LocalPlayer
+end
+
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -9,7 +16,6 @@ local GuiService = game:GetService("GuiService")
 local HttpService = game:GetService("HttpService")
 local VirtualUser = game:GetService("VirtualUser")
 
-local player = Players.LocalPlayer
 local farming = false
 local farmThread = nil
 local timerThread = nil
@@ -147,7 +153,6 @@ player.Idled:Connect(function()
     VirtualUser:ClickButton2(Vector2.new(0, 0))
 end)
 
--- Объявление функций
 local startFarming, stopFarming, saveConfig, executeRejoin
 
 local function disableHazards()
@@ -195,17 +200,19 @@ end
 
 local function sendTelegramMessage(text)
     if not httpRequest or tgToken == "" or tgChatId == "" then return end
-    pcall(function()
-        httpRequest({
-            Url = "https://api.telegram.org/bot" .. tgToken .. "/sendMessage",
-            Method = "POST",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = HttpService:JSONEncode({
-                chat_id = tgChatId,
-                text = text,
-                parse_mode = "HTML"
+    task.spawn(function()
+        pcall(function()
+            httpRequest({
+                Url = "https://api.telegram.org/bot" .. tgToken .. "/sendMessage",
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = HttpService:JSONEncode({
+                    chat_id = tgChatId,
+                    text = text,
+                    parse_mode = "HTML"
+                })
             })
-        })
+        end)
     end)
 end
 
@@ -300,13 +307,13 @@ local function placeOnPlatform(targetPos, hrp)
     setSpin(hrp, true)
 end
 
--- GUI
+-- Безопасная инициализация GUI
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "BabftPurpleUI"
 screenGui.ResetOnSpawn = false
 
-local success, parent = pcall(function() return game:GetService("CoreGui") end)
-screenGui.Parent = (success and parent) or player:WaitForChild("PlayerGui")
+local guiParent = (gethui and gethui()) or (pcall(function() return game:GetService("CoreGui") end) and game:GetService("CoreGui")) or player:WaitForChild("PlayerGui")
+screenGui.Parent = guiParent
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = UDim2.new(0, 260, 0, 320)
@@ -506,7 +513,6 @@ timeTrackerLabel.Font = Enum.Font.GothamBold
 timeTrackerLabel.TextSize = 10
 timeTrackerLabel.Parent = scrollFrame
 
--- Авто-закупка
 local autoBuyRow = Instance.new("Frame")
 autoBuyRow.Size = UDim2.new(1, -24, 0, 22)
 autoBuyRow.Position = UDim2.new(0, 12, 0, 116)
@@ -582,7 +588,6 @@ itemStatusLabel.Font = Enum.Font.Gotham
 itemStatusLabel.TextSize = 10
 itemStatusLabel.Parent = scrollFrame
 
--- Telegram Bot Inputs
 local tgTokenInputBox = Instance.new("TextBox")
 tgTokenInputBox.Size = UDim2.new(1, -24, 0, 20)
 tgTokenInputBox.Position = UDim2.new(0, 12, 0, 183)
@@ -619,7 +624,6 @@ local tgChatCorner = Instance.new("UICorner")
 tgChatCorner.CornerRadius = UDim.new(0, 5)
 tgChatCorner.Parent = tgChatIdInputBox
 
--- Кнопка сохранения настроек
 local saveBtn = Instance.new("TextButton")
 saveBtn.Size = UDim2.new(1, -24, 0, 24)
 saveBtn.Position = UDim2.new(0, 12, 0, 230)
@@ -665,7 +669,7 @@ creditsLabel.Font = Enum.Font.GothamBold
 creditsLabel.TextSize = 11
 creditsLabel.Parent = scrollFrame
 
--- Функция сохранения конфигурации
+-- Сохранение конфига
 saveConfig = function(customAutoStart)
     tgToken = tgTokenInputBox.Text
     tgChatId = tgChatIdInputBox.Text
@@ -697,22 +701,23 @@ saveConfig = function(customAutoStart)
     end
 end
 
--- Перезаход через чистый PlaceId
+-- Надежный перезаход
 executeRejoin = function()
-    sendTelegramMessage("🔄 <b>Перезахожу на сервер...</b>")
+    sendTelegramMessage("🔄 <b>Перезахожу на сервер... Фарм продолжится автоматически!</b>")
     saveConfig(true)
-    task.wait(0.5)
-    TeleportService:Teleport(game.PlaceId, player)
+    task.wait(1)
+    pcall(function()
+        TeleportService:Teleport(game.PlaceId, player)
+    end)
 end
 
--- Перезаход при системном вылете Roblox
 GuiService.ErrorMessageChanged:Connect(function()
     if autoRejoinActive then
         executeRejoin()
     end
 end)
 
--- Загрузка конфигурации
+-- Загрузка конфига
 local function loadConfig()
     if isfile and readfile and isfile(CONFIG_FILE) then
         pcall(function()
@@ -768,15 +773,28 @@ local function loadConfig()
                     end
                 end
 
-                -- Авто-старт при подтвержденном флаге
+                -- Ожидание мира и автоматический старт
                 if data.autoStart then
                     autoStartOnJoin = true
+                    sendTelegramMessage("🔔 <b>Скрипт запущен из Autoexec! Ожидаю загрузку персонажа...</b>")
                     task.spawn(function()
-                        local hrp = getCurrentHRP()
+                        local char = player.Character or player.CharacterAdded:Wait()
+                        local hrp = char:WaitForChild("HumanoidRootPart", 15)
                         while not hrp do
                             task.wait(0.5)
-                            hrp = getCurrentHRP()
+                            char = player.Character
+                            if char then hrp = char:FindFirstChild("HumanoidRootPart") end
                         end
+                        
+                        -- Ожидание появления золота в памяти
+                        local gObj = getGoldObject()
+                        local t = 0
+                        while not gObj and t < 15 do
+                            task.wait(0.5)
+                            t = t + 0.5
+                            gObj = getGoldObject()
+                        end
+
                         task.wait(2)
                         if not farming then
                             startFarming()
