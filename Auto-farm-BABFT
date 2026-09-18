@@ -16,6 +16,7 @@ local HttpService = game:GetService("HttpService")
 local VirtualUser = game:GetService("VirtualUser")
 
 local farming = false
+local isRejoining = false
 local farmThread = nil
 local timerThread = nil
 local tgPollingThread = nil
@@ -672,7 +673,7 @@ creditsLabel.Font = Enum.Font.GothamBold
 creditsLabel.TextSize = 11
 creditsLabel.Parent = scrollFrame
 
--- Сохранение конфигурации
+-- Сохранение конфига
 saveConfig = function(customAutoStart)
     tgToken = tgTokenInputBox.Text
     tgChatId = tgChatIdInputBox.Text
@@ -704,8 +705,11 @@ saveConfig = function(customAutoStart)
     end
 end
 
--- Перезаход с автоматической подгрузкой через queue_on_teleport и GitHub
+-- Перезаход с защитой от спама
 executeRejoin = function()
+    if isRejoining then return end
+    isRejoining = true
+
     sendTelegramMessage("🔄 <b>Перезахожу на сервер... Фарм продолжится автоматически!</b>")
     saveConfig(true)
 
@@ -721,7 +725,7 @@ executeRejoin = function()
         end)
     end
 
-    task.wait(0.8)
+    task.wait(1)
     pcall(function()
         TeleportService:Teleport(game.PlaceId, player)
     end)
@@ -1229,11 +1233,36 @@ toggleButton.MouseButton1Click:Connect(function()
     end
 end)
 
+-- Очистка очереди Telegram при старте скрипта (устраняет спам старых команд)
+local function syncTelegramOffset()
+    if httpRequest and tgToken ~= "" then
+        pcall(function()
+            local res = httpRequest({
+                Url = "https://api.telegram.org/bot" .. tgToken .. "/getUpdates?offset=-1",
+                Method = "GET"
+            })
+            if res and res.Body then
+                local data = HttpService:JSONDecode(res.Body)
+                if data and data.ok and data.result and #data.result > 0 then
+                    lastUpdateId = data.result[#data.result].update_id
+                    httpRequest({
+                        Url = "https://api.telegram.org/bot" .. tgToken .. "/getUpdates?offset=" .. tostring(lastUpdateId + 1) .. "&limit=1",
+                        Method = "GET"
+                    })
+                end
+            end
+        end)
+    end
+end
+
 -- Фоновый опрос команд из Telegram
 tgPollingThread = task.spawn(function()
+    task.wait(2)
+    syncTelegramOffset()
+
     while true do
         task.wait(3)
-        if httpRequest and tgToken ~= "" and tgChatId ~= "" then
+        if httpRequest and tgToken ~= "" and tgChatId ~= "" and not isRejoining then
             pcall(function()
                 local pollUrl = "https://api.telegram.org/bot" .. tgToken .. "/getUpdates?offset=" .. tostring(lastUpdateId + 1) .. "&limit=5"
                 local res = httpRequest({
@@ -1256,6 +1285,15 @@ tgPollingThread = task.spawn(function()
                                         sendTelegramMessage("🛑 <b>Фарм остановлен дистанционно!</b>")
                                     else
                                         sendTelegramMessage("⚠️ Фарм уже выключен.")
+                                    end
+                                elseif cmd == "/kill" or cmd == "/shutdown" then
+                                    stopFarming()
+                                    autoStartOnJoin = false
+                                    autoRejoinActive = false
+                                    saveConfig(false)
+                                    sendTelegramMessage("💀 <b>Скрипт полностью остановлен и деактивирован!</b>\nАвто-старт и авто-перезаход отключены.")
+                                    if screenGui and screenGui.Parent then
+                                        screenGui:Destroy()
                                     end
                                 elseif cmd == "/start" then
                                     if not farming then
