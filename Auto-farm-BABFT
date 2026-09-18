@@ -21,20 +21,24 @@ local buyAmount = 1
 local targetItemRealName = ""
 local targetItemPrice = 0
 local autoRejoinActive = true
+local autoStartOnJoin = false
 
 -- Telegram Bot параметры
 local tgToken = ""
 local tgChatId = ""
 local lastUpdateId = 0
 
--- Статистика
+-- Статистика (дельта-трекер)
 local startGold = 0
+local previousGold = 0
+local totalEarned = 0
 local startTime = 0
 local goldValObject = nil
 local CONFIG_FILE = "babft_farm_config.json"
 
--- HTTP-функция эксплоита
+-- HTTP-функции и функции телепорта эксплоита
 local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+local queue_on_teleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
 
 -- База цен BABFT (ToyBlock = 250 Gold)
 local KNOWN_ITEMS = {
@@ -136,23 +140,14 @@ local STAGE_COORDINATES = {
 local CHEST_POSITION = Vector3.new(-55, -356, 9489)
 local SPAWN_Z_MAX = 1200
 
--- Анти-АФК
+-- Защита от AFK
 player.Idled:Connect(function()
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new(0, 0))
 end)
 
--- Авто-перезаход
-GuiService.ErrorMessageChanged:Connect(function()
-    if autoRejoinActive then
-        task.wait(1)
-        if #Players:GetPlayers() <= 1 then
-            TeleportService:Teleport(game.PlaceId, player)
-        else
-            TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, player)
-        end
-    end
-end)
+-- Объявление функций
+local startFarming, stopFarming, saveConfig, executeRejoin
 
 -- Отключение урона
 local function disableHazards()
@@ -198,7 +193,6 @@ local function getCurrentGold()
     return obj and (tonumber(obj.Value) or 0) or 0
 end
 
--- Отправка сообщений через Telegram Bot API
 local function sendTelegramMessage(text)
     if not httpRequest or tgToken == "" or tgChatId == "" then return end
     pcall(function()
@@ -588,7 +582,7 @@ itemStatusLabel.Font = Enum.Font.Gotham
 itemStatusLabel.TextSize = 10
 itemStatusLabel.Parent = scrollFrame
 
--- Telegram Bot Token Input
+-- Telegram Bot Inputs
 local tgTokenInputBox = Instance.new("TextBox")
 tgTokenInputBox.Size = UDim2.new(1, -24, 0, 20)
 tgTokenInputBox.Position = UDim2.new(0, 12, 0, 183)
@@ -607,7 +601,6 @@ local tgTokenCorner = Instance.new("UICorner")
 tgTokenCorner.CornerRadius = UDim.new(0, 5)
 tgTokenCorner.Parent = tgTokenInputBox
 
--- Telegram Chat ID Input
 local tgChatIdInputBox = Instance.new("TextBox")
 tgChatIdInputBox.Size = UDim2.new(1, -24, 0, 20)
 tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 206)
@@ -672,14 +665,19 @@ creditsLabel.Font = Enum.Font.GothamBold
 creditsLabel.TextSize = 11
 creditsLabel.Parent = scrollFrame
 
--- Сохранение и загрузка настроек
-local function saveConfig()
+-- Функция сохранения конфига с поддержкой autoStart
+saveConfig = function(customAutoStart)
     tgToken = tgTokenInputBox.Text
     tgChatId = tgChatIdInputBox.Text
     local valDelay = tonumber(delayBox.Text)
     if valDelay and valDelay > 0 then chestDelay = valDelay end
     local valAmt = tonumber(amountBox.Text)
     if valAmt and valAmt > 0 then buyAmount = math.floor(valAmt) end
+
+    local shouldAutoStart = autoStartOnJoin
+    if customAutoStart ~= nil then
+        shouldAutoStart = customAutoStart
+    end
 
     local data = {
         farmMode = farmMode,
@@ -688,7 +686,8 @@ local function saveConfig()
         buyAmount = buyAmount,
         targetItem = itemInputBox.Text,
         tgToken = tgToken,
-        tgChatId = tgChatId
+        tgChatId = tgChatId,
+        autoStart = shouldAutoStart
     }
 
     if writefile then
@@ -698,6 +697,38 @@ local function saveConfig()
     end
 end
 
+-- Функция безопасного перезахода с авто-стартом
+executeRejoin = function()
+    sendTelegramMessage("🔄 <b>Перезахожу на сервер... Фарм продолжится автоматически!</b>")
+    saveConfig(true)
+
+    if queue_on_teleport then
+        pcall(function()
+            queue_on_teleport([[
+                repeat task.wait() until game:IsLoaded()
+                if isfile and isfile("babft_farm.lua") then
+                    loadstring(readfile("babft_farm.lua"))()
+                end
+            ]])
+        end)
+    end
+
+    task.wait(0.5)
+    if #Players:GetPlayers() <= 1 then
+        TeleportService:Teleport(game.PlaceId, player)
+    else
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, player)
+    end
+end
+
+-- Перезаход при системном вылете Roblox
+GuiService.ErrorMessageChanged:Connect(function()
+    if autoRejoinActive then
+        executeRejoin()
+    end
+end)
+
+-- Загрузка конфигурации
 local function loadConfig()
     if isfile and readfile and isfile(CONFIG_FILE) then
         pcall(function()
@@ -751,6 +782,24 @@ local function loadConfig()
                         autoBuyToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
                         autoBuyToggleBtn.Text = "Авто-закупка: ВКЛ"
                     end
+                end
+
+                -- Автоматический старт, если был перезаход
+                if data.autoStart then
+                    autoStartOnJoin = true
+                    task.spawn(function()
+                        repeat task.wait(0.5) until game:IsLoaded()
+                        local hrp = getCurrentHRP()
+                        while not hrp do
+                            task.wait(0.5)
+                            hrp = getCurrentHRP()
+                        end
+                        task.wait(1.5)
+                        if not farming then
+                            startFarming()
+                            sendTelegramMessage("✅ <b>Успешный перезаход! Фарм автоматически продолжен.</b>")
+                        end
+                    end)
                 end
             end
         end)
@@ -854,10 +903,15 @@ end)
 local function updateGoldStats()
     local current = getCurrentGold()
     if farming then
-        local earned = math.max(0, current - startGold)
+        local delta = current - previousGold
+        if delta > 0 then
+            totalEarned = totalEarned + delta
+        end
+        previousGold = current
         startAndCurrentGoldLabel.Text = "Старт: " .. tostring(startGold) .. "  |  Сейчас: " .. tostring(current)
-        goldTrackerLabel.Text = "Заработано: +" .. tostring(earned) .. " Gold"
+        goldTrackerLabel.Text = "Заработано: +" .. tostring(totalEarned) .. " Gold"
     else
+        previousGold = current
         startAndCurrentGoldLabel.Text = "Старт: 0  |  Сейчас: " .. tostring(current)
     end
     checkAndAutoBuy()
@@ -869,6 +923,7 @@ task.spawn(function()
         task.wait(1)
         obj = getGoldObject()
     end
+    previousGold = getCurrentGold()
     updateGoldStats()
     obj.Changed:Connect(function()
         updateGoldStats()
@@ -891,6 +946,8 @@ end)
 closeBtn.MouseButton1Click:Connect(function()
     farming = false
     autoBuyActive = false
+    autoStartOnJoin = false
+    saveConfig(false)
     if farmThread then task.cancel(farmThread) end
     if timerThread then task.cancel(timerThread) end
     if tgPollingThread then task.cancel(tgPollingThread) end
@@ -934,8 +991,6 @@ local function setNoclip(character)
         end
     end
 end
-
-local startFarming, stopFarming
 
 local function startFarmingLoop()
     farmThread = task.spawn(function()
@@ -1106,7 +1161,12 @@ end
 startFarming = function()
     if farming then return end
     farming = true
+    autoStartOnJoin = true
+    saveConfig(true)
+
     startGold = getCurrentGold()
+    previousGold = startGold
+    totalEarned = 0
     updateGoldStats()
     disableHazards()
 
@@ -1130,6 +1190,9 @@ end
 stopFarming = function()
     if not farming then return end
     farming = false
+    autoStartOnJoin = false
+    saveConfig(false)
+
     toggleButton.Text = "START AUTO FARM"
     toggleButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
     statusLabel.Text = "Статус: Остановлен"
@@ -1152,7 +1215,7 @@ toggleButton.MouseButton1Click:Connect(function()
     end
 end)
 
--- Фоновый опрос команд из Telegram бота
+-- Фоновый опрос команд из Telegram
 tgPollingThread = task.spawn(function()
     while true do
         task.wait(3)
@@ -1189,7 +1252,6 @@ tgPollingThread = task.spawn(function()
                                     end
                                 elseif cmd == "/status" then
                                     local currentG = getCurrentGold()
-                                    local earned = math.max(0, currentG - startGold)
                                     local elapsed = farming and (os.time() - startTime) or 0
                                     local report = string.format(
                                         "📊 <b>Статистика BABFT:</b>\n\n" ..
@@ -1202,12 +1264,11 @@ tgPollingThread = task.spawn(function()
                                         farmMode == "Chest" and "Сундук" or "Золото",
                                         formatTime(elapsed),
                                         currentG,
-                                        earned
+                                        totalEarned
                                     )
                                     sendTelegramMessage(report)
                                 elseif cmd == "/rejoin" then
-                                    sendTelegramMessage("🔄 <b>Перезахожу на сервер...</b>")
-                                    TeleportService:Teleport(game.PlaceId, player)
+                                    executeRejoin()
                                 end
                             end
                         end
@@ -1218,5 +1279,5 @@ tgPollingThread = task.spawn(function()
     end
 end)
 
--- Загрузка настроек при запуске
+-- Загрузка настроек при старте
 loadConfig()
