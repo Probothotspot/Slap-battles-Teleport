@@ -2,27 +2,41 @@ local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TeleportService = game:GetService("TeleportService")
+local GuiService = game:GetService("GuiService")
+local HttpService = game:GetService("HttpService")
 local VirtualUser = game:GetService("VirtualUser")
 
 local player = Players.LocalPlayer
 local farming = false
 local farmThread = nil
 local timerThread = nil
-local farmMode = "Chest" -- "Chest" (сундук) или "Gold" (сброс на 10)
-local chestDelay = 2     -- Задержка на сундуке по умолчанию
+local tgPollingThread = nil
 
--- Переменные для статистики
-local startGold = 0
-local startTime = 0
-local goldValObject = nil
-
--- Переменные авто-закупки
+-- Настройки по умолчанию
+local farmMode = "Chest"
+local chestDelay = 2
 local autoBuyActive = false
 local buyAmount = 1
 local targetItemRealName = ""
 local targetItemPrice = 0
+local autoRejoinActive = true
 
--- Полная база цен и названий предметов по видео
+-- Telegram Bot параметры
+local tgToken = ""
+local tgChatId = ""
+local lastUpdateId = 0
+
+-- Статистика
+local startGold = 0
+local startTime = 0
+local goldValObject = nil
+local CONFIG_FILE = "babft_farm_config.json"
+
+-- HTTP-функция эксплоита
+local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+
+-- База цен BABFT (ToyBlock = 250 Gold)
 local KNOWN_ITEMS = {
     -- Сундуки
     ["common"] = {name = "Common Chest", price = 5},
@@ -42,14 +56,13 @@ local KNOWN_ITEMS = {
     ["paint"] = {name = "PaintTool", price = 1500},
     ["кисть"] = {name = "PaintTool", price = 1500},
     ["binding"] = {name = "BindingTool", price = 2000},
-    ["wrench"] = {name = "BindingTool", price = 2000},
     ["ключ"] = {name = "BindingTool", price = 2000},
     ["property"] = {name = "PropertyTool", price = 2500},
     ["отвертка"] = {name = "PropertyTool", price = 2500},
     ["scaling"] = {name = "ScalingTool", price = 5000},
     ["рулетка"] = {name = "ScalingTool", price = 5000},
 
-    -- Блоки постройки
+    -- Блоки
     ["лего"] = {name = "ToyBlock", price = 250},
     ["lego"] = {name = "ToyBlock", price = 250},
     ["toy"] = {name = "ToyBlock", price = 250},
@@ -58,107 +71,56 @@ local KNOWN_ITEMS = {
 
     ["дерево"] = {name = "WoodBlock", price = 250},
     ["wood"] = {name = "WoodBlock", price = 250},
-    ["woodblock"] = {name = "WoodBlock", price = 250},
-
     ["стекло"] = {name = "GlassBlock", price = 200},
     ["glass"] = {name = "GlassBlock", price = 200},
-    ["glassblock"] = {name = "GlassBlock", price = 200},
-
     ["ткань"] = {name = "FabricBlock", price = 300},
     ["fabric"] = {name = "FabricBlock", price = 300},
-    ["fabricblock"] = {name = "FabricBlock", price = 300},
-
     ["пластик"] = {name = "PlasticBlock", price = 300},
     ["plastic"] = {name = "PlasticBlock", price = 300},
-    ["plasticblock"] = {name = "PlasticBlock", price = 300},
-
     ["ржавый металл"] = {name = "RustedMetalBlock", price = 300},
-    ["rusted metal"] = {name = "RustedMetalBlock", price = 300},
     ["bouncy"] = {name = "BouncyBlock", price = 300},
     ["прыгучий"] = {name = "BouncyBlock", price = 300},
-
     ["металл"] = {name = "MetalBlock", price = 325},
     ["metal"] = {name = "MetalBlock", price = 325},
-    ["metalblock"] = {name = "MetalBlock", price = 325},
-
     ["уголь"] = {name = "CoalBlock", price = 375},
-    ["coal"] = {name = "CoalBlock", price = 375},
     ["кирпич"] = {name = "BrickBlock", price = 375},
-    ["brick"] = {name = "BrickBlock", price = 375},
     ["мрамор"] = {name = "MarbleBlock", price = 375},
-    ["marble"] = {name = "MarbleBlock", price = 375},
     ["обсидиан"] = {name = "ObsidianBlock", price = 400},
-    ["obsidian"] = {name = "ObsidianBlock", price = 400},
     ["титан"] = {name = "TitaniumBlock", price = 425},
-    ["titanium"] = {name = "TitaniumBlock", price = 425},
 
-    -- Специальные предметы и механизмы
+    -- Механизмы
     ["знак"] = {name = "SignBlock", price = 45},
-    ["sign"] = {name = "SignBlock", price = 45},
     ["мотор"] = {name = "BoatMotor", price = 450},
-    ["motor"] = {name = "BoatMotor", price = 450},
     ["колеса"] = {name = "CarWheels", price = 750},
-    ["wheel"] = {name = "CarWheels", price = 750},
-    ["wheels"] = {name = "CarWheels", price = 750},
     ["парашют"] = {name = "Parachute", price = 45},
-    ["parachute"] = {name = "Parachute", price = 45},
     ["гарпун"] = {name = "Harpoon", price = 200},
-    ["harpoon"] = {name = "Harpoon", price = 200},
     ["джетпак"] = {name = "Jetpack", price = 350},
-    ["jetpack"] = {name = "Jetpack", price = 350},
     ["турбина"] = {name = "JetTurbine", price = 4000},
     ["турбины"] = {name = "JetTurbine", price = 4000},
-    ["turbine"] = {name = "JetTurbine", price = 4000},
     ["переключатель"] = {name = "Switch", price = 50},
-    ["рычаг"] = {name = "Switch", price = 50},
-    ["switch"] = {name = "Switch", price = 50},
     ["лампа"] = {name = "LightBulb", price = 60},
-    ["лампочка"] = {name = "LightBulb", price = 60},
-    ["light"] = {name = "LightBulb", price = 60},
     ["камера"] = {name = "Camera", price = 85},
-    ["camera"] = {name = "Camera", price = 85},
     ["дверь"] = {name = "LockedDoor", price = 30},
-    ["door"] = {name = "LockedDoor", price = 30},
     ["шарнир"] = {name = "Hinge", price = 45},
-    ["hinge"] = {name = "Hinge", price = 45},
     ["поршень"] = {name = "Piston", price = 65},
-    ["piston"] = {name = "Piston", price = 65},
     ["магнит"] = {name = "Magnet", price = 125},
-    ["magnet"] = {name = "Magnet", price = 125},
     ["сенсор"] = {name = "Sensor", price = 25},
-    ["датчик"] = {name = "Sensor", price = 25},
-    ["sensor"] = {name = "Sensor", price = 25},
     ["пульт"] = {name = "RemoteController", price = 150},
-    ["remote"] = {name = "RemoteController", price = 150},
     ["руль"] = {name = "SteeringWheel", price = 150},
-    ["steering"] = {name = "SteeringWheel", price = 150},
     ["веревка"] = {name = "Rope", price = 60},
-    ["rope"] = {name = "Rope", price = 60},
     ["прут"] = {name = "Bar", price = 60},
-    ["bar"] = {name = "Bar", price = 60},
     ["подвеска"] = {name = "Suspension", price = 60},
-    ["suspension"] = {name = "Suspension", price = 60},
     ["шипы"] = {name = "Spikes", price = 25},
-    ["spikes"] = {name = "Spikes", price = 25},
-    ["пулемет"] = {name = "Minigun", price = 150},
     ["миниган"] = {name = "Minigun", price = 150},
-    ["minigun"] = {name = "Minigun", price = 150},
     ["пушка"] = {name = "Cannon", price = 200},
-    ["cannon"] = {name = "Cannon", price = 200},
-    ["ручная пушка"] = {name = "HandCannon", price = 50},
     ["мечи"] = {name = "MountedSwords", price = 50},
-    ["swords"] = {name = "MountedSwords", price = 50},
     ["динамит"] = {name = "Dynamite", price = 20},
-    ["dynamite"] = {name = "Dynamite", price = 20},
     ["салют"] = {name = "Fireworks", price = 25},
-    ["фейерверк"] = {name = "Fireworks", price = 25},
     ["люк"] = {name = "WoodenTrapDoor", price = 15},
-    ["trapdoor"] = {name = "WoodenTrapDoor", price = 15},
-    ["ступеньки"] = {name = "Step", price = 50},
-    ["step"] = {name = "Step", price = 50}
+    ["ступеньки"] = {name = "Step", price = 50}
 }
 
--- Координаты стадий
+-- Координаты зон
 local STAGE_COORDINATES = {
     Vector3.new(-52, 70, 1369),
     Vector3.new(-52, 70, 2139),
@@ -171,7 +133,6 @@ local STAGE_COORDINATES = {
     Vector3.new(-52, 70, 7529),
     Vector3.new(-52, 70, 8299),
 }
-
 local CHEST_POSITION = Vector3.new(-55, -356, 9489)
 local SPAWN_Z_MAX = 1200
 
@@ -181,6 +142,35 @@ player.Idled:Connect(function()
     VirtualUser:ClickButton2(Vector2.new(0, 0))
 end)
 
+-- Авто-перезаход
+GuiService.ErrorMessageChanged:Connect(function()
+    if autoRejoinActive then
+        task.wait(1)
+        if #Players:GetPlayers() <= 1 then
+            TeleportService:Teleport(game.PlaceId, player)
+        else
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, player)
+        end
+    end
+end)
+
+-- Отключение урона
+local function disableHazards()
+    pcall(function()
+        local stages = Workspace:FindFirstChild("BoatStages")
+        if stages then
+            for _, v in ipairs(stages:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    local name = v.Name:lower()
+                    if name:find("water") or name:find("lava") or name:find("kill") or name:find("damage") then
+                        v.CanTouch = false
+                    end
+                end
+            end
+        end
+    end)
+end
+
 local function formatTime(seconds)
     local hrs = math.floor(seconds / 3600)
     local mins = math.floor((seconds % 3600) / 60)
@@ -189,9 +179,7 @@ local function formatTime(seconds)
 end
 
 local function getGoldObject()
-    if goldValObject and goldValObject.Parent then
-        return goldValObject
-    end
+    if goldValObject and goldValObject.Parent then return goldValObject end
     local data = player:FindFirstChild("Data")
     if data and data:FindFirstChild("Gold") then
         goldValObject = data.Gold
@@ -207,18 +195,30 @@ end
 
 local function getCurrentGold()
     local obj = getGoldObject()
-    if obj then
-        return tonumber(obj.Value) or 0
-    end
-    return 0
+    return obj and (tonumber(obj.Value) or 0) or 0
 end
 
--- Динамический поиск предмета и извлечение реальной цены
+-- Отправка сообщений через Telegram Bot API
+local function sendTelegramMessage(text)
+    if not httpRequest or tgToken == "" or tgChatId == "" then return end
+    pcall(function()
+        httpRequest({
+            Url = "https://api.telegram.org/bot" .. tgToken .. "/sendMessage",
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode({
+                chat_id = tgChatId,
+                text = text,
+                parse_mode = "HTML"
+            })
+        })
+    end)
+end
+
 local function searchItemInGame(query)
     query = string.lower(string.gsub(query, "%s+", ""))
     if query == "" then return nil, 0 end
 
-    -- 1. Сверка с базой цен по видео
     for key, data in pairs(KNOWN_ITEMS) do
         local cleanKey = string.lower(string.gsub(key, "%s+", ""))
         if cleanKey == query or string.find(cleanKey, query) or string.find(query, cleanKey) then
@@ -226,25 +226,17 @@ local function searchItemInGame(query)
         end
     end
 
-    -- 2. Динамический поиск по Shop GUI с парсингом цены
     local pGui = player:FindFirstChild("PlayerGui")
-    if pGui then
-        local shop = pGui:FindFirstChild("Shop")
-        if shop then
-            for _, frame in ipairs(shop:GetDescendants()) do
-                if frame:IsA("TextLabel") or frame:IsA("TextButton") then
-                    local cleanText = string.lower(string.gsub(frame.Text, "%s+", ""))
-                    if string.find(cleanText, query) then
-                        -- Поиск ценника рядом в том же контейнере
-                        local parent = frame.Parent
-                        if parent then
-                            for _, child in ipairs(parent:GetDescendants()) do
-                                if child:IsA("TextLabel") and string.find(string.lower(child.Text), "gold") then
-                                    local parsedPrice = tonumber(string.match(child.Text, "(%d+)"))
-                                    if parsedPrice and parsedPrice > 0 then
-                                        return frame.Text, parsedPrice
-                                    end
-                                end
+    if pGui and pGui:FindFirstChild("Shop") then
+        for _, frame in ipairs(pGui.Shop:GetDescendants()) do
+            if frame:IsA("TextLabel") or frame:IsA("TextButton") then
+                if string.find(string.lower(string.gsub(frame.Text, "%s+", "")), query) then
+                    local parent = frame.Parent
+                    if parent then
+                        for _, child in ipairs(parent:GetDescendants()) do
+                            if child:IsA("TextLabel") and string.find(string.lower(child.Text), "gold") then
+                                local parsed = tonumber(string.match(child.Text, "(%d+)"))
+                                if parsed and parsed > 0 then return frame.Text, parsed end
                             end
                         end
                     end
@@ -252,24 +244,13 @@ local function searchItemInGame(query)
             end
         end
     end
-
-    -- 3. Проверка ReplicatedStorage
-    for _, item in ipairs(ReplicatedStorage:GetDescendants()) do
-        local cleanName = string.lower(string.gsub(item.Name, "%s+", ""))
-        if cleanName == query then
-            return item.Name, 0
-        end
-    end
-
     return nil, 0
 end
 
 local function checkAndAutoBuy()
     if not autoBuyActive or targetItemRealName == "" or targetItemPrice <= 0 then return end
     local totalCost = targetItemPrice * buyAmount
-    local currentGold = getCurrentGold()
-
-    if currentGold >= totalCost then
+    if getCurrentGold() >= totalCost then
         local buyRemote = Workspace:FindFirstChild("ItemBoughtFromShop")
         if buyRemote then
             pcall(function()
@@ -301,9 +282,7 @@ local function setSpin(hrp, enabled)
             spin.Parent = hrp
         end
     else
-        if spin then
-            spin:Destroy()
-        end
+        if spin then spin:Destroy() end
     end
 end
 
@@ -322,7 +301,6 @@ end
 local function placeOnPlatform(targetPos, hrp)
     platform.Position = targetPos - Vector3.new(0, 3.1, 0)
     platform.Parent = Workspace
-    
     hrp.AssemblyLinearVelocity = Vector3.zero
     hrp.CFrame = CFrame.new(targetPos)
     setSpin(hrp, true)
@@ -337,8 +315,8 @@ local success, parent = pcall(function() return game:GetService("CoreGui") end)
 screenGui.Parent = (success and parent) or player:WaitForChild("PlayerGui")
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 260, 0, 315)
-mainFrame.Position = UDim2.new(0.5, -130, 0.3, 0)
+mainFrame.Size = UDim2.new(0, 260, 0, 320)
+mainFrame.Position = UDim2.new(0.5, -130, 0.28, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(20, 16, 28)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -371,7 +349,7 @@ local rotConn = RunService.RenderStepped:Connect(function()
 end)
 
 local topBar = Instance.new("Frame")
-topBar.Size = UDim2.new(1, 0, 0, 36)
+topBar.Size = UDim2.new(1, 0, 0, 34)
 topBar.BackgroundTransparency = 1
 topBar.Parent = mainFrame
 
@@ -387,8 +365,8 @@ titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = topBar
 
 local minBtn = Instance.new("TextButton")
-minBtn.Size = UDim2.new(0, 24, 0, 24)
-minBtn.Position = UDim2.new(1, -56, 0, 6)
+minBtn.Size = UDim2.new(0, 22, 0, 22)
+minBtn.Position = UDim2.new(1, -52, 0, 6)
 minBtn.BackgroundColor3 = Color3.fromRGB(35, 25, 50)
 minBtn.Text = "-"
 minBtn.TextColor3 = Color3.fromRGB(220, 200, 255)
@@ -402,8 +380,8 @@ minCorner.CornerRadius = UDim.new(0, 6)
 minCorner.Parent = minBtn
 
 local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 24, 0, 24)
-closeBtn.Position = UDim2.new(1, -28, 0, 6)
+closeBtn.Size = UDim2.new(0, 22, 0, 22)
+closeBtn.Position = UDim2.new(1, -26, 0, 6)
 closeBtn.BackgroundColor3 = Color3.fromRGB(50, 20, 35)
 closeBtn.Text = "×"
 closeBtn.TextColor3 = Color3.fromRGB(255, 130, 150)
@@ -416,17 +394,20 @@ local closeCorner = Instance.new("UICorner")
 closeCorner.CornerRadius = UDim.new(0, 6)
 closeCorner.Parent = closeBtn
 
-local contentFrame = Instance.new("Frame")
-contentFrame.Size = UDim2.new(1, 0, 1, -36)
-contentFrame.Position = UDim2.new(0, 0, 0, 36)
-contentFrame.BackgroundTransparency = 1
-contentFrame.Parent = mainFrame
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Size = UDim2.new(1, 0, 1, -34)
+scrollFrame.Position = UDim2.new(0, 0, 0, 34)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.ScrollBarThickness = 3
+scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(138, 43, 226)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 420)
+scrollFrame.Parent = mainFrame
 
 local modeContainer = Instance.new("Frame")
 modeContainer.Size = UDim2.new(1, -24, 0, 24)
-modeContainer.Position = UDim2.new(0, 12, 0, 2)
+modeContainer.Position = UDim2.new(0, 12, 0, 4)
 modeContainer.BackgroundTransparency = 1
-modeContainer.Parent = contentFrame
+modeContainer.Parent = scrollFrame
 
 local chestModeBtn = Instance.new("TextButton")
 chestModeBtn.Size = UDim2.new(0.5, -4, 1, 0)
@@ -458,27 +439,11 @@ local goldCorner = Instance.new("UICorner")
 goldCorner.CornerRadius = UDim.new(0, 6)
 goldCorner.Parent = goldModeBtn
 
-chestModeBtn.MouseButton1Click:Connect(function()
-    farmMode = "Chest"
-    chestModeBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-    chestModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    goldModeBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
-    goldModeBtn.TextColor3 = Color3.fromRGB(160, 145, 185)
-end)
-
-goldModeBtn.MouseButton1Click:Connect(function()
-    farmMode = "Gold"
-    goldModeBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-    goldModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    chestModeBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
-    chestModeBtn.TextColor3 = Color3.fromRGB(160, 145, 185)
-end)
-
 local delayContainer = Instance.new("Frame")
 delayContainer.Size = UDim2.new(1, -24, 0, 18)
-delayContainer.Position = UDim2.new(0, 12, 0, 28)
+delayContainer.Position = UDim2.new(0, 12, 0, 32)
 delayContainer.BackgroundTransparency = 1
-delayContainer.Parent = contentFrame
+delayContainer.Parent = scrollFrame
 
 local delayLabel = Instance.new("TextLabel")
 delayLabel.Size = UDim2.new(1, -50, 1, 0)
@@ -507,60 +472,52 @@ local delayBoxCorner = Instance.new("UICorner")
 delayBoxCorner.CornerRadius = UDim.new(0, 5)
 delayBoxCorner.Parent = delayBox
 
-delayBox.FocusLost:Connect(function()
-    local val = tonumber(delayBox.Text)
-    if val and val > 0 then
-        chestDelay = val
-    else
-        delayBox.Text = tostring(chestDelay)
-    end
-end)
-
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Size = UDim2.new(1, -24, 0, 14)
-statusLabel.Position = UDim2.new(0, 12, 0, 48)
+statusLabel.Position = UDim2.new(0, 12, 0, 53)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Text = "Статус: Оффлайн"
 statusLabel.TextColor3 = Color3.fromRGB(180, 165, 205)
 statusLabel.Font = Enum.Font.Gotham
 statusLabel.TextSize = 10
-statusLabel.Parent = contentFrame
+statusLabel.Parent = scrollFrame
 
 local startAndCurrentGoldLabel = Instance.new("TextLabel")
 startAndCurrentGoldLabel.Size = UDim2.new(1, -24, 0, 14)
-startAndCurrentGoldLabel.Position = UDim2.new(0, 12, 0, 63)
+startAndCurrentGoldLabel.Position = UDim2.new(0, 12, 0, 68)
 startAndCurrentGoldLabel.BackgroundTransparency = 1
 startAndCurrentGoldLabel.Text = "Старт: 0  |  Сейчас: " .. tostring(getCurrentGold())
 startAndCurrentGoldLabel.TextColor3 = Color3.fromRGB(200, 190, 225)
 startAndCurrentGoldLabel.Font = Enum.Font.Gotham
 startAndCurrentGoldLabel.TextSize = 10
-startAndCurrentGoldLabel.Parent = contentFrame
+startAndCurrentGoldLabel.Parent = scrollFrame
 
 local goldTrackerLabel = Instance.new("TextLabel")
 goldTrackerLabel.Size = UDim2.new(1, -24, 0, 14)
-goldTrackerLabel.Position = UDim2.new(0, 12, 0, 78)
+goldTrackerLabel.Position = UDim2.new(0, 12, 0, 83)
 goldTrackerLabel.BackgroundTransparency = 1
 goldTrackerLabel.Text = "Заработано: +0 Gold"
 goldTrackerLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
 goldTrackerLabel.Font = Enum.Font.GothamBold
 goldTrackerLabel.TextSize = 10
-goldTrackerLabel.Parent = contentFrame
+goldTrackerLabel.Parent = scrollFrame
 
 local timeTrackerLabel = Instance.new("TextLabel")
 timeTrackerLabel.Size = UDim2.new(1, -24, 0, 14)
-timeTrackerLabel.Position = UDim2.new(0, 12, 0, 93)
+timeTrackerLabel.Position = UDim2.new(0, 12, 0, 98)
 timeTrackerLabel.BackgroundTransparency = 1
 timeTrackerLabel.Text = "Время фарма: 00:00:00"
 timeTrackerLabel.TextColor3 = Color3.fromRGB(165, 195, 255)
 timeTrackerLabel.Font = Enum.Font.GothamBold
 timeTrackerLabel.TextSize = 10
-timeTrackerLabel.Parent = contentFrame
+timeTrackerLabel.Parent = scrollFrame
 
+-- Авто-закупка
 local autoBuyRow = Instance.new("Frame")
 autoBuyRow.Size = UDim2.new(1, -24, 0, 22)
-autoBuyRow.Position = UDim2.new(0, 12, 0, 110)
+autoBuyRow.Position = UDim2.new(0, 12, 0, 116)
 autoBuyRow.BackgroundTransparency = 1
-autoBuyRow.Parent = contentFrame
+autoBuyRow.Parent = scrollFrame
 
 local autoBuyToggleBtn = Instance.new("TextButton")
 autoBuyToggleBtn.Size = UDim2.new(0.6, -4, 1, 0)
@@ -603,13 +560,245 @@ local abAmtCorner = Instance.new("UICorner")
 abAmtCorner.CornerRadius = UDim.new(0, 5)
 abAmtCorner.Parent = amountBox
 
+local itemInputBox = Instance.new("TextBox")
+itemInputBox.Size = UDim2.new(1, -24, 0, 20)
+itemInputBox.Position = UDim2.new(0, 12, 0, 142)
+itemInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
+itemInputBox.PlaceholderText = "Введите блок (напр. Лего)..."
+itemInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
+itemInputBox.Text = ""
+itemInputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+itemInputBox.Font = Enum.Font.Gotham
+itemInputBox.TextSize = 10
+itemInputBox.BorderSizePixel = 0
+itemInputBox.ClearTextOnFocus = false
+itemInputBox.Parent = scrollFrame
+
+local itemInputCorner = Instance.new("UICorner")
+itemInputCorner.CornerRadius = UDim.new(0, 5)
+itemInputCorner.Parent = itemInputBox
+
+local itemStatusLabel = Instance.new("TextLabel")
+itemStatusLabel.Size = UDim2.new(1, -24, 0, 15)
+itemStatusLabel.Position = UDim2.new(0, 12, 0, 164)
+itemStatusLabel.BackgroundTransparency = 1
+itemStatusLabel.Text = "Введите название для поиска"
+itemStatusLabel.TextColor3 = Color3.fromRGB(140, 130, 160)
+itemStatusLabel.Font = Enum.Font.Gotham
+itemStatusLabel.TextSize = 10
+itemStatusLabel.Parent = scrollFrame
+
+-- Telegram Bot Token Input
+local tgTokenInputBox = Instance.new("TextBox")
+tgTokenInputBox.Size = UDim2.new(1, -24, 0, 20)
+tgTokenInputBox.Position = UDim2.new(0, 12, 0, 183)
+tgTokenInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
+tgTokenInputBox.PlaceholderText = "Telegram Bot Token..."
+tgTokenInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
+tgTokenInputBox.Text = ""
+tgTokenInputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+tgTokenInputBox.Font = Enum.Font.Gotham
+tgTokenInputBox.TextSize = 9
+tgTokenInputBox.BorderSizePixel = 0
+tgTokenInputBox.ClearTextOnFocus = false
+tgTokenInputBox.Parent = scrollFrame
+
+local tgTokenCorner = Instance.new("UICorner")
+tgTokenCorner.CornerRadius = UDim.new(0, 5)
+tgTokenCorner.Parent = tgTokenInputBox
+
+-- Telegram Chat ID Input
+local tgChatIdInputBox = Instance.new("TextBox")
+tgChatIdInputBox.Size = UDim2.new(1, -24, 0, 20)
+tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 206)
+tgChatIdInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
+tgChatIdInputBox.PlaceholderText = "Telegram Chat ID (число)..."
+tgChatIdInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
+tgChatIdInputBox.Text = ""
+tgChatIdInputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+tgChatIdInputBox.Font = Enum.Font.Gotham
+tgChatIdInputBox.TextSize = 9
+tgChatIdInputBox.BorderSizePixel = 0
+tgChatIdInputBox.ClearTextOnFocus = false
+tgChatIdInputBox.Parent = scrollFrame
+
+local tgChatCorner = Instance.new("UICorner")
+tgChatCorner.CornerRadius = UDim.new(0, 5)
+tgChatCorner.Parent = tgChatIdInputBox
+
+-- Кнопка сохранения настроек
+local saveBtn = Instance.new("TextButton")
+saveBtn.Size = UDim2.new(1, -24, 0, 24)
+saveBtn.Position = UDim2.new(0, 12, 0, 230)
+saveBtn.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
+saveBtn.Text = "💾 СОХРАНИТЬ НАСТРОЙКИ"
+saveBtn.TextColor3 = Color3.fromRGB(215, 195, 255)
+saveBtn.Font = Enum.Font.GothamBold
+saveBtn.TextSize = 10
+saveBtn.BorderSizePixel = 0
+saveBtn.Parent = scrollFrame
+
+local saveBtnCorner = Instance.new("UICorner")
+saveBtnCorner.CornerRadius = UDim.new(0, 6)
+saveBtnCorner.Parent = saveBtn
+
+local saveBtnStroke = Instance.new("UIStroke")
+saveBtnStroke.Thickness = 1
+saveBtnStroke.Color = Color3.fromRGB(138, 43, 226)
+saveBtnStroke.Parent = saveBtn
+
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(1, -24, 0, 32)
+toggleButton.Position = UDim2.new(0, 12, 0, 258)
+toggleButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+toggleButton.Text = "START AUTO FARM"
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.Font = Enum.Font.GothamBold
+toggleButton.TextSize = 12
+toggleButton.BorderSizePixel = 0
+toggleButton.Parent = scrollFrame
+
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 8)
+btnCorner.Parent = toggleButton
+
+local creditsLabel = Instance.new("TextLabel")
+creditsLabel.Size = UDim2.new(1, 0, 0, 16)
+creditsLabel.Position = UDim2.new(0, 0, 0, 294)
+creditsLabel.BackgroundTransparency = 1
+creditsLabel.Text = "By: Probothotspot"
+creditsLabel.TextColor3 = Color3.fromRGB(175, 150, 220)
+creditsLabel.Font = Enum.Font.GothamBold
+creditsLabel.TextSize = 11
+creditsLabel.Parent = scrollFrame
+
+-- Сохранение и загрузка настроек
+local function saveConfig()
+    tgToken = tgTokenInputBox.Text
+    tgChatId = tgChatIdInputBox.Text
+    local valDelay = tonumber(delayBox.Text)
+    if valDelay and valDelay > 0 then chestDelay = valDelay end
+    local valAmt = tonumber(amountBox.Text)
+    if valAmt and valAmt > 0 then buyAmount = math.floor(valAmt) end
+
+    local data = {
+        farmMode = farmMode,
+        chestDelay = chestDelay,
+        autoBuyActive = autoBuyActive,
+        buyAmount = buyAmount,
+        targetItem = itemInputBox.Text,
+        tgToken = tgToken,
+        tgChatId = tgChatId
+    }
+
+    if writefile then
+        pcall(function()
+            writefile(CONFIG_FILE, HttpService:JSONEncode(data))
+        end)
+    end
+end
+
+local function loadConfig()
+    if isfile and readfile and isfile(CONFIG_FILE) then
+        pcall(function()
+            local content = readfile(CONFIG_FILE)
+            local data = HttpService:JSONDecode(content)
+            if data and type(data) == "table" then
+                if data.farmMode then
+                    farmMode = data.farmMode
+                    if farmMode == "Chest" then
+                        chestModeBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+                        chestModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                        goldModeBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
+                        goldModeBtn.TextColor3 = Color3.fromRGB(160, 145, 185)
+                    else
+                        goldModeBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+                        goldModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                        chestModeBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
+                        chestModeBtn.TextColor3 = Color3.fromRGB(160, 145, 185)
+                    end
+                end
+                if data.chestDelay then
+                    chestDelay = tonumber(data.chestDelay) or 2
+                    delayBox.Text = tostring(chestDelay)
+                end
+                if data.buyAmount then
+                    buyAmount = tonumber(data.buyAmount) or 1
+                    amountBox.Text = tostring(buyAmount)
+                end
+                if data.targetItem then
+                    itemInputBox.Text = data.targetItem
+                    local rName, price = searchItemInGame(data.targetItem)
+                    if rName and price > 0 then
+                        targetItemRealName = rName
+                        targetItemPrice = price
+                        itemStatusLabel.Text = "Блок найден: " .. rName .. " (" .. tostring(price) .. " Gold)"
+                        itemStatusLabel.TextColor3 = Color3.fromRGB(80, 240, 130)
+                    end
+                end
+                if data.tgToken then
+                    tgToken = data.tgToken
+                    tgTokenInputBox.Text = tgToken
+                end
+                if data.tgChatId then
+                    tgChatId = data.tgChatId
+                    tgChatIdInputBox.Text = tgChatId
+                end
+                if data.autoBuyActive then
+                    autoBuyActive = data.autoBuyActive
+                    if autoBuyActive then
+                        autoBuyToggleBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+                        autoBuyToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                        autoBuyToggleBtn.Text = "Авто-закупка: ВКЛ"
+                    end
+                end
+            end
+        end)
+    end
+end
+
+saveBtn.MouseButton1Click:Connect(function()
+    saveConfig()
+    saveBtn.Text = "✔ НАСТРОЙКИ СОХРАНЕНЫ!"
+    saveBtn.BackgroundColor3 = Color3.fromRGB(35, 90, 50)
+    saveBtn.TextColor3 = Color3.fromRGB(120, 255, 150)
+    task.delay(1.5, function()
+        if saveBtn and saveBtn.Parent then
+            saveBtn.Text = "💾 СОХРАНИТЬ НАСТРОЙКИ"
+            saveBtn.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
+            saveBtn.TextColor3 = Color3.fromRGB(215, 195, 255)
+        end
+    end)
+end)
+
+chestModeBtn.MouseButton1Click:Connect(function()
+    farmMode = "Chest"
+    chestModeBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+    chestModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    goldModeBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
+    goldModeBtn.TextColor3 = Color3.fromRGB(160, 145, 185)
+    saveConfig()
+end)
+
+goldModeBtn.MouseButton1Click:Connect(function()
+    farmMode = "Gold"
+    goldModeBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+    goldModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    chestModeBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
+    chestModeBtn.TextColor3 = Color3.fromRGB(160, 145, 185)
+    saveConfig()
+end)
+
+delayBox.FocusLost:Connect(function()
+    local val = tonumber(delayBox.Text)
+    if val and val > 0 then chestDelay = val else delayBox.Text = tostring(chestDelay) end
+    saveConfig()
+end)
+
 amountBox.FocusLost:Connect(function()
     local val = tonumber(amountBox.Text)
-    if val and val > 0 then
-        buyAmount = math.floor(val)
-    else
-        amountBox.Text = tostring(buyAmount)
-    end
+    if val and val > 0 then buyAmount = math.floor(val) else amountBox.Text = tostring(buyAmount) end
+    saveConfig()
 end)
 
 autoBuyToggleBtn.MouseButton1Click:Connect(function()
@@ -624,35 +813,8 @@ autoBuyToggleBtn.MouseButton1Click:Connect(function()
         autoBuyToggleBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
         autoBuyToggleBtn.Text = "Авто-закупка: ВЫКЛ"
     end
+    saveConfig()
 end)
-
-local itemInputBox = Instance.new("TextBox")
-itemInputBox.Size = UDim2.new(1, -24, 0, 20)
-itemInputBox.Position = UDim2.new(0, 12, 0, 136)
-itemInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
-itemInputBox.PlaceholderText = "Введите блок (напр. Лего, Дерево)..."
-itemInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
-itemInputBox.Text = ""
-itemInputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-itemInputBox.Font = Enum.Font.Gotham
-itemInputBox.TextSize = 10
-itemInputBox.BorderSizePixel = 0
-itemInputBox.ClearTextOnFocus = false
-itemInputBox.Parent = contentFrame
-
-local itemInputCorner = Instance.new("UICorner")
-itemInputCorner.CornerRadius = UDim.new(0, 5)
-itemInputCorner.Parent = itemInputBox
-
-local itemStatusLabel = Instance.new("TextLabel")
-itemStatusLabel.Size = UDim2.new(1, -24, 0, 15)
-itemStatusLabel.Position = UDim2.new(0, 12, 0, 158)
-itemStatusLabel.BackgroundTransparency = 1
-itemStatusLabel.Text = "Введите название для поиска"
-itemStatusLabel.TextColor3 = Color3.fromRGB(140, 130, 160)
-itemStatusLabel.Font = Enum.Font.Gotham
-itemStatusLabel.TextSize = 10
-itemStatusLabel.Parent = contentFrame
 
 itemInputBox:GetPropertyChangedSignal("Text"):Connect(function()
     local text = itemInputBox.Text
@@ -679,6 +841,16 @@ itemInputBox:GetPropertyChangedSignal("Text"):Connect(function()
     end
 end)
 
+tgTokenInputBox.FocusLost:Connect(function()
+    tgToken = tgTokenInputBox.Text
+    saveConfig()
+end)
+
+tgChatIdInputBox.FocusLost:Connect(function()
+    tgChatId = tgChatIdInputBox.Text
+    saveConfig()
+end)
+
 local function updateGoldStats()
     local current = getCurrentGold()
     if farming then
@@ -703,40 +875,15 @@ task.spawn(function()
     end)
 end)
 
-local toggleButton = Instance.new("TextButton")
-toggleButton.Size = UDim2.new(1, -24, 0, 32)
-toggleButton.Position = UDim2.new(0, 12, 0, 178)
-toggleButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-toggleButton.Text = "START AUTO FARM"
-toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleButton.Font = Enum.Font.GothamBold
-toggleButton.TextSize = 12
-toggleButton.BorderSizePixel = 0
-toggleButton.Parent = contentFrame
-
-local btnCorner = Instance.new("UICorner")
-btnCorner.CornerRadius = UDim.new(0, 8)
-btnCorner.Parent = toggleButton
-
-local creditsLabel = Instance.new("TextLabel")
-creditsLabel.Size = UDim2.new(1, 0, 0, 16)
-creditsLabel.Position = UDim2.new(0, 0, 0, 214)
-creditsLabel.BackgroundTransparency = 1
-creditsLabel.Text = "By: Probothotspot"
-creditsLabel.TextColor3 = Color3.fromRGB(175, 150, 220)
-creditsLabel.Font = Enum.Font.GothamBold
-creditsLabel.TextSize = 11
-creditsLabel.Parent = contentFrame
-
 local isMinimized = false
 minBtn.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
-    contentFrame.Visible = not isMinimized
+    scrollFrame.Visible = not isMinimized
     if isMinimized then
-        mainFrame.Size = UDim2.new(0, 260, 0, 36)
+        mainFrame.Size = UDim2.new(0, 260, 0, 34)
         minBtn.Text = "+"
     else
-        mainFrame.Size = UDim2.new(0, 260, 0, 315)
+        mainFrame.Size = UDim2.new(0, 260, 0, 320)
         minBtn.Text = "-"
     end
 end)
@@ -744,22 +891,13 @@ end)
 closeBtn.MouseButton1Click:Connect(function()
     farming = false
     autoBuyActive = false
-    if farmThread then
-        task.cancel(farmThread)
-    end
-    if timerThread then
-        task.cancel(timerThread)
-    end
-    if rotConn then
-        rotConn:Disconnect()
-    end
+    if farmThread then task.cancel(farmThread) end
+    if timerThread then task.cancel(timerThread) end
+    if tgPollingThread then task.cancel(tgPollingThread) end
+    if rotConn then rotConn:Disconnect() end
     local hrp = getCurrentHRP()
-    if hrp then
-        setSpin(hrp, false)
-    end
-    if platform then
-        platform:Destroy()
-    end
+    if hrp then setSpin(hrp, false) end
+    if platform then platform:Destroy() end
     screenGui:Destroy()
 end)
 
@@ -797,9 +935,12 @@ local function setNoclip(character)
     end
 end
 
+local startFarming, stopFarming
+
 local function startFarmingLoop()
     farmThread = task.spawn(function()
         while farming do
+            disableHazards()
             local hrp, char, hum = getCurrentHRP()
             while farming and not hrp do
                 task.wait(0.2)
@@ -962,46 +1103,120 @@ local function startFarmingLoop()
     end)
 end
 
+startFarming = function()
+    if farming then return end
+    farming = true
+    startGold = getCurrentGold()
+    updateGoldStats()
+    disableHazards()
+
+    startTime = os.time()
+    timeTrackerLabel.Text = "Время фарма: 00:00:00"
+
+    timerThread = task.spawn(function()
+        while farming do
+            local elapsed = os.time() - startTime
+            timeTrackerLabel.Text = "Время фарма: " .. formatTime(elapsed)
+            task.wait(1)
+        end
+    end)
+
+    toggleButton.Text = "STOP AUTO FARM"
+    toggleButton.BackgroundColor3 = Color3.fromRGB(220, 50, 70)
+    statusLabel.Text = "Запуск: " .. (farmMode == "Chest" and "Сундук" or "Золото")
+    startFarmingLoop()
+end
+
+stopFarming = function()
+    if not farming then return end
+    farming = false
+    toggleButton.Text = "START AUTO FARM"
+    toggleButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+    statusLabel.Text = "Статус: Остановлен"
+
+    if timerThread then task.cancel(timerThread) timerThread = nil end
+    local hrp = getCurrentHRP()
+    if hrp then setSpin(hrp, false) end
+    platform.Parent = nil
+    if farmThread then
+        task.cancel(farmThread)
+        farmThread = nil
+    end
+end
+
 toggleButton.MouseButton1Click:Connect(function()
-    farming = not farming
-
-    if farming then
-        startGold = getCurrentGold()
-        updateGoldStats()
-
-        startTime = os.time()
-        timeTrackerLabel.Text = "Время фарма: 00:00:00"
-
-        timerThread = task.spawn(function()
-            while farming do
-                local elapsed = os.time() - startTime
-                timeTrackerLabel.Text = "Время фарма: " .. formatTime(elapsed)
-                task.wait(1)
-            end
-        end)
-
-        toggleButton.Text = "STOP AUTO FARM"
-        toggleButton.BackgroundColor3 = Color3.fromRGB(220, 50, 70)
-        statusLabel.Text = "Запуск: " .. (farmMode == "Chest" and "Сундук" or "Золото")
-        startFarmingLoop()
+    if not farming then
+        startFarming()
     else
-        toggleButton.Text = "START AUTO FARM"
-        toggleButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-        statusLabel.Text = "Статус: Остановлен"
-        
-        if timerThread then
-            task.cancel(timerThread)
-            timerThread = nil
-        end
+        stopFarming()
+    end
+end)
 
-        local hrp = getCurrentHRP()
-        if hrp then
-            setSpin(hrp, false)
-        end
-        platform.Parent = nil
-        if farmThread then
-            task.cancel(farmThread)
-            farmThread = nil
+-- Фоновый опрос команд из Telegram бота
+tgPollingThread = task.spawn(function()
+    while true do
+        task.wait(3)
+        if httpRequest and tgToken ~= "" and tgChatId ~= "" then
+            pcall(function()
+                local pollUrl = "https://api.telegram.org/bot" .. tgToken .. "/getUpdates?offset=" .. tostring(lastUpdateId + 1) .. "&limit=5"
+                local res = httpRequest({
+                    Url = pollUrl,
+                    Method = "GET"
+                })
+
+                if res and res.Body then
+                    local data = HttpService:JSONDecode(res.Body)
+                    if data and data.ok and data.result then
+                        for _, update in ipairs(data.result) do
+                            lastUpdateId = update.update_id
+                            local msg = update.message
+                            if msg and tostring(msg.chat.id) == tostring(tgChatId) and msg.text then
+                                local cmd = string.lower(string.gsub(msg.text, "%s+", ""))
+
+                                if cmd == "/stop" then
+                                    if farming then
+                                        stopFarming()
+                                        sendTelegramMessage("🛑 <b>Фарм остановлен дистанционно!</b>")
+                                    else
+                                        sendTelegramMessage("⚠️ Фарм уже выключен.")
+                                    end
+                                elseif cmd == "/start" then
+                                    if not farming then
+                                        startFarming()
+                                        sendTelegramMessage("🚀 <b>Фарм запущен дистанционно!</b>")
+                                    else
+                                        sendTelegramMessage("⚠️ Фарм уже работает.")
+                                    end
+                                elseif cmd == "/status" then
+                                    local currentG = getCurrentGold()
+                                    local earned = math.max(0, currentG - startGold)
+                                    local elapsed = farming and (os.time() - startTime) or 0
+                                    local report = string.format(
+                                        "📊 <b>Статистика BABFT:</b>\n\n" ..
+                                        "• Состояние: <b>%s</b>\n" ..
+                                        "• Режим: <b>%s</b>\n" ..
+                                        "• Время сессии: <b>%s</b>\n" ..
+                                        "• Баланс: <b>%d Gold</b>\n" ..
+                                        "• Заработано: <b>+%d Gold</b>",
+                                        farming and "🟢 Работает" or "🔴 Остановлен",
+                                        farmMode == "Chest" and "Сундук" or "Золото",
+                                        formatTime(elapsed),
+                                        currentG,
+                                        earned
+                                    )
+                                    sendTelegramMessage(report)
+                                elseif cmd == "/rejoin" then
+                                    sendTelegramMessage("🔄 <b>Перезахожу на сервер...</b>")
+                                    TeleportService:Teleport(game.PlaceId, player)
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
         end
     end
 end)
+
+-- Загрузка настроек при запуске
+loadConfig()
