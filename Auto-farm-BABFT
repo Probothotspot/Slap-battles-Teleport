@@ -16,17 +16,20 @@ local HttpService = game:GetService("HttpService")
 local VirtualUser = game:GetService("VirtualUser")
 local Lighting = game:GetService("Lighting")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local farming = false
 local isRejoining = false
 local isBlackScreen = false
+local isMinimized = false
+local isClosing = false
 local farmThread = nil
 local timerThread = nil
 local tgPollingThread = nil
 
 -- Ссылка на GitHub
 local RAW_GITHUB_URL = "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Auto-farm-BABFT"
-local CHILLZ_GROUP_ID = 2919213 -- ID группы разработчиков BABFT
+local CHILLZ_GROUP_ID = 2919213
 
 -- Настройки
 local farmMode = "Chest"
@@ -211,7 +214,7 @@ task.spawn(function()
     end
 end)
 
--- Анти-Лаг очистка
+-- Анти-Лаг
 local function applyAntiLag()
     if not antiLagActive then return end
     pcall(function()
@@ -228,7 +231,7 @@ local function applyAntiLag()
     end)
 end
 
--- Анти-урон / Анти-вода
+-- Анти-урон / Вода
 local hazardConnection = nil
 local hazardLoopThread = nil
 
@@ -492,7 +495,7 @@ local function placeOnPlatform(targetPos, hrp)
     setSpin(hrp, true)
 end
 
--- Основной GUI
+-- GUI Root
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "BabftPurpleUI"
 screenGui.ResetOnSpawn = false
@@ -500,7 +503,7 @@ screenGui.ResetOnSpawn = false
 local guiParent = (gethui and gethui()) or (pcall(function() return game:GetService("CoreGui") end) and game:GetService("CoreGui")) or player:WaitForChild("PlayerGui")
 screenGui.Parent = guiParent
 
--- Всплывающее достижение (Toast Notification)
+-- Всплывающее достижение
 showAchievementToast = function(title, text)
     local toast = Instance.new("Frame")
     toast.Size = UDim2.new(0, 260, 0, 50)
@@ -551,7 +554,6 @@ showAchievementToast = function(title, text)
     tDesc.ZIndex = 101
     tDesc.Parent = toast
 
-    -- Анимация появления и скрытия
     toast:TweenPosition(UDim2.new(0.5, -130, 0.04, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Back, 0.5, true)
     task.delay(4, function()
         if toast and toast.Parent then
@@ -562,7 +564,7 @@ showAchievementToast = function(title, text)
     end)
 end
 
--- Панель Black Screen (Ночной режим)
+-- Black Screen Panel
 local blackScreenFrame = Instance.new("Frame")
 blackScreenFrame.Size = UDim2.new(1, 0, 1, 0)
 blackScreenFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
@@ -627,17 +629,18 @@ bsUnlockBtn.MouseButton1Click:Connect(function()
 end)
 
 -- Основное окно GUI
+local savedWindowSize = UDim2.new(0, 260, 0, 320)
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 260, 0, 320)
+mainFrame.Size = savedWindowSize
 mainFrame.Position = UDim2.new(0.5, -130, 0.28, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(20, 16, 28)
+mainFrame.BackgroundColor3 = Color3.fromRGB(15, 12, 22)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.ClipsDescendants = true
 mainFrame.Parent = screenGui
 
 local frameCorner = Instance.new("UICorner")
-frameCorner.CornerRadius = UDim.new(0, 10)
+frameCorner.CornerRadius = UDim.new(0, 12)
 frameCorner.Parent = mainFrame
 
 local frameStroke = Instance.new("UIStroke")
@@ -661,9 +664,68 @@ local rotConn = RunService.RenderStepped:Connect(function()
     end
 end)
 
+-- 🌌 КОСМИЧЕСКИЙ ФОН С ПЛАНЕТАМИ И ЗВЕЗДАМИ
+local spaceBg = Instance.new("Frame")
+spaceBg.Size = UDim2.new(1, 0, 1, 0)
+spaceBg.BackgroundTransparency = 1
+spaceBg.ZIndex = 1
+spaceBg.Parent = mainFrame
+
+-- Функция создания планеты
+local function createPlanet(size, pos, color1, color2, driftX, driftY, duration)
+    local planet = Instance.new("Frame")
+    planet.Size = size
+    planet.Position = pos
+    planet.BackgroundColor3 = color1
+    planet.BorderSizePixel = 0
+    planet.ZIndex = 1
+    planet.Parent = spaceBg
+
+    local pCorner = Instance.new("UICorner")
+    pCorner.CornerRadius = UDim.new(1, 0)
+    pCorner.Parent = planet
+
+    local pGrad = Instance.new("UIGradient")
+    pGrad.Color = ColorSequence.new(color1, color2)
+    pGrad.Rotation = 45
+    pGrad.Parent = planet
+
+    -- Плавное парение планеты
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+    local targetPos = UDim2.new(pos.X.Scale, pos.X.Offset + driftX, pos.Y.Scale, pos.Y.Offset + driftY)
+    TweenService:Create(planet, tweenInfo, {Position = targetPos}):Play()
+    return planet
+end
+
+-- Летающие планеты
+createPlanet(UDim2.new(0, 42, 0, 42), UDim2.new(0.75, 0, 0.2, 0), Color3.fromRGB(160, 60, 240), Color3.fromRGB(60, 20, 120), -18, 15, 6)
+createPlanet(UDim2.new(0, 24, 0, 24), UDim2.new(0.12, 0, 0.65, 0), Color3.fromRGB(90, 150, 255), Color3.fromRGB(30, 60, 160), 14, -12, 5)
+createPlanet(UDim2.new(0, 16, 0, 16), UDim2.new(0.65, 0, 0.78, 0), Color3.fromRGB(240, 100, 180), Color3.fromRGB(120, 30, 80), -10, -10, 4.5)
+
+-- Мерцающие звезды
+for i = 1, 14 do
+    local star = Instance.new("Frame")
+    star.Size = UDim2.new(0, math.random(2, 3), 0, math.random(2, 3))
+    star.Position = UDim2.new(math.random(5, 95) / 100, 0, math.random(10, 95) / 100, 0)
+    star.BackgroundColor3 = Color3.fromRGB(240, 230, 255)
+    star.BackgroundTransparency = math.random(3, 7) / 10
+    star.BorderSizePixel = 0
+    star.ZIndex = 1
+    star.Parent = spaceBg
+
+    local sCorner = Instance.new("UICorner")
+    sCorner.CornerRadius = UDim.new(1, 0)
+    sCorner.Parent = star
+
+    local twInfo = TweenInfo.new(math.random(15, 35) / 10, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+    TweenService:Create(star, twInfo, {BackgroundTransparency = math.random(1, 3) / 10}):Play()
+end
+
+-- TopBar
 local topBar = Instance.new("Frame")
 topBar.Size = UDim2.new(1, 0, 0, 34)
 topBar.BackgroundTransparency = 1
+topBar.ZIndex = 3
 topBar.Parent = mainFrame
 
 local titleLabel = Instance.new("TextLabel")
@@ -675,6 +737,7 @@ titleLabel.TextColor3 = Color3.fromRGB(230, 210, 255)
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 13
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.ZIndex = 3
 titleLabel.Parent = topBar
 
 local minBtn = Instance.new("TextButton")
@@ -686,6 +749,7 @@ minBtn.TextColor3 = Color3.fromRGB(220, 200, 255)
 minBtn.Font = Enum.Font.GothamBold
 minBtn.TextSize = 14
 minBtn.BorderSizePixel = 0
+minBtn.ZIndex = 3
 minBtn.Parent = topBar
 
 local minCorner = Instance.new("UICorner")
@@ -701,12 +765,14 @@ closeBtn.TextColor3 = Color3.fromRGB(255, 130, 150)
 closeBtn.Font = Enum.Font.GothamBold
 closeBtn.TextSize = 14
 closeBtn.BorderSizePixel = 0
+closeBtn.ZIndex = 3
 closeBtn.Parent = topBar
 
 local closeCorner = Instance.new("UICorner")
 closeCorner.CornerRadius = UDim.new(0, 6)
 closeCorner.Parent = closeBtn
 
+-- Скролл-контейнер
 local scrollFrame = Instance.new("ScrollingFrame")
 scrollFrame.Size = UDim2.new(1, 0, 1, -34)
 scrollFrame.Position = UDim2.new(0, 0, 0, 34)
@@ -714,12 +780,14 @@ scrollFrame.BackgroundTransparency = 1
 scrollFrame.ScrollBarThickness = 3
 scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(138, 43, 226)
 scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 480)
+scrollFrame.ZIndex = 2
 scrollFrame.Parent = mainFrame
 
 local modeContainer = Instance.new("Frame")
 modeContainer.Size = UDim2.new(1, -24, 0, 24)
 modeContainer.Position = UDim2.new(0, 12, 0, 4)
 modeContainer.BackgroundTransparency = 1
+modeContainer.ZIndex = 2
 modeContainer.Parent = scrollFrame
 
 local chestModeBtn = Instance.new("TextButton")
@@ -731,6 +799,7 @@ chestModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 chestModeBtn.Font = Enum.Font.GothamBold
 chestModeBtn.TextSize = 11
 chestModeBtn.BorderSizePixel = 0
+chestModeBtn.ZIndex = 2
 chestModeBtn.Parent = modeContainer
 
 local chestCorner = Instance.new("UICorner")
@@ -746,6 +815,7 @@ goldModeBtn.TextColor3 = Color3.fromRGB(160, 145, 185)
 goldModeBtn.Font = Enum.Font.GothamBold
 goldModeBtn.TextSize = 11
 goldModeBtn.BorderSizePixel = 0
+goldModeBtn.ZIndex = 2
 goldModeBtn.Parent = modeContainer
 
 local goldCorner = Instance.new("UICorner")
@@ -756,6 +826,7 @@ local delayContainer = Instance.new("Frame")
 delayContainer.Size = UDim2.new(1, -24, 0, 18)
 delayContainer.Position = UDim2.new(0, 12, 0, 32)
 delayContainer.BackgroundTransparency = 1
+delayContainer.ZIndex = 2
 delayContainer.Parent = scrollFrame
 
 local delayLabel = Instance.new("TextLabel")
@@ -767,6 +838,7 @@ delayLabel.TextColor3 = Color3.fromRGB(200, 190, 225)
 delayLabel.Font = Enum.Font.Gotham
 delayLabel.TextSize = 11
 delayLabel.TextXAlignment = Enum.TextXAlignment.Left
+delayLabel.ZIndex = 2
 delayLabel.Parent = delayContainer
 
 local delayBox = Instance.new("TextBox")
@@ -779,6 +851,7 @@ delayBox.Font = Enum.Font.GothamBold
 delayBox.TextSize = 11
 delayBox.BorderSizePixel = 0
 delayBox.ClearTextOnFocus = false
+delayBox.ZIndex = 2
 delayBox.Parent = delayContainer
 
 local delayBoxCorner = Instance.new("UICorner")
@@ -793,6 +866,7 @@ statusLabel.Text = "Статус: Оффлайн"
 statusLabel.TextColor3 = Color3.fromRGB(180, 165, 205)
 statusLabel.Font = Enum.Font.Gotham
 statusLabel.TextSize = 10
+statusLabel.ZIndex = 2
 statusLabel.Parent = scrollFrame
 
 local startAndCurrentGoldLabel = Instance.new("TextLabel")
@@ -803,6 +877,7 @@ startAndCurrentGoldLabel.Text = "Старт: 0  |  Сейчас: " .. tostring(g
 startAndCurrentGoldLabel.TextColor3 = Color3.fromRGB(200, 190, 225)
 startAndCurrentGoldLabel.Font = Enum.Font.Gotham
 startAndCurrentGoldLabel.TextSize = 10
+startAndCurrentGoldLabel.ZIndex = 2
 startAndCurrentGoldLabel.Parent = scrollFrame
 
 local goldTrackerLabel = Instance.new("TextLabel")
@@ -813,6 +888,7 @@ goldTrackerLabel.Text = "Заработано: +0 Gold"
 goldTrackerLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
 goldTrackerLabel.Font = Enum.Font.GothamBold
 goldTrackerLabel.TextSize = 10
+goldTrackerLabel.ZIndex = 2
 goldTrackerLabel.Parent = scrollFrame
 
 local timeTrackerLabel = Instance.new("TextLabel")
@@ -823,6 +899,7 @@ timeTrackerLabel.Text = "Время фарма: 00:00:00"
 timeTrackerLabel.TextColor3 = Color3.fromRGB(165, 195, 255)
 timeTrackerLabel.Font = Enum.Font.GothamBold
 timeTrackerLabel.TextSize = 10
+timeTrackerLabel.ZIndex = 2
 timeTrackerLabel.Parent = scrollFrame
 
 -- Авто-закупка
@@ -830,6 +907,7 @@ local autoBuyRow = Instance.new("Frame")
 autoBuyRow.Size = UDim2.new(1, -24, 0, 22)
 autoBuyRow.Position = UDim2.new(0, 12, 0, 116)
 autoBuyRow.BackgroundTransparency = 1
+autoBuyRow.ZIndex = 2
 autoBuyRow.Parent = scrollFrame
 
 local autoBuyToggleBtn = Instance.new("TextButton")
@@ -841,6 +919,7 @@ autoBuyToggleBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
 autoBuyToggleBtn.Font = Enum.Font.GothamBold
 autoBuyToggleBtn.TextSize = 10
 autoBuyToggleBtn.BorderSizePixel = 0
+autoBuyToggleBtn.ZIndex = 2
 autoBuyToggleBtn.Parent = autoBuyRow
 
 local abBtnCorner = Instance.new("UICorner")
@@ -855,6 +934,7 @@ amountLabel.Text = "Кол-во:"
 amountLabel.TextColor3 = Color3.fromRGB(200, 190, 225)
 amountLabel.Font = Enum.Font.Gotham
 amountLabel.TextSize = 10
+amountLabel.ZIndex = 2
 amountLabel.Parent = autoBuyRow
 
 local amountBox = Instance.new("TextBox")
@@ -867,6 +947,7 @@ amountBox.Font = Enum.Font.GothamBold
 amountBox.TextSize = 10
 amountBox.BorderSizePixel = 0
 amountBox.ClearTextOnFocus = false
+amountBox.ZIndex = 2
 amountBox.Parent = autoBuyRow
 
 local abAmtCorner = Instance.new("UICorner")
@@ -885,6 +966,7 @@ itemInputBox.Font = Enum.Font.Gotham
 itemInputBox.TextSize = 10
 itemInputBox.BorderSizePixel = 0
 itemInputBox.ClearTextOnFocus = false
+itemInputBox.ZIndex = 2
 itemInputBox.Parent = scrollFrame
 
 local itemInputCorner = Instance.new("UICorner")
@@ -899,9 +981,10 @@ itemStatusLabel.Text = "Введите название для поиска"
 itemStatusLabel.TextColor3 = Color3.fromRGB(140, 130, 160)
 itemStatusLabel.Font = Enum.Font.Gotham
 itemStatusLabel.TextSize = 10
+itemStatusLabel.ZIndex = 2
 itemStatusLabel.Parent = scrollFrame
 
--- Кнопки функций
+-- Функциональные кнопки
 local antiDarkBtn = Instance.new("TextButton")
 antiDarkBtn.Size = UDim2.new(1, -24, 0, 20)
 antiDarkBtn.Position = UDim2.new(0, 12, 0, 182)
@@ -911,6 +994,7 @@ antiDarkBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 antiDarkBtn.Font = Enum.Font.GothamBold
 antiDarkBtn.TextSize = 10
 antiDarkBtn.BorderSizePixel = 0
+antiDarkBtn.ZIndex = 2
 antiDarkBtn.Parent = scrollFrame
 
 local adCorner = Instance.new("UICorner")
@@ -926,6 +1010,7 @@ antiHazardBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 antiHazardBtn.Font = Enum.Font.GothamBold
 antiHazardBtn.TextSize = 10
 antiHazardBtn.BorderSizePixel = 0
+antiHazardBtn.ZIndex = 2
 antiHazardBtn.Parent = scrollFrame
 
 local ahCorner = Instance.new("UICorner")
@@ -941,6 +1026,7 @@ batterySaverBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
 batterySaverBtn.Font = Enum.Font.GothamBold
 batterySaverBtn.TextSize = 10
 batterySaverBtn.BorderSizePixel = 0
+batterySaverBtn.ZIndex = 2
 batterySaverBtn.Parent = scrollFrame
 
 local bsCorner = Instance.new("UICorner")
@@ -956,6 +1042,7 @@ antiLagBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
 antiLagBtn.Font = Enum.Font.GothamBold
 antiLagBtn.TextSize = 10
 antiLagBtn.BorderSizePixel = 0
+antiLagBtn.ZIndex = 2
 antiLagBtn.Parent = scrollFrame
 
 local alCorner = Instance.new("UICorner")
@@ -975,6 +1062,7 @@ tgTokenInputBox.Font = Enum.Font.Gotham
 tgTokenInputBox.TextSize = 9
 tgTokenInputBox.BorderSizePixel = 0
 tgTokenInputBox.ClearTextOnFocus = false
+tgTokenInputBox.ZIndex = 2
 tgTokenInputBox.Parent = scrollFrame
 
 local tgTokenCorner = Instance.new("UICorner")
@@ -993,6 +1081,7 @@ tgChatIdInputBox.Font = Enum.Font.Gotham
 tgChatIdInputBox.TextSize = 9
 tgChatIdInputBox.BorderSizePixel = 0
 tgChatIdInputBox.ClearTextOnFocus = false
+tgChatIdInputBox.ZIndex = 2
 tgChatIdInputBox.Parent = scrollFrame
 
 local tgChatCorner = Instance.new("UICorner")
@@ -1008,6 +1097,7 @@ saveBtn.TextColor3 = Color3.fromRGB(215, 195, 255)
 saveBtn.Font = Enum.Font.GothamBold
 saveBtn.TextSize = 10
 saveBtn.BorderSizePixel = 0
+saveBtn.ZIndex = 2
 saveBtn.Parent = scrollFrame
 
 local saveBtnCorner = Instance.new("UICorner")
@@ -1028,6 +1118,7 @@ toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 toggleButton.Font = Enum.Font.GothamBold
 toggleButton.TextSize = 12
 toggleButton.BorderSizePixel = 0
+toggleButton.ZIndex = 2
 toggleButton.Parent = scrollFrame
 
 local btnCorner = Instance.new("UICorner")
@@ -1042,9 +1133,135 @@ creditsLabel.Text = "By: Probothotspot"
 creditsLabel.TextColor3 = Color3.fromRGB(175, 150, 220)
 creditsLabel.Font = Enum.Font.GothamBold
 creditsLabel.TextSize = 11
+creditsLabel.ZIndex = 2
 creditsLabel.Parent = scrollFrame
 
--- Сохранение конфига
+-- 📐 УГОЛОК ИЗМЕНЕНИЯ РАЗМЕРА (RESIZE GRIP)
+local resizeGrip = Instance.new("TextButton")
+resizeGrip.Size = UDim2.new(0, 18, 0, 18)
+resizeGrip.Position = UDim2.new(1, -18, 1, -18)
+resizeGrip.BackgroundTransparency = 1
+resizeGrip.Text = "◢"
+resizeGrip.TextColor3 = Color3.fromRGB(175, 130, 240)
+resizeGrip.Font = Enum.Font.GothamBold
+resizeGrip.TextSize = 13
+resizeGrip.ZIndex = 10
+resizeGrip.Parent = mainFrame
+
+-- Логика перетаскивания и изменения размера
+local resizing = false
+local resizeStart = Vector2.zero
+local startWindowSize = Vector2.zero
+
+resizeGrip.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        resizing = true
+        resizeStart = Vector2.new(input.Position.X, input.Position.Y)
+        startWindowSize = Vector2.new(mainFrame.AbsoluteSize.X, mainFrame.AbsoluteSize.Y)
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                resizing = false
+                if not isMinimized then
+                    savedWindowSize = mainFrame.Size
+                end
+            end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if resizing and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = Vector2.new(input.Position.X, input.Position.Y) - resizeStart
+        local newWidth = math.clamp(startWindowSize.X + delta.X, 240, 480)
+        local newHeight = math.clamp(startWindowSize.Y + delta.Y, 260, 560)
+        mainFrame.Size = UDim2.new(0, newWidth, 0, newHeight)
+    end
+end)
+
+-- Перетаскивание окна (Drag)
+local dragging, dragStart, startPos
+topBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+topBar.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- ✨ АНИМИРОВАННОЕ СВОРАЧИВАНИЕ И РАЗВОРАЧИВАНИЕ
+minBtn.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    if isMinimized then
+        savedWindowSize = mainFrame.Size
+        resizeGrip.Visible = false
+        local tw = TweenService:Create(mainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+            Size = UDim2.new(mainFrame.Size.X.Scale, mainFrame.Size.X.Offset, 0, 34)
+        })
+        tw:Play()
+        tw.Completed:Connect(function()
+            if isMinimized then scrollFrame.Visible = false end
+        end)
+        minBtn.Text = "+"
+    else
+        scrollFrame.Visible = true
+        resizeGrip.Visible = true
+        TweenService:Create(mainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = savedWindowSize
+        }):Play()
+        minBtn.Text = "-"
+    end
+end)
+
+-- 💫 АНИМИРОВАННОЕ ЗАКРЫТИЕ НА КРЕСТИК
+closeBtn.MouseButton1Click:Connect(function()
+    if isClosing then return end
+    isClosing = true
+    farming = false
+    autoBuyActive = false
+    autoStartOnJoin = false
+    saveConfig(false)
+    disableClearVision()
+    toggleAntiHazard(false)
+    toggleBlackScreen(false)
+
+    if farmThread then task.cancel(farmThread) end
+    if timerThread then task.cancel(timerThread) end
+    if tgPollingThread then task.cancel(tgPollingThread) end
+    if rotConn then rotConn:Disconnect() end
+
+    local hrp = getCurrentHRP()
+    if hrp then setSpin(hrp, false) end
+    if platform then platform:Destroy() end
+
+    -- Плавное схлопывание GUI
+    local closeTween = TweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+        Size = UDim2.new(0, 0, 0, 0),
+        BackgroundTransparency = 1
+    })
+    closeTween:Play()
+    closeTween.Completed:Connect(function()
+        screenGui:Destroy()
+    end)
+end)
+
+-- Сохранение конфигурации
 saveConfig = function(customAutoStart)
     tgToken = tgTokenInputBox.Text
     tgChatId = tgChatIdInputBox.Text
@@ -1121,17 +1338,10 @@ local function loadConfig()
             if data and type(data) == "table" then
                 if data.farmMode then
                     farmMode = data.farmMode
-                    if farmMode == "Chest" then
-                        chestModeBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-                        chestModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-                        goldModeBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
-                        goldModeBtn.TextColor3 = Color3.fromRGB(160, 145, 185)
-                    else
-                        goldModeBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-                        goldModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-                        chestModeBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
-                        chestModeBtn.TextColor3 = Color3.fromRGB(160, 145, 185)
-                    end
+                    chestModeBtn.BackgroundColor3 = (farmMode == "Chest") and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+                    chestModeBtn.TextColor3 = (farmMode == "Chest") and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(160, 145, 185)
+                    goldModeBtn.BackgroundColor3 = (farmMode == "Gold") and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+                    goldModeBtn.TextColor3 = (farmMode == "Gold") and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(160, 145, 185)
                 end
                 if data.chestDelay then
                     chestDelay = tonumber(data.chestDelay) or 2
@@ -1161,11 +1371,9 @@ local function loadConfig()
                 end
                 if data.autoBuyActive then
                     autoBuyActive = data.autoBuyActive
-                    if autoBuyActive then
-                        autoBuyToggleBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-                        autoBuyToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-                        autoBuyToggleBtn.Text = "Авто-закупка: ВКЛ"
-                    end
+                    autoBuyToggleBtn.BackgroundColor3 = autoBuyActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+                    autoBuyToggleBtn.TextColor3 = autoBuyActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
+                    autoBuyToggleBtn.Text = autoBuyActive and "Авто-закупка: ВКЛ" or "Авто-закупка: ВЫКЛ"
                 end
                 if data.antiDarknessActive ~= nil then
                     antiDarknessActive = data.antiDarknessActive
@@ -1346,7 +1554,7 @@ tgChatIdInputBox.FocusLost:Connect(function()
     saveConfig()
 end)
 
--- Обновление статистики и проверка достижений
+-- Обновление статистики и достижений
 local function updateGoldStats()
     local current = getCurrentGold()
     if farming then
@@ -1354,7 +1562,6 @@ local function updateGoldStats()
         if delta > 0 then
             totalEarned = totalEarned + delta
 
-            -- Проверка рубежей достижений
             for _, m in ipairs(MILESTONES) do
                 if totalEarned >= m and not reachedMilestones[m] then
                     reachedMilestones[m] = true
@@ -1385,63 +1592,6 @@ task.spawn(function()
     obj.Changed:Connect(function()
         updateGoldStats()
     end)
-end)
-
-local isMinimized = false
-minBtn.MouseButton1Click:Connect(function()
-    isMinimized = not isMinimized
-    scrollFrame.Visible = not isMinimized
-    if isMinimized then
-        mainFrame.Size = UDim2.new(0, 260, 0, 34)
-        minBtn.Text = "+"
-    else
-        mainFrame.Size = UDim2.new(0, 260, 0, 320)
-        minBtn.Text = "-"
-    end
-end)
-
-closeBtn.MouseButton1Click:Connect(function()
-    farming = false
-    autoBuyActive = false
-    autoStartOnJoin = false
-    saveConfig(false)
-    disableClearVision()
-    toggleAntiHazard(false)
-    toggleBlackScreen(false)
-    if farmThread then task.cancel(farmThread) end
-    if timerThread then task.cancel(timerThread) end
-    if tgPollingThread then task.cancel(tgPollingThread) end
-    if rotConn then rotConn:Disconnect() end
-    local hrp = getCurrentHRP()
-    if hrp then setSpin(hrp, false) end
-    if platform then platform:Destroy() end
-    screenGui:Destroy()
-end)
-
-local dragging, dragStart, startPos
-topBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = mainFrame.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
-
-topBar.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        mainFrame.Position = UDim2.new(
-            startPos.X.Scale,
-            startPos.X.Offset + delta.X,
-            startPos.Y.Scale,
-            startPos.Y.Offset + delta.Y
-        )
-    end
 end)
 
 local function setNoclip(character)
@@ -1712,7 +1862,6 @@ local function syncTelegramOffset()
     end
 end
 
--- Обработка Telegram команд
 tgPollingThread = task.spawn(function()
     task.wait(2)
     syncTelegramOffset()
