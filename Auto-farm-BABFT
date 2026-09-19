@@ -15,15 +15,18 @@ local GuiService = game:GetService("GuiService")
 local HttpService = game:GetService("HttpService")
 local VirtualUser = game:GetService("VirtualUser")
 local Lighting = game:GetService("Lighting")
+local TweenService = game:GetService("TweenService")
 
 local farming = false
 local isRejoining = false
+local isBlackScreen = false
 local farmThread = nil
 local timerThread = nil
 local tgPollingThread = nil
 
--- Ссылка на сырой код GitHub
+-- Ссылка на GitHub
 local RAW_GITHUB_URL = "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Auto-farm-BABFT"
+local CHILLZ_GROUP_ID = 2919213 -- ID группы разработчиков BABFT
 
 -- Настройки
 local farmMode = "Chest"
@@ -35,20 +38,24 @@ local targetItemPrice = 0
 local autoRejoinActive = true
 local autoStartOnJoin = false
 local antiDarknessActive = true
-local antiHazardActive = true -- Защита от воды и ловушек
+local antiHazardActive = true
+local antiLagActive = false
+local staffDetectorActive = true
 
 -- Telegram Bot параметры
 local tgToken = ""
 local tgChatId = ""
 local lastUpdateId = 0
 
--- Статистика
+-- Статистика и достижения
 local startGold = 0
 local previousGold = 0
 local totalEarned = 0
 local startTime = 0
 local goldValObject = nil
 local CONFIG_FILE = "babft_farm_config.json"
+local MILESTONES = {10000, 25000, 50000, 100000, 250000, 500000, 1000000}
+local reachedMilestones = {}
 
 -- Эксплоит функции
 local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
@@ -155,7 +162,73 @@ player.Idled:Connect(function()
     VirtualUser:ClickButton2(Vector2.new(0, 0))
 end)
 
--- Система отключения урона (Анти-вода / Анти-лава / Анти-шипы)
+local startFarming, stopFarming, saveConfig, executeRejoin, toggleBlackScreen, showAchievementToast
+
+-- Отправка сообщений в Telegram
+local function sendTelegramMessage(text)
+    if not httpRequest or tgToken == "" or tgChatId == "" then return end
+    task.spawn(function()
+        pcall(function()
+            httpRequest({
+                Url = "https://api.telegram.org/bot" .. tgToken .. "/sendMessage",
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = HttpService:JSONEncode({
+                    chat_id = tgChatId,
+                    text = text,
+                    parse_mode = "HTML"
+                })
+            })
+        end)
+    end)
+end
+
+-- Детектор Администрации
+local function checkStaffMember(p)
+    if not staffDetectorActive or p == player then return end
+    pcall(function()
+        local rank = p:GetRankInGroup(CHILLZ_GROUP_ID)
+        if rank and rank > 1 then
+            local role = p:GetRoleInGroup(CHILLZ_GROUP_ID)
+            sendTelegramMessage(string.format(
+                "🚨 <b>ВНИМАНИЕ! НА СЕРВЕР ЗАШЕЛ АДМИН!</b>\n\n" ..
+                "• Игрок: <b>%s</b> (@%s)\n" ..
+                "• Должность: <b>%s</b> (Ранг %d)\n" ..
+                "⚠️ Фарм остановлен, произвожу экстренный перезаход!",
+                p.DisplayName, p.Name, role, rank
+            ))
+            stopFarming()
+            task.wait(0.5)
+            executeRejoin()
+        end
+    end)
+end
+
+Players.PlayerAdded:Connect(checkStaffMember)
+task.spawn(function()
+    for _, p in ipairs(Players:GetPlayers()) do
+        checkStaffMember(p)
+    end
+end)
+
+-- Анти-Лаг очистка
+local function applyAntiLag()
+    if not antiLagActive then return end
+    pcall(function()
+        for _, v in ipairs(Workspace:GetDescendants()) do
+            if v:IsA("BasePart") and not v:IsDescendantOf(player.Character) and v.Name ~= "FarmPlatform" then
+                v.Material = Enum.Material.SmoothPlastic
+                v.CastShadow = false
+            elseif v:IsA("Decal") or v:IsA("Texture") or v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Fire") then
+                if not v:IsDescendantOf(player.Character) then
+                    v:Destroy()
+                end
+            end
+        end
+    end)
+end
+
+-- Анти-урон / Анти-вода
 local hazardConnection = nil
 local hazardLoopThread = nil
 
@@ -211,7 +284,7 @@ local function toggleAntiHazard(enabled)
     end
 end
 
--- Настройки освещения
+-- Освещение
 local defaultLighting = {
     Ambient = Lighting.Ambient,
     OutdoorAmbient = Lighting.OutdoorAmbient,
@@ -265,9 +338,7 @@ local function disableClearVision()
         Lighting.GlobalShadows = defaultLighting.GlobalShadows
 
         for _, fx in ipairs(disabledEffects) do
-            if fx and fx.Parent then
-                fx.Enabled = true
-            end
+            if fx and fx.Parent then fx.Enabled = true end
         end
         table.clear(disabledEffects)
 
@@ -280,8 +351,6 @@ local function disableClearVision()
         table.clear(hiddenFadeFrames)
     end)
 end
-
-local startFarming, stopFarming, saveConfig, executeRejoin
 
 local function formatTime(seconds)
     local hrs = math.floor(seconds / 3600)
@@ -308,24 +377,6 @@ end
 local function getCurrentGold()
     local obj = getGoldObject()
     return obj and (tonumber(obj.Value) or 0) or 0
-end
-
-local function sendTelegramMessage(text)
-    if not httpRequest or tgToken == "" or tgChatId == "" then return end
-    task.spawn(function()
-        pcall(function()
-            httpRequest({
-                Url = "https://api.telegram.org/bot" .. tgToken .. "/sendMessage",
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = HttpService:JSONEncode({
-                    chat_id = tgChatId,
-                    text = text,
-                    parse_mode = "HTML"
-                })
-            })
-        end)
-    end)
 end
 
 local function searchItemInGame(query)
@@ -358,6 +409,28 @@ local function searchItemInGame(query)
         end
     end
     return nil, 0
+end
+
+local function executeBuy(itemName, amount)
+    local rName, price = searchItemInGame(itemName)
+    if not rName or price <= 0 then
+        return false, "Предмет '" .. tostring(itemName) .. "' не найден в магазине."
+    end
+    amount = tonumber(amount) or 1
+    local totalCost = price * amount
+    if getCurrentGold() < totalCost then
+        return false, "Недостаточно золота! Нужно: " .. totalCost .. " Gold."
+    end
+    local buyRemote = Workspace:FindFirstChild("ItemBoughtFromShop")
+    if buyRemote then
+        local ok = pcall(function()
+            buyRemote:InvokeServer(rName, amount)
+        end)
+        if ok then
+            return true, "Успешно куплено: " .. rName .. " (" .. amount .. " шт.)"
+        end
+    end
+    return false, "Ошибка удаленного вызова покупки."
 end
 
 local function checkAndAutoBuy()
@@ -419,7 +492,7 @@ local function placeOnPlatform(targetPos, hrp)
     setSpin(hrp, true)
 end
 
--- GUI
+-- Основной GUI
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "BabftPurpleUI"
 screenGui.ResetOnSpawn = false
@@ -427,6 +500,133 @@ screenGui.ResetOnSpawn = false
 local guiParent = (gethui and gethui()) or (pcall(function() return game:GetService("CoreGui") end) and game:GetService("CoreGui")) or player:WaitForChild("PlayerGui")
 screenGui.Parent = guiParent
 
+-- Всплывающее достижение (Toast Notification)
+showAchievementToast = function(title, text)
+    local toast = Instance.new("Frame")
+    toast.Size = UDim2.new(0, 260, 0, 50)
+    toast.Position = UDim2.new(0.5, -130, -0.15, 0)
+    toast.BackgroundColor3 = Color3.fromRGB(24, 18, 36)
+    toast.BorderSizePixel = 0
+    toast.ZIndex = 100
+    toast.Parent = screenGui
+
+    local tCorner = Instance.new("UICorner")
+    tCorner.CornerRadius = UDim.new(0, 10)
+    tCorner.Parent = toast
+
+    local tStroke = Instance.new("UIStroke")
+    tStroke.Thickness = 1.8
+    tStroke.Color = Color3.fromRGB(255, 215, 0)
+    tStroke.Parent = toast
+
+    local icon = Instance.new("TextLabel")
+    icon.Size = UDim2.new(0, 36, 1, 0)
+    icon.BackgroundTransparency = 1
+    icon.Text = "🏆"
+    icon.TextSize = 22
+    icon.ZIndex = 101
+    icon.Parent = toast
+
+    local tTitle = Instance.new("TextLabel")
+    tTitle.Size = UDim2.new(1, -44, 0, 18)
+    tTitle.Position = UDim2.new(0, 38, 0, 7)
+    tTitle.BackgroundTransparency = 1
+    tTitle.Text = title
+    tTitle.TextColor3 = Color3.fromRGB(255, 215, 0)
+    tTitle.Font = Enum.Font.GothamBold
+    tTitle.TextSize = 11
+    tTitle.TextXAlignment = Enum.TextXAlignment.Left
+    tTitle.ZIndex = 101
+    tTitle.Parent = toast
+
+    local tDesc = Instance.new("TextLabel")
+    tDesc.Size = UDim2.new(1, -44, 0, 16)
+    tDesc.Position = UDim2.new(0, 38, 0, 25)
+    tDesc.BackgroundTransparency = 1
+    tDesc.Text = text
+    tDesc.TextColor3 = Color3.fromRGB(230, 220, 255)
+    tDesc.Font = Enum.Font.Gotham
+    tDesc.TextSize = 10
+    tDesc.TextXAlignment = Enum.TextXAlignment.Left
+    tDesc.ZIndex = 101
+    tDesc.Parent = toast
+
+    -- Анимация появления и скрытия
+    toast:TweenPosition(UDim2.new(0.5, -130, 0.04, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Back, 0.5, true)
+    task.delay(4, function()
+        if toast and toast.Parent then
+            toast:TweenPosition(UDim2.new(0.5, -130, -0.15, 0), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.4, true, function()
+                toast:Destroy()
+            end)
+        end
+    end)
+end
+
+-- Панель Black Screen (Ночной режим)
+local blackScreenFrame = Instance.new("Frame")
+blackScreenFrame.Size = UDim2.new(1, 0, 1, 0)
+blackScreenFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+blackScreenFrame.BorderSizePixel = 0
+blackScreenFrame.Visible = false
+blackScreenFrame.ZIndex = 500
+blackScreenFrame.Parent = screenGui
+
+local bsTitle = Instance.new("TextLabel")
+bsTitle.Size = UDim2.new(1, 0, 0, 30)
+bsTitle.Position = UDim2.new(0, 0, 0.35, 0)
+bsTitle.BackgroundTransparency = 1
+bsTitle.Text = "🔋 РЕЖИМ ЭНЕРГОСБЕРЕЖЕНИЯ"
+bsTitle.TextColor3 = Color3.fromRGB(138, 43, 226)
+bsTitle.Font = Enum.Font.GothamBold
+bsTitle.TextSize = 14
+bsTitle.ZIndex = 501
+bsTitle.Parent = blackScreenFrame
+
+local bsStats = Instance.new("TextLabel")
+bsStats.Size = UDim2.new(1, 0, 0, 50)
+bsStats.Position = UDim2.new(0, 0, 0.42, 0)
+bsStats.BackgroundTransparency = 1
+bsStats.Text = "Заработано: +0 Gold\nВремя: 00:00:00"
+bsStats.TextColor3 = Color3.fromRGB(200, 190, 225)
+bsStats.Font = Enum.Font.Gotham
+bsStats.TextSize = 12
+bsStats.ZIndex = 501
+bsStats.Parent = blackScreenFrame
+
+local bsUnlockBtn = Instance.new("TextButton")
+bsUnlockBtn.Size = UDim2.new(0, 180, 0, 34)
+bsUnlockBtn.Position = UDim2.new(0.5, -90, 0.54, 0)
+bsUnlockBtn.BackgroundColor3 = Color3.fromRGB(30, 22, 45)
+bsUnlockBtn.Text = "ВКЛЮЧИТЬ ЭКРАН"
+bsUnlockBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+bsUnlockBtn.Font = Enum.Font.GothamBold
+bsUnlockBtn.TextSize = 11
+bsUnlockBtn.BorderSizePixel = 0
+bsUnlockBtn.ZIndex = 501
+bsUnlockBtn.Parent = blackScreenFrame
+
+local bsBtnCorner = Instance.new("UICorner")
+bsBtnCorner.CornerRadius = UDim.new(0, 8)
+bsBtnCorner.Parent = bsUnlockBtn
+
+local bsStroke = Instance.new("UIStroke")
+bsStroke.Color = Color3.fromRGB(138, 43, 226)
+bsStroke.Thickness = 1.5
+bsStroke.Parent = bsUnlockBtn
+
+toggleBlackScreen = function(state)
+    isBlackScreen = state
+    blackScreenFrame.Visible = isBlackScreen
+    pcall(function()
+        RunService:Set3dRenderingEnabled(not isBlackScreen)
+    end)
+end
+
+bsUnlockBtn.MouseButton1Click:Connect(function()
+    toggleBlackScreen(false)
+end)
+
+-- Основное окно GUI
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = UDim2.new(0, 260, 0, 320)
 mainFrame.Position = UDim2.new(0.5, -130, 0.28, 0)
@@ -513,7 +713,7 @@ scrollFrame.Position = UDim2.new(0, 0, 0, 34)
 scrollFrame.BackgroundTransparency = 1
 scrollFrame.ScrollBarThickness = 3
 scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(138, 43, 226)
-scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 395)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 480)
 scrollFrame.Parent = mainFrame
 
 local modeContainer = Instance.new("Frame")
@@ -701,9 +901,9 @@ itemStatusLabel.Font = Enum.Font.Gotham
 itemStatusLabel.TextSize = 10
 itemStatusLabel.Parent = scrollFrame
 
--- Кнопка Анти-темноты
+-- Кнопки функций
 local antiDarkBtn = Instance.new("TextButton")
-antiDarkBtn.Size = UDim2.new(1, -24, 0, 22)
+antiDarkBtn.Size = UDim2.new(1, -24, 0, 20)
 antiDarkBtn.Position = UDim2.new(0, 12, 0, 182)
 antiDarkBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 antiDarkBtn.Text = "Анти-темнота: ВКЛ"
@@ -717,10 +917,9 @@ local adCorner = Instance.new("UICorner")
 adCorner.CornerRadius = UDim.new(0, 5)
 adCorner.Parent = antiDarkBtn
 
--- Новая кнопка Анти-урон / Вода
 local antiHazardBtn = Instance.new("TextButton")
-antiHazardBtn.Size = UDim2.new(1, -24, 0, 22)
-antiHazardBtn.Position = UDim2.new(0, 12, 0, 207)
+antiHazardBtn.Size = UDim2.new(1, -24, 0, 20)
+antiHazardBtn.Position = UDim2.new(0, 12, 0, 205)
 antiHazardBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВКЛ"
 antiHazardBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -733,10 +932,40 @@ local ahCorner = Instance.new("UICorner")
 ahCorner.CornerRadius = UDim.new(0, 5)
 ahCorner.Parent = antiHazardBtn
 
+local batterySaverBtn = Instance.new("TextButton")
+batterySaverBtn.Size = UDim2.new(1, -24, 0, 20)
+batterySaverBtn.Position = UDim2.new(0, 12, 0, 228)
+batterySaverBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
+batterySaverBtn.Text = "🔋 Ночной режим (Экран): ВЫКЛ"
+batterySaverBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
+batterySaverBtn.Font = Enum.Font.GothamBold
+batterySaverBtn.TextSize = 10
+batterySaverBtn.BorderSizePixel = 0
+batterySaverBtn.Parent = scrollFrame
+
+local bsCorner = Instance.new("UICorner")
+bsCorner.CornerRadius = UDim.new(0, 5)
+bsCorner.Parent = batterySaverBtn
+
+local antiLagBtn = Instance.new("TextButton")
+antiLagBtn.Size = UDim2.new(1, -24, 0, 20)
+antiLagBtn.Position = UDim2.new(0, 12, 0, 251)
+antiLagBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
+antiLagBtn.Text = "⚡ Анти-лаг очистка: ВЫКЛ"
+antiLagBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
+antiLagBtn.Font = Enum.Font.GothamBold
+antiLagBtn.TextSize = 10
+antiLagBtn.BorderSizePixel = 0
+antiLagBtn.Parent = scrollFrame
+
+local alCorner = Instance.new("UICorner")
+alCorner.CornerRadius = UDim.new(0, 5)
+alCorner.Parent = antiLagBtn
+
 -- Telegram Inputs
 local tgTokenInputBox = Instance.new("TextBox")
 tgTokenInputBox.Size = UDim2.new(1, -24, 0, 20)
-tgTokenInputBox.Position = UDim2.new(0, 12, 0, 232)
+tgTokenInputBox.Position = UDim2.new(0, 12, 0, 275)
 tgTokenInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 tgTokenInputBox.PlaceholderText = "Telegram Bot Token..."
 tgTokenInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -754,7 +983,7 @@ tgTokenCorner.Parent = tgTokenInputBox
 
 local tgChatIdInputBox = Instance.new("TextBox")
 tgChatIdInputBox.Size = UDim2.new(1, -24, 0, 20)
-tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 255)
+tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 298)
 tgChatIdInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 tgChatIdInputBox.PlaceholderText = "Telegram Chat ID (число)..."
 tgChatIdInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -772,7 +1001,7 @@ tgChatCorner.Parent = tgChatIdInputBox
 
 local saveBtn = Instance.new("TextButton")
 saveBtn.Size = UDim2.new(1, -24, 0, 24)
-saveBtn.Position = UDim2.new(0, 12, 0, 279)
+saveBtn.Position = UDim2.new(0, 12, 0, 322)
 saveBtn.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
 saveBtn.Text = "💾 СОХРАНИТЬ НАСТРОЙКИ"
 saveBtn.TextColor3 = Color3.fromRGB(215, 195, 255)
@@ -792,7 +1021,7 @@ saveBtnStroke.Parent = saveBtn
 
 local toggleButton = Instance.new("TextButton")
 toggleButton.Size = UDim2.new(1, -24, 0, 32)
-toggleButton.Position = UDim2.new(0, 12, 0, 307)
+toggleButton.Position = UDim2.new(0, 12, 0, 350)
 toggleButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 toggleButton.Text = "START AUTO FARM"
 toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -807,7 +1036,7 @@ btnCorner.Parent = toggleButton
 
 local creditsLabel = Instance.new("TextLabel")
 creditsLabel.Size = UDim2.new(1, 0, 0, 16)
-creditsLabel.Position = UDim2.new(0, 0, 0, 343)
+creditsLabel.Position = UDim2.new(0, 0, 0, 386)
 creditsLabel.BackgroundTransparency = 1
 creditsLabel.Text = "By: Probothotspot"
 creditsLabel.TextColor3 = Color3.fromRGB(175, 150, 220)
@@ -839,7 +1068,9 @@ saveConfig = function(customAutoStart)
         tgChatId = tgChatId,
         autoStart = shouldAutoStart,
         antiDarknessActive = antiDarknessActive,
-        antiHazardActive = antiHazardActive
+        antiHazardActive = antiHazardActive,
+        antiLagActive = antiLagActive,
+        staffDetectorActive = staffDetectorActive
     }
 
     if writefile then
@@ -938,31 +1169,25 @@ local function loadConfig()
                 end
                 if data.antiDarknessActive ~= nil then
                     antiDarknessActive = data.antiDarknessActive
-                    if antiDarknessActive then
-                        antiDarkBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-                        antiDarkBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-                        antiDarkBtn.Text = "Анти-темнота: ВКЛ"
-                    else
-                        antiDarkBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
-                        antiDarkBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
-                        antiDarkBtn.Text = "Анти-темнота: ВЫКЛ"
-                    end
+                    antiDarkBtn.BackgroundColor3 = antiDarknessActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+                    antiDarkBtn.TextColor3 = antiDarknessActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
+                    antiDarkBtn.Text = antiDarknessActive and "Анти-темнота: ВКЛ" or "Анти-темнота: ВЫКЛ"
                 end
                 if data.antiHazardActive ~= nil then
                     antiHazardActive = data.antiHazardActive
-                    if antiHazardActive then
-                        antiHazardBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-                        antiHazardBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-                        antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВКЛ"
-                        toggleAntiHazard(true)
-                    else
-                        antiHazardBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
-                        antiHazardBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
-                        antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВЫКЛ"
-                        toggleAntiHazard(false)
-                    end
+                    antiHazardBtn.BackgroundColor3 = antiHazardActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+                    antiHazardBtn.TextColor3 = antiHazardActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
+                    antiHazardBtn.Text = antiHazardActive and "🛡 Анти-урон / Вода: ВКЛ" or "🛡 Анти-урон / Вода: ВЫКЛ"
+                    toggleAntiHazard(antiHazardActive)
                 else
                     toggleAntiHazard(true)
+                end
+                if data.antiLagActive ~= nil then
+                    antiLagActive = data.antiLagActive
+                    antiLagBtn.BackgroundColor3 = antiLagActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+                    antiLagBtn.TextColor3 = antiLagActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
+                    antiLagBtn.Text = antiLagActive and "⚡ Анти-лаг очистка: ВКЛ" or "⚡ Анти-лаг очистка: ВЫКЛ"
+                    if antiLagActive then applyAntiLag() end
                 end
 
                 if data.autoStart then
@@ -999,33 +1224,37 @@ local function loadConfig()
     end
 end
 
--- Переключатель Анти-урон / Вода
+-- Кнопки действий
+batterySaverBtn.MouseButton1Click:Connect(function()
+    toggleBlackScreen(not isBlackScreen)
+    batterySaverBtn.BackgroundColor3 = isBlackScreen and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+    batterySaverBtn.TextColor3 = isBlackScreen and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
+    batterySaverBtn.Text = isBlackScreen and "🔋 Ночной режим (Экран): ВКЛ" or "🔋 Ночной режим (Экран): ВЫКЛ"
+end)
+
+antiLagBtn.MouseButton1Click:Connect(function()
+    antiLagActive = not antiLagActive
+    antiLagBtn.BackgroundColor3 = antiLagActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+    antiLagBtn.TextColor3 = antiLagActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
+    antiLagBtn.Text = antiLagActive and "⚡ Анти-лаг очистка: ВКЛ" or "⚡ Анти-лаг очистка: ВЫКЛ"
+    if antiLagActive then applyAntiLag() end
+    saveConfig()
+end)
+
 antiHazardBtn.MouseButton1Click:Connect(function()
     toggleAntiHazard(not antiHazardActive)
-    if antiHazardActive then
-        antiHazardBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-        antiHazardBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВКЛ"
-    else
-        antiHazardBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
-        antiHazardBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
-        antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВЫКЛ"
-    end
+    antiHazardBtn.BackgroundColor3 = antiHazardActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+    antiHazardBtn.TextColor3 = antiHazardActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
+    antiHazardBtn.Text = antiHazardActive and "🛡 Анти-урон / Вода: ВКЛ" or "🛡 Анти-урон / Вода: ВЫКЛ"
     saveConfig()
 end)
 
 antiDarkBtn.MouseButton1Click:Connect(function()
     antiDarknessActive = not antiDarknessActive
-    if antiDarknessActive then
-        antiDarkBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-        antiDarkBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        antiDarkBtn.Text = "Анти-темнота: ВКЛ"
-    else
-        antiDarkBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
-        antiDarkBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
-        antiDarkBtn.Text = "Анти-темнота: ВЫКЛ"
-        disableClearVision()
-    end
+    antiDarkBtn.BackgroundColor3 = antiDarknessActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+    antiDarkBtn.TextColor3 = antiDarknessActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
+    antiDarkBtn.Text = antiDarknessActive and "Анти-темнота: ВКЛ" or "Анти-темнота: ВЫКЛ"
+    if not antiDarknessActive then disableClearVision() end
     saveConfig()
 end)
 
@@ -1075,16 +1304,10 @@ end)
 
 autoBuyToggleBtn.MouseButton1Click:Connect(function()
     autoBuyActive = not autoBuyActive
-    if autoBuyActive then
-        autoBuyToggleBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-        autoBuyToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        autoBuyToggleBtn.Text = "Авто-закупка: ВКЛ"
-        checkAndAutoBuy()
-    else
-        autoBuyToggleBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
-        autoBuyToggleBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
-        autoBuyToggleBtn.Text = "Авто-закупка: ВЫКЛ"
-    end
+    autoBuyToggleBtn.BackgroundColor3 = autoBuyActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+    autoBuyToggleBtn.TextColor3 = autoBuyActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
+    autoBuyToggleBtn.Text = autoBuyActive and "Авто-закупка: ВКЛ" or "Авто-закупка: ВЫКЛ"
+    if autoBuyActive then checkAndAutoBuy() end
     saveConfig()
 end)
 
@@ -1123,16 +1346,27 @@ tgChatIdInputBox.FocusLost:Connect(function()
     saveConfig()
 end)
 
+-- Обновление статистики и проверка достижений
 local function updateGoldStats()
     local current = getCurrentGold()
     if farming then
         local delta = current - previousGold
         if delta > 0 then
             totalEarned = totalEarned + delta
+
+            -- Проверка рубежей достижений
+            for _, m in ipairs(MILESTONES) do
+                if totalEarned >= m and not reachedMilestones[m] then
+                    reachedMilestones[m] = true
+                    showAchievementToast("НОВОЕ ДОСТИЖЕНИЕ!", "Заработано +" .. tostring(m) .. " Gold!")
+                    sendTelegramMessage(string.format("🏆 <b>ДОСТИЖЕНИЕ РАЗБЛОКИРОВАНО!</b>\nСессия принесла уже более <b>+%d Gold</b>!", m))
+                end
+            end
         end
         previousGold = current
         startAndCurrentGoldLabel.Text = "Старт: " .. tostring(startGold) .. "  |  Сейчас: " .. tostring(current)
         goldTrackerLabel.Text = "Заработано: +" .. tostring(totalEarned) .. " Gold"
+        bsStats.Text = "Заработано: +" .. tostring(totalEarned) .. " Gold\nВремя: " .. timeTrackerLabel.Text:gsub("Время фарма: ", "")
     else
         previousGold = current
         startAndCurrentGoldLabel.Text = "Старт: 0  |  Сейчас: " .. tostring(current)
@@ -1173,6 +1407,7 @@ closeBtn.MouseButton1Click:Connect(function()
     saveConfig(false)
     disableClearVision()
     toggleAntiHazard(false)
+    toggleBlackScreen(false)
     if farmThread then task.cancel(farmThread) end
     if timerThread then task.cancel(timerThread) end
     if tgPollingThread then task.cancel(tgPollingThread) end
@@ -1221,6 +1456,8 @@ local function startFarmingLoop()
     farmThread = task.spawn(function()
         while farming do
             if antiHazardActive then applyAntiHazard(true) end
+            if antiLagActive then applyAntiLag() end
+
             local hrp, char, hum = getCurrentHRP()
             while farming and not hrp do
                 task.wait(0.2)
@@ -1399,8 +1636,10 @@ startFarming = function()
     startGold = getCurrentGold()
     previousGold = startGold
     totalEarned = 0
+    table.clear(reachedMilestones)
     updateGoldStats()
     if antiHazardActive then applyAntiHazard(true) end
+    if antiLagActive then applyAntiLag() end
 
     startTime = os.time()
     timeTrackerLabel.Text = "Время фарма: 00:00:00"
@@ -1408,7 +1647,11 @@ startFarming = function()
     timerThread = task.spawn(function()
         while farming do
             local elapsed = os.time() - startTime
-            timeTrackerLabel.Text = "Время фарма: " .. formatTime(elapsed)
+            local fmt = formatTime(elapsed)
+            timeTrackerLabel.Text = "Время фарма: " .. fmt
+            if isBlackScreen then
+                bsStats.Text = "Заработано: +" .. tostring(totalEarned) .. " Gold\nВремя: " .. fmt
+            end
             task.wait(1)
         end
     end)
@@ -1469,6 +1712,7 @@ local function syncTelegramOffset()
     end
 end
 
+-- Обработка Telegram команд
 tgPollingThread = task.spawn(function()
     task.wait(2)
     syncTelegramOffset()
@@ -1490,7 +1734,9 @@ tgPollingThread = task.spawn(function()
                             lastUpdateId = update.update_id
                             local msg = update.message
                             if msg and tostring(msg.chat.id) == tostring(tgChatId) and msg.text then
-                                local cmd = string.lower(string.gsub(msg.text, "%s+", ""))
+                                local fullText = msg.text
+                                local parts = string.split(fullText, " ")
+                                local cmd = string.lower(parts[1] or "")
 
                                 if cmd == "/stop" then
                                     if farming then
@@ -1499,36 +1745,66 @@ tgPollingThread = task.spawn(function()
                                     else
                                         sendTelegramMessage("⚠️ Фарм уже выключен.")
                                     end
-                                elseif cmd == "/god" or cmd == "/water" then
-                                    toggleAntiHazard(not antiHazardActive)
-                                    if antiHazardActive then
-                                        antiHazardBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-                                        antiHazardBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-                                        antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВКЛ"
-                                        sendTelegramMessage("🛡 <b>Защита от воды/урона: ВКЛЮЧЕНА!</b>")
-                                    else
-                                        antiHazardBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
-                                        antiHazardBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
-                                        antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВЫКЛ"
-                                        sendTelegramMessage("🛡 <b>Защита от воды/урона: ВЫКЛЮЧЕНА!</b>")
-                                    end
-                                    saveConfig()
-                                elseif cmd == "/kill" or cmd == "/shutdown" then
-                                    stopFarming()
-                                    autoStartOnJoin = false
-                                    autoRejoinActive = false
-                                    toggleAntiHazard(false)
-                                    saveConfig(false)
-                                    sendTelegramMessage("💀 <b>Скрипт полностью остановлен и деактивирован!</b>\nАвто-старт и авто-перезаход отключены.")
-                                    if screenGui and screenGui.Parent then
-                                        screenGui:Destroy()
-                                    end
                                 elseif cmd == "/start" then
                                     if not farming then
                                         startFarming()
                                         sendTelegramMessage("🚀 <b>Фарм запущен дистанционно!</b>")
                                     else
                                         sendTelegramMessage("⚠️ Фарм уже работает.")
+                                    end
+                                elseif cmd == "/mode" then
+                                    farmMode = (farmMode == "Chest" and "Gold" or "Chest")
+                                    chestModeBtn.BackgroundColor3 = (farmMode == "Chest") and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+                                    chestModeBtn.TextColor3 = (farmMode == "Chest") and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(160, 145, 185)
+                                    goldModeBtn.BackgroundColor3 = (farmMode == "Gold") and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+                                    goldModeBtn.TextColor3 = (farmMode == "Gold") and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(160, 145, 185)
+                                    saveConfig()
+                                    sendTelegramMessage("🔄 <b>Режим фарма переключен на:</b> " .. (farmMode == "Chest" and "Сундук" or "Золото"))
+                                elseif cmd == "/afk" or cmd == "/screen" then
+                                    toggleBlackScreen(not isBlackScreen)
+                                    batterySaverBtn.BackgroundColor3 = isBlackScreen and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+                                    batterySaverBtn.TextColor3 = isBlackScreen and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
+                                    batterySaverBtn.Text = isBlackScreen and "🔋 Ночной режим (Экран): ВКЛ" or "🔋 Ночной режим (Экран): ВЫКЛ"
+                                    sendTelegramMessage("🔋 <b>Ночной режим энергосбережения:</b> " .. (isBlackScreen and "ВКЛЮЧЕН" or "ВЫКЛЮЧЕН"))
+                                elseif cmd == "/lag" then
+                                    antiLagActive = not antiLagActive
+                                    antiLagBtn.BackgroundColor3 = antiLagActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+                                    antiLagBtn.TextColor3 = antiLagActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
+                                    antiLagBtn.Text = antiLagActive and "⚡ Анти-лаг очистка: ВКЛ" or "⚡ Анти-лаг очистка: ВЫКЛ"
+                                    if antiLagActive then applyAntiLag() end
+                                    saveConfig()
+                                    sendTelegramMessage("⚡ <b>Анти-лаг очистка:</b> " .. (antiLagActive and "ВКЛЮЧЕНА" or "ВЫКЛЮЧЕНА"))
+                                elseif cmd == "/buy" then
+                                    local itemArg = parts[2]
+                                    local amountArg = tonumber(parts[3]) or 1
+                                    if not itemArg then
+                                        sendTelegramMessage("⚠️ Формат команды: <code>/buy [блок] [кол-во]</code>\nПример: <code>/buy лего 5</code>")
+                                    else
+                                        local success, resultMsg = executeBuy(itemArg, amountArg)
+                                        if success then
+                                            sendTelegramMessage("🛍 <b>" .. resultMsg .. "</b>")
+                                            showAchievementToast("ПОКУПКА ИЗ TELEGRAM", resultMsg)
+                                        else
+                                            sendTelegramMessage("❌ <b>Ошибка:</b> " .. resultMsg)
+                                        end
+                                    end
+                                elseif cmd == "/god" or cmd == "/water" then
+                                    toggleAntiHazard(not antiHazardActive)
+                                    antiHazardBtn.BackgroundColor3 = antiHazardActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+                                    antiHazardBtn.TextColor3 = antiHazardActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
+                                    antiHazardBtn.Text = antiHazardActive and "🛡 Анти-урон / Вода: ВКЛ" or "🛡 Анти-урон / Вода: ВЫКЛ"
+                                    saveConfig()
+                                    sendTelegramMessage("🛡 <b>Защита от воды/урона:</b> " .. (antiHazardActive and "ВКЛ" or "ВЫКЛ"))
+                                elseif cmd == "/kill" or cmd == "/shutdown" then
+                                    stopFarming()
+                                    autoStartOnJoin = false
+                                    autoRejoinActive = false
+                                    toggleAntiHazard(false)
+                                    toggleBlackScreen(false)
+                                    saveConfig(false)
+                                    sendTelegramMessage("💀 <b>Скрипт полностью остановлен и деактивирован!</b>\nАвто-старт и авто-перезаход отключены.")
+                                    if screenGui and screenGui.Parent then
+                                        screenGui:Destroy()
                                     end
                                 elseif cmd == "/status" then
                                     local currentG = getCurrentGold()
@@ -1539,6 +1815,8 @@ tgPollingThread = task.spawn(function()
                                         "• Режим: <b>%s</b>\n" ..
                                         "• Анти-темнота: <b>%s</b>\n" ..
                                         "• Анти-вода/урон: <b>%s</b>\n" ..
+                                        "• Анти-лаг: <b>%s</b>\n" ..
+                                        "• Ночной экран: <b>%s</b>\n" ..
                                         "• Время сессии: <b>%s</b>\n" ..
                                         "• Баланс: <b>%d Gold</b>\n" ..
                                         "• Заработано: <b>+%d Gold</b>",
@@ -1546,6 +1824,8 @@ tgPollingThread = task.spawn(function()
                                         farmMode == "Chest" and "Сундук" or "Золото",
                                         antiDarknessActive and "ВКЛ" or "ВЫКЛ",
                                         antiHazardActive and "ВКЛ" or "ВЫКЛ",
+                                        antiLagActive and "ВКЛ" or "ВЫКЛ",
+                                        isBlackScreen and "ВКЛ" or "ВЫКЛ",
                                         formatTime(elapsed),
                                         currentG,
                                         totalEarned
@@ -1563,5 +1843,5 @@ tgPollingThread = task.spawn(function()
     end
 end)
 
--- Загрузка настроек при запуске
+-- Загрузка сохраненного конфига
 loadConfig()
