@@ -511,12 +511,11 @@ screenGui.ResetOnSpawn = false
 
 local guiParent = (gethui and gethui()) or (pcall(function() return game:GetService("CoreGui") end) and game:GetService("CoreGui")) or player:WaitForChild("PlayerGui")
 
--- Проверка и удаление старого GUI с тем же именем
+-- Проверка и очистка старого ScreenGui
 local existingGui = guiParent:FindFirstChild("BabftPurpleUI")
 if existingGui then
     existingGui:Destroy()
 end
-
 screenGui.Parent = guiParent
 
 -- Всплывающее достижение
@@ -649,7 +648,7 @@ local savedWindowSize = UDim2.new(0, 260, 0, 320)
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = savedWindowSize
 mainFrame.Position = UDim2.new(0.5, -130, 0.28, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(12, 10, 18)
+mainFrame.BackgroundColor3 = Color3.fromRGB(10, 8, 16)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.ClipsDescendants = true
@@ -681,7 +680,7 @@ local rotConn = RunService.RenderStepped:Connect(function()
 end)
 
 -- =====================================================================
--- 2. ДЕТАЛИЗИРОВАННЫЙ КОСМИЧЕСКИЙ ФОН (ТУМАННОСТИ, ПЛАНЕТЫ, ЗВЕЗДЫ)
+-- 2. ГЛУБОКИЙ ДЕТАЛИЗИРОВАННЫЙ КОСМОС (РЕАЛИСТИЧНЫЕ САТУРН, ЗЕМЛЯ, МАРС)
 -- =====================================================================
 local spaceBg = Instance.new("Frame")
 spaceBg.Size = UDim2.new(1, 0, 1, 0)
@@ -689,26 +688,23 @@ spaceBg.BackgroundTransparency = 1
 spaceBg.ZIndex = 1
 spaceBg.Parent = mainFrame
 
--- Космическая туманность (Nebula Glows)
+-- Космические туманности
 local function createNebula(size, pos, color, rot)
     local neb = Instance.new("Frame")
     neb.Size = size
     neb.Position = pos
     neb.BackgroundColor3 = color
-    neb.BackgroundTransparency = 0.72
+    neb.BackgroundTransparency = 0.8
     neb.BorderSizePixel = 0
     neb.ZIndex = 1
     neb.Parent = spaceBg
 
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(1, 0)
-    c.Parent = neb
-
+    local c = Instance.new("UICorner") c.CornerRadius = UDim.new(1, 0) c.Parent = neb
     local g = Instance.new("UIGradient")
-    g.Color = ColorSequence.new(color, Color3.fromRGB(8, 6, 15))
+    g.Color = ColorSequence.new(color, Color3.fromRGB(10, 8, 16))
     g.Transparency = NumberSequence.new({
         NumberSequenceKeypoint.new(0, 0.4),
-        NumberSequenceKeypoint.new(0.6, 0.75),
+        NumberSequenceKeypoint.new(0.6, 0.8),
         NumberSequenceKeypoint.new(1, 1)
     })
     g.Rotation = rot
@@ -716,170 +712,293 @@ local function createNebula(size, pos, color, rot)
     return neb
 end
 
-createNebula(UDim2.new(0, 140, 0, 140), UDim2.new(0.6, -20, 0.1, 0), Color3.fromRGB(145, 45, 230), 45)
-createNebula(UDim2.new(0, 110, 0, 110), UDim2.new(0.05, 0, 0.55, 0), Color3.fromRGB(40, 100, 220), -30)
+createNebula(UDim2.new(0, 160, 0, 160), UDim2.new(0.55, -20, 0.05, 0), Color3.fromRGB(150, 40, 220), 45)
+createNebula(UDim2.new(0, 120, 0, 120), UDim2.new(0.02, 0, 0.58, 0), Color3.fromRGB(30, 80, 200), -30)
 
--- Реалистичные детализированные планеты
--- Планета 1: Газовый гигант с кольцом и атмосферой
-local planet1Container = Instance.new("Frame")
-planet1Container.Size = UDim2.new(0, 52, 0, 52)
-planet1Container.Position = UDim2.new(0.72, 0, 0.18, 0)
-planet1Container.BackgroundTransparency = 1
-planet1Container.ZIndex = 1
-planet1Container.Parent = spaceBg
+-- 🪐 ФОТОРЕАЛИСТИЧНЫЙ САТУРН С РАЗДЕЛЕНИЕМ СЛОЕВ КОЛЕЦ
+local saturnContainer = Instance.new("Frame")
+saturnContainer.Size = UDim2.new(0, 84, 0, 60)
+saturnContainer.Position = UDim2.new(0.68, -10, 0.15, 0)
+saturnContainer.BackgroundTransparency = 1
+saturnContainer.ZIndex = 1
+saturnContainer.Parent = spaceBg
 
--- Внешнее атмосферное свечение (Atmospheric Glow)
-local p1Glow = Instance.new("Frame")
-p1Glow.Size = UDim2.new(1, 10, 1, 10)
-p1Glow.Position = UDim2.new(0, -5, 0, -5)
-p1Glow.BackgroundColor3 = Color3.fromRGB(180, 120, 255)
-p1Glow.BackgroundTransparency = 0.65
-p1Glow.BorderSizePixel = 0
-p1Glow.ZIndex = 1
-p1Glow.Parent = planet1Container
-local p1GlowCorner = Instance.new("UICorner") p1GlowCorner.CornerRadius = UDim.new(1, 0) p1GlowCorner.Parent = p1Glow
+-- Задняя часть кольца (ZIndex = 1, проходит ПОЗАДИ планеты)
+local backRingContainer = Instance.new("Frame")
+backRingContainer.Size = UDim2.new(1, 0, 1, 0)
+backRingContainer.BackgroundTransparency = 1
+backRingContainer.ClipsDescendants = true
+backRingContainer.ZIndex = 1
+backRingContainer.Parent = saturnContainer
 
--- Тело планеты 1
-local p1Body = Instance.new("Frame")
-p1Body.Size = UDim2.new(1, 0, 1, 0)
-p1Body.BackgroundColor3 = Color3.fromRGB(130, 40, 210)
-p1Body.BorderSizePixel = 0
-p1Body.ClipsDescendants = true
-p1Body.ZIndex = 2
-p1Body.Parent = planet1Container
-local p1Corner = Instance.new("UICorner") p1Corner.CornerRadius = UDim.new(1, 0) p1Corner.Parent = p1Body
+local backRingClipper = Instance.new("Frame")
+backRingClipper.Size = UDim2.new(1, 0, 0.52, 0)
+backRingClipper.Position = UDim2.new(0, 0, 0, 0)
+backRingClipper.BackgroundTransparency = 1
+backRingClipper.ClipsDescendants = true
+backRingClipper.Parent = backRingContainer
 
--- Градиент освещения поверхности
-local p1Grad = Instance.new("UIGradient")
-p1Grad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(225, 170, 255)),
-    ColorSequenceKeypoint.new(0.4, Color3.fromRGB(140, 45, 215)),
-    ColorSequenceKeypoint.new(0.8, Color3.fromRGB(50, 15, 95)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 5, 30))
+local backRingDisc = Instance.new("Frame")
+backRingDisc.Size = UDim2.new(0, 82, 0, 24)
+backRingDisc.Position = UDim2.new(0.5, -41, 0.5, -12)
+backRingDisc.BackgroundColor3 = Color3.fromRGB(225, 195, 145)
+backRingDisc.BackgroundTransparency = 0.2
+backRingDisc.BorderSizePixel = 0
+backRingDisc.Rotation = -24
+backRingDisc.Parent = backRingClipper
+local brCorner = Instance.new("UICorner") brCorner.CornerRadius = UDim.new(1, 0) brCorner.Parent = backRingDisc
+
+local brGrad = Instance.new("UIGradient")
+brGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(150, 115, 75)),
+    ColorSequenceKeypoint.new(0.25, Color3.fromRGB(235, 205, 155)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(80, 60, 40)), -- Щель Кассини
+    ColorSequenceKeypoint.new(0.75, Color3.fromRGB(215, 185, 135)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(120, 90, 55))
 })
-p1Grad.Rotation = 45
-p1Grad.Parent = p1Body
+brGrad.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.9),
+    NumberSequenceKeypoint.new(0.2, 0.1),
+    NumberSequenceKeypoint.new(0.48, 0.2),
+    NumberSequenceKeypoint.new(0.52, 0.85), -- Просвет в щели
+    NumberSequenceKeypoint.new(0.8, 0.15),
+    NumberSequenceKeypoint.new(1, 0.95)
+})
+brGrad.Parent = backRingDisc
 
--- Теневая сторона (Terminator shadow)
-local p1Shadow = Instance.new("Frame")
-p1Shadow.Size = UDim2.new(1.2, 0, 1.2, 0)
-p1Shadow.Position = UDim2.new(-0.2, 0, 0.1, 0)
-p1Shadow.BackgroundColor3 = Color3.fromRGB(10, 5, 20)
-p1Shadow.BackgroundTransparency = 0.3
-p1Shadow.BorderSizePixel = 0
-p1Shadow.ZIndex = 3
-p1Shadow.Parent = p1Body
-local p1ShadowCorner = Instance.new("UICorner") p1ShadowCorner.CornerRadius = UDim.new(1, 0) p1ShadowCorner.Parent = p1Shadow
-local p1ShadowGrad = Instance.new("UIGradient")
-p1ShadowGrad.Transparency = NumberSequence.new({
+-- Тело Сатурна (ZIndex = 2)
+local saturnGlobe = Instance.new("Frame")
+saturnGlobe.Size = UDim2.new(0, 40, 0, 40)
+saturnGlobe.Position = UDim2.new(0.5, -20, 0.5, -20)
+saturnGlobe.BackgroundColor3 = Color3.fromRGB(224, 192, 140)
+saturnGlobe.BorderSizePixel = 0
+saturnGlobe.ClipsDescendants = true
+saturnGlobe.ZIndex = 2
+saturnGlobe.Parent = saturnContainer
+local sgCorner = Instance.new("UICorner") sgCorner.CornerRadius = UDim.new(1, 0) sgCorner.Parent = saturnGlobe
+
+-- Полосы атмосферы Сатурна
+local saturnBands = Instance.new("UIGradient")
+saturnBands.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0.0, Color3.fromRGB(235, 210, 165)),
+    ColorSequenceKeypoint.new(0.2, Color3.fromRGB(195, 150, 100)),
+    ColorSequenceKeypoint.new(0.4, Color3.fromRGB(240, 220, 180)),
+    ColorSequenceKeypoint.new(0.55, Color3.fromRGB(180, 135, 90)),
+    ColorSequenceKeypoint.new(0.75, Color3.fromRGB(220, 185, 135)),
+    ColorSequenceKeypoint.new(1.0, Color3.fromRGB(160, 120, 75))
+})
+saturnBands.Rotation = 66
+saturnBands.Parent = saturnGlobe
+
+-- Реалистичная сферическая тень (Терминатор)
+local saturnShadow = Instance.new("Frame")
+saturnShadow.Size = UDim2.new(1.2, 0, 1.2, 0)
+saturnShadow.Position = UDim2.new(-0.25, 0, -0.1, 0)
+saturnShadow.BackgroundColor3 = Color3.fromRGB(8, 6, 14)
+saturnShadow.BorderSizePixel = 0
+saturnShadow.ZIndex = 3
+saturnShadow.Parent = saturnGlobe
+local ssCorner = Instance.new("UICorner") ssCorner.CornerRadius = UDim.new(1, 0) ssCorner.Parent = saturnShadow
+local ssGrad = Instance.new("UIGradient")
+ssGrad.Transparency = NumberSequence.new({
     NumberSequenceKeypoint.new(0, 1),
-    NumberSequenceKeypoint.new(0.5, 0.4),
+    NumberSequenceKeypoint.new(0.45, 0.7),
+    NumberSequenceKeypoint.new(0.85, 0.05),
     NumberSequenceKeypoint.new(1, 0)
 })
-p1ShadowGrad.Rotation = 45
-p1ShadowGrad.Parent = p1Shadow
+ssGrad.Rotation = 45
+ssGrad.Parent = saturnShadow
 
--- Планетарное кольцо (Rings)
-local p1Ring = Instance.new("Frame")
-p1Ring.Size = UDim2.new(0, 78, 0, 16)
-p1Ring.Position = UDim2.new(0.5, -39, 0.5, -8)
-p1Ring.BackgroundTransparency = 1
-p1Ring.Rotation = -24
-p1Ring.ZIndex = 3
-p1Ring.Parent = planet1Container
+-- Передняя часть кольца (ZIndex = 4, проходит ПОВЕРХ планеты)
+local frontRingContainer = Instance.new("Frame")
+frontRingContainer.Size = UDim2.new(1, 0, 0.52, 0)
+frontRingContainer.Position = UDim2.new(0, 0, 0.48, 0)
+frontRingContainer.BackgroundTransparency = 1
+frontRingContainer.ClipsDescendants = true
+frontRingContainer.ZIndex = 4
+frontRingContainer.Parent = saturnContainer
 
-local p1RingStroke = Instance.new("UIStroke")
-p1RingStroke.Thickness = 2.2
-p1RingStroke.Color = Color3.fromRGB(215, 180, 255)
-p1RingStroke.Transparency = 0.25
-p1RingStroke.Parent = p1Ring
+local frontRingDisc = Instance.new("Frame")
+frontRingDisc.Size = UDim2.new(0, 82, 0, 24)
+frontRingDisc.Position = UDim2.new(0.5, -41, 0, -12)
+frontRingDisc.BackgroundColor3 = Color3.fromRGB(225, 195, 145)
+frontRingDisc.BackgroundTransparency = 0.2
+frontRingDisc.BorderSizePixel = 0
+frontRingDisc.Rotation = -24
+frontRingDisc.Parent = frontRingContainer
+local frCorner = Instance.new("UICorner") frCorner.CornerRadius = UDim.new(1, 0) frCorner.Parent = frontRingDisc
+local frGrad = brGrad:Clone()
+frGrad.Parent = frontRingDisc
 
-local p1RingCorner = Instance.new("UICorner")
-p1RingCorner.CornerRadius = UDim.new(1, 0)
-p1RingCorner.Parent = p1Ring
+-- 🌍 ФОТОРЕАЛИСТИЧНАЯ ЗЕМЛЯ С АТМОСФЕРОЙ И МАТЕРИКАМИ
+local earthContainer = Instance.new("Frame")
+earthContainer.Size = UDim2.new(0, 34, 0, 34)
+earthContainer.Position = UDim2.new(0.1, 0, 0.62, 0)
+earthContainer.BackgroundTransparency = 1
+earthContainer.ZIndex = 1
+earthContainer.Parent = spaceBg
 
--- Планета 2: Терра-луна с кратерами
-local planet2 = Instance.new("Frame")
-planet2.Size = UDim2.new(0, 28, 0, 28)
-planet2.Position = UDim2.new(0.12, 0, 0.62, 0)
-planet2.BackgroundColor3 = Color3.fromRGB(60, 130, 220)
-planet2.BorderSizePixel = 0
-planet2.ClipsDescendants = true
-planet2.ZIndex = 1
-planet2.Parent = spaceBg
-local p2Corner = Instance.new("UICorner") p2Corner.CornerRadius = UDim.new(1, 0) p2Corner.Parent = planet2
+-- Голубой ореол атмосферы Земли (Rayleigh scattering)
+local earthHalo = Instance.new("Frame")
+earthHalo.Size = UDim2.new(1, 8, 1, 8)
+earthHalo.Position = UDim2.new(0, -4, 0, -4)
+earthHalo.BackgroundColor3 = Color3.fromRGB(80, 190, 255)
+earthHalo.BackgroundTransparency = 0.68
+earthHalo.BorderSizePixel = 0
+earthHalo.ZIndex = 1
+earthHalo.Parent = earthContainer
+local ehCorner = Instance.new("UICorner") ehCorner.CornerRadius = UDim.new(1, 0) ehCorner.Parent = earthHalo
 
-local p2Grad = Instance.new("UIGradient")
-p2Grad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(150, 210, 255)),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(50, 110, 200)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 20, 50))
-})
-p2Grad.Rotation = -35
-p2Grad.Parent = planet2
+-- Тело Земли
+local earthGlobe = Instance.new("Frame")
+earthGlobe.Size = UDim2.new(1, 0, 1, 0)
+earthGlobe.BackgroundColor3 = Color3.fromRGB(15, 65, 140)
+earthGlobe.BorderSizePixel = 0
+earthGlobe.ClipsDescendants = true
+earthGlobe.ZIndex = 2
+earthGlobe.Parent = earthContainer
+local egCorner = Instance.new("UICorner") egCorner.CornerRadius = UDim.new(1, 0) egCorner.Parent = earthGlobe
 
--- Кратеры на планете 2
-local function createCrater(size, pos, trans)
-    local cr = Instance.new("Frame")
-    cr.Size = size
-    cr.Position = pos
-    cr.BackgroundColor3 = Color3.fromRGB(15, 35, 75)
-    cr.BackgroundTransparency = trans
-    cr.BorderSizePixel = 0
-    cr.ZIndex = 2
-    cr.Parent = planet2
-    local c = Instance.new("UICorner") c.CornerRadius = UDim.new(1, 0) c.Parent = cr
+-- Материки Земли
+local function createContinent(size, pos, color, rot)
+    local cont = Instance.new("Frame")
+    cont.Size = size
+    cont.Position = pos
+    cont.BackgroundColor3 = color
+    cont.BorderSizePixel = 0
+    cont.Rotation = rot
+    cont.ZIndex = 3
+    cont.Parent = earthGlobe
+    local cc = Instance.new("UICorner") cc.CornerRadius = UDim.new(0.6, 0) cc.Parent = cont
 end
-createCrater(UDim2.new(0, 6, 0, 6), UDim2.new(0.25, 0, 0.3, 0), 0.3)
-createCrater(UDim2.new(0, 4, 0, 4), UDim2.new(0.55, 0, 0.5, 0), 0.4)
-createCrater(UDim2.new(0, 3, 0, 3), UDim2.new(0.35, 0, 0.65, 0), 0.5)
+createContinent(UDim2.new(0, 14, 0, 18), UDim2.new(0.18, 0, 0.15, 0), Color3.fromRGB(45, 125, 55), 15)
+createContinent(UDim2.new(0, 10, 0, 12), UDim2.new(0.55, 0, 0.45, 0), Color3.fromRGB(130, 115, 60), -20)
+createContinent(UDim2.new(0, 8, 0, 7), UDim2.new(0.3, 0, 0.65, 0), Color3.fromRGB(35, 110, 45), 40)
 
--- Планета 3: Далекий алый карлик
-local planet3 = Instance.new("Frame")
-planet3.Size = UDim2.new(0, 18, 0, 18)
-planet3.Position = UDim2.new(0.64, 0, 0.78, 0)
-planet3.BackgroundColor3 = Color3.fromRGB(240, 90, 130)
-planet3.BorderSizePixel = 0
-planet3.ZIndex = 1
-planet3.Parent = spaceBg
-local p3Corner = Instance.new("UICorner") p3Corner.CornerRadius = UDim.new(1, 0) p3Corner.Parent = planet3
-local p3Grad = Instance.new("UIGradient")
-p3Grad.Color = ColorSequence.new(Color3.fromRGB(255, 170, 180), Color3.fromRGB(90, 15, 35))
-p3Grad.Rotation = 60
-p3Grad.Parent = planet3
+-- Закрученные белые облака
+local clouds = Instance.new("Frame")
+clouds.Size = UDim2.new(1, 0, 1, 0)
+clouds.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+clouds.BackgroundTransparency = 0.72
+clouds.BorderSizePixel = 0
+clouds.ZIndex = 4
+clouds.Parent = earthGlobe
+local cGrad = Instance.new("UIGradient")
+cGrad.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(200, 230, 255))
+cGrad.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.4),
+    NumberSequenceKeypoint.new(0.3, 0.85),
+    NumberSequenceKeypoint.new(0.7, 0.35),
+    NumberSequenceKeypoint.new(1, 0.9)
+})
+cGrad.Rotation = 25
+cGrad.Parent = clouds
+
+-- Тень Земли
+local earthShadow = Instance.new("Frame")
+earthShadow.Size = UDim2.new(1.2, 0, 1.2, 0)
+earthShadow.Position = UDim2.new(-0.25, 0, -0.1, 0)
+earthShadow.BackgroundColor3 = Color3.fromRGB(5, 10, 25)
+earthShadow.BorderSizePixel = 0
+earthShadow.ZIndex = 5
+earthShadow.Parent = earthGlobe
+local esCorner = Instance.new("UICorner") esCorner.CornerRadius = UDim.new(1, 0) esCorner.Parent = earthShadow
+local esGrad = ssGrad:Clone()
+esGrad.Parent = earthShadow
+
+-- 🌑 ЛУНА ВОЗЛЕ ЗЕМЛИ
+local moon = Instance.new("Frame")
+moon.Size = UDim2.new(0, 8, 0, 8)
+moon.Position = UDim2.new(1, 6, 0.15, 0)
+moon.BackgroundColor3 = Color3.fromRGB(195, 200, 210)
+moon.BorderSizePixel = 0
+moon.ZIndex = 1
+moon.Parent = earthContainer
+local mCorner = Instance.new("UICorner") mCorner.CornerRadius = UDim.new(1, 0) mCorner.Parent = moon
+local mGrad = Instance.new("UIGradient")
+mGrad.Color = ColorSequence.new(Color3.fromRGB(230, 235, 245), Color3.fromRGB(60, 65, 75))
+mGrad.Rotation = 45
+mGrad.Parent = moon
+
+-- 🔴 МАРС С ПОЛЯРНОЙ ШАПКОЙ
+local mars = Instance.new("Frame")
+mars.Size = UDim2.new(0, 20, 0, 20)
+mars.Position = UDim2.new(0.68, 0, 0.78, 0)
+mars.BackgroundColor3 = Color3.fromRGB(195, 65, 35)
+mars.BorderSizePixel = 0
+mars.ClipsDescendants = true
+mars.ZIndex = 1
+mars.Parent = spaceBg
+local marsCorner = Instance.new("UICorner") marsCorner.CornerRadius = UDim.new(1, 0) marsCorner.Parent = mars
+
+local marsGrad = Instance.new("UIGradient")
+marsGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(245, 120, 75)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(180, 55, 25)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(75, 15, 10))
+})
+marsGrad.Rotation = 45
+marsGrad.Parent = mars
+
+-- Полярная ледяная шапка Марса
+local marsIce = Instance.new("Frame")
+marsIce.Size = UDim2.new(0, 8, 0, 4)
+marsIce.Position = UDim2.new(0.5, -4, 0, 0)
+marsIce.BackgroundColor3 = Color3.fromRGB(245, 250, 255)
+marsIce.BorderSizePixel = 0
+marsIce.ZIndex = 2
+marsIce.Parent = mars
+local miCorner = Instance.new("UICorner") miCorner.CornerRadius = UDim.new(1, 0) miCorner.Parent = marsIce
 
 -- Плавное парение планет
-TweenService:Create(planet1Container, TweenInfo.new(6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-    Position = UDim2.new(0.72, -15, 0.18, 12)
+TweenService:Create(saturnContainer, TweenInfo.new(6.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+    Position = UDim2.new(0.68, -18, 0.15, 10)
 }):Play()
-TweenService:Create(planet2, TweenInfo.new(5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-    Position = UDim2.new(0.12, 12, 0.62, -10)
+TweenService:Create(earthContainer, TweenInfo.new(5.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+    Position = UDim2.new(0.1, 10, 0.62, -8)
 }):Play()
-TweenService:Create(planet3, TweenInfo.new(4.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-    Position = UDim2.new(0.64, -8, 0.78, -8)
+TweenService:Create(mars, TweenInfo.new(4.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+    Position = UDim2.new(0.68, -6, 0.78, -6)
 }):Play()
 
--- Детализированные звезды (3 слоя: яркие, средние, мелкие)
-for i = 1, 24 do
-    local isBright = (i % 5 == 0)
+-- Реалистичные звезды (3 слоя: микро, средние, с дифракционными лучами)
+for i = 1, 26 do
+    local isCross = (i % 8 == 0)
     local star = Instance.new("Frame")
-    star.Size = isBright and UDim2.new(0, 3, 0, 3) or UDim2.new(0, 2, 0, 2)
-    star.Position = UDim2.new(math.random(4, 96) / 100, 0, math.random(8, 94) / 100, 0)
-    star.BackgroundColor3 = isBright and Color3.fromRGB(255, 245, 220) or Color3.fromRGB(215, 225, 255)
+    star.Size = isCross and UDim2.new(0, 4, 0, 4) or UDim2.new(0, math.random(1, 2), 0, math.random(1, 2))
+    star.Position = UDim2.new(math.random(3, 97) / 100, 0, math.random(8, 94) / 100, 0)
+    star.BackgroundColor3 = isCross and Color3.fromRGB(255, 250, 225) or Color3.fromRGB(215, 230, 255)
     star.BackgroundTransparency = math.random(2, 6) / 10
     star.BorderSizePixel = 0
     star.ZIndex = 1
     star.Parent = spaceBg
 
-    local sc = Instance.new("UICorner")
-    sc.CornerRadius = UDim.new(1, 0)
-    sc.Parent = star
+    local sc = Instance.new("UICorner") sc.CornerRadius = UDim.new(1, 0) sc.Parent = star
 
-    local tw = TweenInfo.new(math.random(15, 35) / 10, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-    TweenService:Create(star, tw, {BackgroundTransparency = isBright and 0.1 or 0.8}):Play()
+    if isCross then
+        -- Тонкие дифракционные лучи яркой звезды
+        local hRay = Instance.new("Frame")
+        hRay.Size = UDim2.new(0, 8, 0, 1)
+        hRay.Position = UDim2.new(0.5, -4, 0.5, 0)
+        hRay.BackgroundColor3 = Color3.fromRGB(255, 245, 220)
+        hRay.BackgroundTransparency = 0.4
+        hRay.BorderSizePixel = 0
+        hRay.Parent = star
+
+        local vRay = Instance.new("Frame")
+        vRay.Size = UDim2.new(0, 1, 0, 8)
+        vRay.Position = UDim2.new(0.5, 0, 0.5, -4)
+        vRay.BackgroundColor3 = Color3.fromRGB(255, 245, 220)
+        vRay.BackgroundTransparency = 0.4
+        vRay.BorderSizePixel = 0
+        vRay.Parent = star
+    end
+
+    local tw = TweenInfo.new(math.random(18, 36) / 10, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+    TweenService:Create(star, tw, {BackgroundTransparency = isCross and 0.05 or 0.85}):Play()
 end
 
--- Падающая комета / Метеор
+-- Падающая комета
 local comet = Instance.new("Frame")
 comet.Size = UDim2.new(0, 45, 0, 2)
 comet.Position = UDim2.new(-0.2, 0, 0.1, 0)
@@ -893,7 +1012,7 @@ local cometGrad = Instance.new("UIGradient")
 cometGrad.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(150, 80, 255))
 cometGrad.Transparency = NumberSequence.new({
     NumberSequenceKeypoint.new(0, 0),
-    NumberSequenceKeypoint.new(0.6, 0.3),
+    NumberSequenceKeypoint.new(0.5, 0.3),
     NumberSequenceKeypoint.new(1, 1)
 })
 cometGrad.Parent = comet
@@ -2229,5 +2348,5 @@ tgPollingThread = task.spawn(function()
     end
 end)
 
--- Загрузка настроек при старте
+-- Загрузка сохраненного конфига
 loadConfig()
