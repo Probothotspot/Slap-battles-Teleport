@@ -26,6 +26,11 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local SoundService = game:GetService("SoundService")
 
+-- ПРЕДВАРИТЕЛЬНОЕ ОБЪЯВЛЕНИЕ ВСЕХ ФУНКЦИЙ (Защита от краша на Xeno)
+local startFarming, stopFarming, saveConfig, executeRejoin, toggleBlackScreen, showAchievementToast
+local updateSpeedAndEtaMetrics, updateGoldStats, fullCleanup, applyAntiHazard, applyAntiLag
+local enableClearVision, disableClearVision, toggleAntiHazard
+
 local farming = false
 local isRejoining = false
 local isBlackScreen = false
@@ -67,7 +72,7 @@ local tgToken = ""
 local tgChatId = ""
 local lastUpdateId = 0
 
--- Статистика, расчет скорости (поминутный замер) и достижения
+-- Статистика, расчет скорости (2-минутный замер) и достижения
 local startGold = 0
 local previousGold = 0
 local totalEarned = 0
@@ -182,7 +187,7 @@ local STAGE_COORDINATES = {
 local CHEST_POSITION = Vector3.new(-55, -356, 9489)
 local SPAWN_Z_MAX = 1200
 
--- Звуковые эффекты
+-- Безопасные звуковые эффекты
 local clickSfx, coinSfx, achievementSfx
 pcall(function()
     local function createSound(id, vol)
@@ -208,8 +213,6 @@ local idledConn = player.Idled:Connect(function()
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new(0, 0))
 end)
-
-local startFarming, stopFarming, saveConfig, executeRejoin, toggleBlackScreen, showAchievementToast
 
 -- Отправка сообщений в Telegram
 local function sendTelegramMessage(text)
@@ -258,9 +261,9 @@ task.spawn(function()
     end
 end)
 
--- Анти-Лаг
+-- Анти-Лаг (Мягкий режим без фризов)
 local lastAntiLagRun = 0
-local function applyAntiLag(force)
+applyAntiLag = function(force)
     if not antiLagActive then return end
     if not force and (os.clock() - lastAntiLagRun < 20) then return end
     lastAntiLagRun = os.clock()
@@ -281,7 +284,7 @@ local function applyAntiLag(force)
     end)
 end
 
--- Защита от воды с кэшированием
+-- Защита от воды с кэшированием (Без сканирования карты на каждом шаге)
 local cachedHazards = {}
 local hazardConnection = nil
 
@@ -300,7 +303,7 @@ local function refreshHazardCache()
     end
 end
 
-local function applyAntiHazard(state)
+applyAntiHazard = function(state)
     for i = #cachedHazards, 1, -1 do
         local part = cachedHazards[i]
         if part and part.Parent then
@@ -311,7 +314,7 @@ local function applyAntiHazard(state)
     end
 end
 
-local function toggleAntiHazard(enabled)
+toggleAntiHazard = function(enabled)
     antiHazardActive = enabled
     if antiHazardActive then
         refreshHazardCache()
@@ -348,7 +351,7 @@ local defaultLighting = {
 local disabledEffects = {}
 local hiddenFadeFrames = {}
 
-local function enableClearVision()
+enableClearVision = function()
     if not antiDarknessActive then return end
     pcall(function()
         Lighting.Ambient = Color3.fromRGB(255, 255, 255)
@@ -380,7 +383,7 @@ local function enableClearVision()
     end)
 end
 
-local function disableClearVision()
+disableClearVision = function()
     pcall(function()
         Lighting.Ambient = defaultLighting.Ambient
         Lighting.OutdoorAmbient = defaultLighting.OutdoorAmbient
@@ -544,7 +547,9 @@ local function placeOnPlatform(targetPos, hrp)
     setSpin(hrp, true)
 end
 
--- Безопасная инициализация GUI
+-- =====================================================================
+-- 2. БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ РОДИТЕЛЯ GUI
+-- =====================================================================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "BabftPurpleUI"
 screenGui.ResetOnSpawn = false
@@ -719,7 +724,7 @@ strokeGradient.Color = ColorSequence.new({
 strokeGradient.Parent = frameStroke
 
 -- =====================================================================
--- 3. КОСМИЧЕСКИЙ ФОН (Строго на заднем плане ZIndex = 1..3)
+-- 3. КОСМИЧЕСКИЙ ФОН (Строго ZIndex = 1..3)
 -- =====================================================================
 local spaceBg = Instance.new("Frame")
 spaceBg.Size = UDim2.new(1, 0, 1, 0)
@@ -1571,8 +1576,77 @@ minBtn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- =====================================================================
+-- 5. ОПРЕДЕЛЕНИЕ ЛОГИКИ РАСЧЕТА (ВЫШЕ ВСЕХ ЕЁ ВЫЗОВОВ)
+-- =====================================================================
+updateSpeedAndEtaMetrics = function()
+    if not farming then
+        currentGPH = 0
+        currentETA = "Выкл"
+        goldSpeedLabel.Text = "Скорость: ~0 Gold/час"
+        etaLabel.Text = "До покупки: Выкл"
+        return
+    end
+
+    -- Расчет средней скорости за 2 минуты
+    if #minuteBuckets == 0 then
+        if minuteSecondsCounter >= 10 then
+            local approxPerSec = currentMinuteEarned / minuteSecondsCounter
+            currentGPH = math.floor(approxPerSec * 3600)
+            goldSpeedLabel.Text = string.format("Скорость: ~%d Gold/час (минута 1: %dс)", currentGPH, 60 - minuteSecondsCounter)
+        else
+            currentGPH = 0
+            goldSpeedLabel.Text = string.format("Скорость: замер минуты 1 (%dс)...", 60 - minuteSecondsCounter)
+        end
+    elseif #minuteBuckets == 1 then
+        local avgMin = minuteBuckets[1]
+        currentGPH = math.floor(avgMin * 60)
+        goldSpeedLabel.Text = string.format("Скорость: ~%d Gold/час (минута 2: %dс)", currentGPH, 60 - minuteSecondsCounter)
+    else
+        local avgMin = (minuteBuckets[1] + minuteBuckets[2]) / 2
+        currentGPH = math.floor(avgMin * 60)
+        goldSpeedLabel.Text = string.format("Скорость: ~%d Gold/час (ср. 2 мин)", currentGPH)
+    end
+
+    -- Расчет времени до покупки (ETA)
+    if autoBuyActive and targetItemPrice > 0 and buyAmount > 0 then
+        local currentG = getCurrentGold()
+        local targetTotal = targetItemPrice * buyAmount
+        local diff = targetTotal - currentG
+
+        if diff <= 0 then
+            currentETA = "Готово (хватает)"
+            etaLabel.TextColor3 = Color3.fromRGB(120, 255, 150)
+            etaLabel.Text = "До покупки: Готово (хватает)"
+        elseif currentGPH > 0 then
+            local secondsNeeded = math.floor((diff / currentGPH) * 3600)
+            currentETA = formatTime(secondsNeeded)
+            etaLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+            etaLabel.Text = "До покупки: " .. currentETA
+        else
+            currentETA = "Замер скорости..."
+            etaLabel.TextColor3 = Color3.fromRGB(200, 190, 225)
+            etaLabel.Text = "До покупки: Замер скорости..."
+        end
+    else
+        currentETA = "Выкл"
+        etaLabel.TextColor3 = Color3.fromRGB(160, 150, 180)
+        etaLabel.Text = "До покупки: Выкл"
+    end
+
+    if isBlackScreen then
+        bsStats.Text = string.format(
+            "Заработано: +%d Gold\nСкорость: ~%d Gold/час\nДо покупки: %s\nВремя: %s",
+            totalEarned,
+            currentGPH,
+            currentETA,
+            timeTrackerLabel.Text:gsub("Время фарма: ", "")
+        )
+    end
+end
+
 -- Полная выгрузка скрипта
-local function fullCleanup()
+fullCleanup = function()
     farming = false
     autoBuyActive = false
     autoStartOnJoin = false
@@ -1784,75 +1858,6 @@ local function loadConfig()
     end
 end
 
--- =====================================================================
--- 5. ТОЧНЫЙ 2-МИНУТНЫЙ РАСЧЕТ СКОРОСТИ И ETA
--- =====================================================================
-local function updateSpeedAndEtaMetrics()
-    if not farming then
-        currentGPH = 0
-        currentETA = "Выкл"
-        goldSpeedLabel.Text = "Скорость: ~0 Gold/час"
-        etaLabel.Text = "До покупки: Выкл"
-        return
-    end
-
-    -- Расчет средней скорости
-    if #minuteBuckets == 0 then
-        if minuteSecondsCounter >= 10 then
-            local approxPerSec = currentMinuteEarned / minuteSecondsCounter
-            currentGPH = math.floor(approxPerSec * 3600)
-            goldSpeedLabel.Text = string.format("Скорость: ~%d Gold/час (минута 1: %dс)", currentGPH, 60 - minuteSecondsCounter)
-        else
-            currentGPH = 0
-            goldSpeedLabel.Text = string.format("Скорость: замер минуты 1 (%dс)...", 60 - minuteSecondsCounter)
-        end
-    elseif #minuteBuckets == 1 then
-        local avgMin = minuteBuckets[1]
-        currentGPH = math.floor(avgMin * 60)
-        goldSpeedLabel.Text = string.format("Скорость: ~%d Gold/час (минута 2: %dс)", currentGPH, 60 - minuteSecondsCounter)
-    else
-        local avgMin = (minuteBuckets[1] + minuteBuckets[2]) / 2
-        currentGPH = math.floor(avgMin * 60)
-        goldSpeedLabel.Text = string.format("Скорость: ~%d Gold/час (ср. 2 мин)", currentGPH)
-    end
-
-    -- Расчет времени до покупки (ETA)
-    if autoBuyActive and targetItemPrice > 0 and buyAmount > 0 then
-        local currentG = getCurrentGold()
-        local targetTotal = targetItemPrice * buyAmount
-        local diff = targetTotal - currentG
-
-        if diff <= 0 then
-            currentETA = "Готово (хватает)"
-            etaLabel.TextColor3 = Color3.fromRGB(120, 255, 150)
-            etaLabel.Text = "До покупки: Готово (хватает)"
-        elseif currentGPH > 0 then
-            local secondsNeeded = math.floor((diff / currentGPH) * 3600)
-            currentETA = formatTime(secondsNeeded)
-            etaLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-            etaLabel.Text = "До покупки: " .. currentETA
-        else
-            currentETA = "Замер скорости..."
-            etaLabel.TextColor3 = Color3.fromRGB(200, 190, 225)
-            etaLabel.Text = "До покупки: Замер скорости..."
-        end
-    else
-        currentETA = "Выкл"
-        etaLabel.TextColor3 = Color3.fromRGB(160, 150, 180)
-        etaLabel.Text = "До покупки: Выкл"
-    end
-
-    if isBlackScreen then
-        bsStats.Text = string.format(
-            "Заработано: +%d Gold\nСкорость: ~%d Gold/час\nДо покупки: %s\nВремя: %s",
-            totalEarned,
-            currentGPH,
-            currentETA,
-            timeTrackerLabel.Text:gsub("Время фарма: ", "")
-        )
-    end
-end
-
 -- Кнопки действий
 smoothnessBtn.MouseButton1Click:Connect(function()
     playSfx(clickSfx)
@@ -2014,7 +2019,7 @@ tgChatIdInputBox.FocusLost:Connect(function()
 end)
 
 -- Обновление входящей прибыли золота
-local function updateGoldStats()
+updateGoldStats = function()
     local current = getCurrentGold()
     if farming then
         local delta = current - previousGold
