@@ -1,5 +1,12 @@
 repeat task.wait(0.2) until game:IsLoaded()
 
+-- =====================================================================
+-- 1. СИСТЕМА АНТИДУБЛИРОВАНИЯ (Удаление старой копии перед запуском)
+-- =====================================================================
+if _G.BabftActiveScript and type(_G.BabftActiveScript.Destroy) == "function" then
+    pcall(_G.BabftActiveScript.Destroy)
+end
+
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 while not player do
@@ -23,9 +30,11 @@ local isRejoining = false
 local isBlackScreen = false
 local isMinimized = false
 local isClosing = false
+local spaceBgActive = true
 local farmThread = nil
 local timerThread = nil
 local tgPollingThread = nil
+local cometThread = nil
 
 -- Ссылка на GitHub
 local RAW_GITHUB_URL = "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Auto-farm-BABFT"
@@ -160,7 +169,7 @@ local CHEST_POSITION = Vector3.new(-55, -356, 9489)
 local SPAWN_Z_MAX = 1200
 
 -- Анти-АФК
-player.Idled:Connect(function()
+local idledConn = player.Idled:Connect(function()
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new(0, 0))
 end)
@@ -207,7 +216,7 @@ local function checkStaffMember(p)
     end)
 end
 
-Players.PlayerAdded:Connect(checkStaffMember)
+local playerAddedConn = Players.PlayerAdded:Connect(checkStaffMember)
 task.spawn(function()
     for _, p in ipairs(Players:GetPlayers()) do
         checkStaffMember(p)
@@ -501,6 +510,13 @@ screenGui.Name = "BabftPurpleUI"
 screenGui.ResetOnSpawn = false
 
 local guiParent = (gethui and gethui()) or (pcall(function() return game:GetService("CoreGui") end) and game:GetService("CoreGui")) or player:WaitForChild("PlayerGui")
+
+-- Проверка и удаление старого GUI с тем же именем
+local existingGui = guiParent:FindFirstChild("BabftPurpleUI")
+if existingGui then
+    existingGui:Destroy()
+end
+
 screenGui.Parent = guiParent
 
 -- Всплывающее достижение
@@ -633,7 +649,7 @@ local savedWindowSize = UDim2.new(0, 260, 0, 320)
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = savedWindowSize
 mainFrame.Position = UDim2.new(0.5, -130, 0.28, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(15, 12, 22)
+mainFrame.BackgroundColor3 = Color3.fromRGB(12, 10, 18)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.ClipsDescendants = true
@@ -664,62 +680,239 @@ local rotConn = RunService.RenderStepped:Connect(function()
     end
 end)
 
--- 🌌 КОСМИЧЕСКИЙ ФОН С ПЛАНЕТАМИ И ЗВЕЗДАМИ
+-- =====================================================================
+-- 2. ДЕТАЛИЗИРОВАННЫЙ КОСМИЧЕСКИЙ ФОН (ТУМАННОСТИ, ПЛАНЕТЫ, ЗВЕЗДЫ)
+-- =====================================================================
 local spaceBg = Instance.new("Frame")
 spaceBg.Size = UDim2.new(1, 0, 1, 0)
 spaceBg.BackgroundTransparency = 1
 spaceBg.ZIndex = 1
 spaceBg.Parent = mainFrame
 
--- Функция создания планеты
-local function createPlanet(size, pos, color1, color2, driftX, driftY, duration)
-    local planet = Instance.new("Frame")
-    planet.Size = size
-    planet.Position = pos
-    planet.BackgroundColor3 = color1
-    planet.BorderSizePixel = 0
-    planet.ZIndex = 1
-    planet.Parent = spaceBg
+-- Космическая туманность (Nebula Glows)
+local function createNebula(size, pos, color, rot)
+    local neb = Instance.new("Frame")
+    neb.Size = size
+    neb.Position = pos
+    neb.BackgroundColor3 = color
+    neb.BackgroundTransparency = 0.72
+    neb.BorderSizePixel = 0
+    neb.ZIndex = 1
+    neb.Parent = spaceBg
 
-    local pCorner = Instance.new("UICorner")
-    pCorner.CornerRadius = UDim.new(1, 0)
-    pCorner.Parent = planet
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(1, 0)
+    c.Parent = neb
 
-    local pGrad = Instance.new("UIGradient")
-    pGrad.Color = ColorSequence.new(color1, color2)
-    pGrad.Rotation = 45
-    pGrad.Parent = planet
-
-    -- Плавное парение планеты
-    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-    local targetPos = UDim2.new(pos.X.Scale, pos.X.Offset + driftX, pos.Y.Scale, pos.Y.Offset + driftY)
-    TweenService:Create(planet, tweenInfo, {Position = targetPos}):Play()
-    return planet
+    local g = Instance.new("UIGradient")
+    g.Color = ColorSequence.new(color, Color3.fromRGB(8, 6, 15))
+    g.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.4),
+        NumberSequenceKeypoint.new(0.6, 0.75),
+        NumberSequenceKeypoint.new(1, 1)
+    })
+    g.Rotation = rot
+    g.Parent = neb
+    return neb
 end
 
--- Летающие планеты
-createPlanet(UDim2.new(0, 42, 0, 42), UDim2.new(0.75, 0, 0.2, 0), Color3.fromRGB(160, 60, 240), Color3.fromRGB(60, 20, 120), -18, 15, 6)
-createPlanet(UDim2.new(0, 24, 0, 24), UDim2.new(0.12, 0, 0.65, 0), Color3.fromRGB(90, 150, 255), Color3.fromRGB(30, 60, 160), 14, -12, 5)
-createPlanet(UDim2.new(0, 16, 0, 16), UDim2.new(0.65, 0, 0.78, 0), Color3.fromRGB(240, 100, 180), Color3.fromRGB(120, 30, 80), -10, -10, 4.5)
+createNebula(UDim2.new(0, 140, 0, 140), UDim2.new(0.6, -20, 0.1, 0), Color3.fromRGB(145, 45, 230), 45)
+createNebula(UDim2.new(0, 110, 0, 110), UDim2.new(0.05, 0, 0.55, 0), Color3.fromRGB(40, 100, 220), -30)
 
--- Мерцающие звезды
-for i = 1, 14 do
+-- Реалистичные детализированные планеты
+-- Планета 1: Газовый гигант с кольцом и атмосферой
+local planet1Container = Instance.new("Frame")
+planet1Container.Size = UDim2.new(0, 52, 0, 52)
+planet1Container.Position = UDim2.new(0.72, 0, 0.18, 0)
+planet1Container.BackgroundTransparency = 1
+planet1Container.ZIndex = 1
+planet1Container.Parent = spaceBg
+
+-- Внешнее атмосферное свечение (Atmospheric Glow)
+local p1Glow = Instance.new("Frame")
+p1Glow.Size = UDim2.new(1, 10, 1, 10)
+p1Glow.Position = UDim2.new(0, -5, 0, -5)
+p1Glow.BackgroundColor3 = Color3.fromRGB(180, 120, 255)
+p1Glow.BackgroundTransparency = 0.65
+p1Glow.BorderSizePixel = 0
+p1Glow.ZIndex = 1
+p1Glow.Parent = planet1Container
+local p1GlowCorner = Instance.new("UICorner") p1GlowCorner.CornerRadius = UDim.new(1, 0) p1GlowCorner.Parent = p1Glow
+
+-- Тело планеты 1
+local p1Body = Instance.new("Frame")
+p1Body.Size = UDim2.new(1, 0, 1, 0)
+p1Body.BackgroundColor3 = Color3.fromRGB(130, 40, 210)
+p1Body.BorderSizePixel = 0
+p1Body.ClipsDescendants = true
+p1Body.ZIndex = 2
+p1Body.Parent = planet1Container
+local p1Corner = Instance.new("UICorner") p1Corner.CornerRadius = UDim.new(1, 0) p1Corner.Parent = p1Body
+
+-- Градиент освещения поверхности
+local p1Grad = Instance.new("UIGradient")
+p1Grad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(225, 170, 255)),
+    ColorSequenceKeypoint.new(0.4, Color3.fromRGB(140, 45, 215)),
+    ColorSequenceKeypoint.new(0.8, Color3.fromRGB(50, 15, 95)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 5, 30))
+})
+p1Grad.Rotation = 45
+p1Grad.Parent = p1Body
+
+-- Теневая сторона (Terminator shadow)
+local p1Shadow = Instance.new("Frame")
+p1Shadow.Size = UDim2.new(1.2, 0, 1.2, 0)
+p1Shadow.Position = UDim2.new(-0.2, 0, 0.1, 0)
+p1Shadow.BackgroundColor3 = Color3.fromRGB(10, 5, 20)
+p1Shadow.BackgroundTransparency = 0.3
+p1Shadow.BorderSizePixel = 0
+p1Shadow.ZIndex = 3
+p1Shadow.Parent = p1Body
+local p1ShadowCorner = Instance.new("UICorner") p1ShadowCorner.CornerRadius = UDim.new(1, 0) p1ShadowCorner.Parent = p1Shadow
+local p1ShadowGrad = Instance.new("UIGradient")
+p1ShadowGrad.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 1),
+    NumberSequenceKeypoint.new(0.5, 0.4),
+    NumberSequenceKeypoint.new(1, 0)
+})
+p1ShadowGrad.Rotation = 45
+p1ShadowGrad.Parent = p1Shadow
+
+-- Планетарное кольцо (Rings)
+local p1Ring = Instance.new("Frame")
+p1Ring.Size = UDim2.new(0, 78, 0, 16)
+p1Ring.Position = UDim2.new(0.5, -39, 0.5, -8)
+p1Ring.BackgroundTransparency = 1
+p1Ring.Rotation = -24
+p1Ring.ZIndex = 3
+p1Ring.Parent = planet1Container
+
+local p1RingStroke = Instance.new("UIStroke")
+p1RingStroke.Thickness = 2.2
+p1RingStroke.Color = Color3.fromRGB(215, 180, 255)
+p1RingStroke.Transparency = 0.25
+p1RingStroke.Parent = p1Ring
+
+local p1RingCorner = Instance.new("UICorner")
+p1RingCorner.CornerRadius = UDim.new(1, 0)
+p1RingCorner.Parent = p1Ring
+
+-- Планета 2: Терра-луна с кратерами
+local planet2 = Instance.new("Frame")
+planet2.Size = UDim2.new(0, 28, 0, 28)
+planet2.Position = UDim2.new(0.12, 0, 0.62, 0)
+planet2.BackgroundColor3 = Color3.fromRGB(60, 130, 220)
+planet2.BorderSizePixel = 0
+planet2.ClipsDescendants = true
+planet2.ZIndex = 1
+planet2.Parent = spaceBg
+local p2Corner = Instance.new("UICorner") p2Corner.CornerRadius = UDim.new(1, 0) p2Corner.Parent = planet2
+
+local p2Grad = Instance.new("UIGradient")
+p2Grad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(150, 210, 255)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(50, 110, 200)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 20, 50))
+})
+p2Grad.Rotation = -35
+p2Grad.Parent = planet2
+
+-- Кратеры на планете 2
+local function createCrater(size, pos, trans)
+    local cr = Instance.new("Frame")
+    cr.Size = size
+    cr.Position = pos
+    cr.BackgroundColor3 = Color3.fromRGB(15, 35, 75)
+    cr.BackgroundTransparency = trans
+    cr.BorderSizePixel = 0
+    cr.ZIndex = 2
+    cr.Parent = planet2
+    local c = Instance.new("UICorner") c.CornerRadius = UDim.new(1, 0) c.Parent = cr
+end
+createCrater(UDim2.new(0, 6, 0, 6), UDim2.new(0.25, 0, 0.3, 0), 0.3)
+createCrater(UDim2.new(0, 4, 0, 4), UDim2.new(0.55, 0, 0.5, 0), 0.4)
+createCrater(UDim2.new(0, 3, 0, 3), UDim2.new(0.35, 0, 0.65, 0), 0.5)
+
+-- Планета 3: Далекий алый карлик
+local planet3 = Instance.new("Frame")
+planet3.Size = UDim2.new(0, 18, 0, 18)
+planet3.Position = UDim2.new(0.64, 0, 0.78, 0)
+planet3.BackgroundColor3 = Color3.fromRGB(240, 90, 130)
+planet3.BorderSizePixel = 0
+planet3.ZIndex = 1
+planet3.Parent = spaceBg
+local p3Corner = Instance.new("UICorner") p3Corner.CornerRadius = UDim.new(1, 0) p3Corner.Parent = planet3
+local p3Grad = Instance.new("UIGradient")
+p3Grad.Color = ColorSequence.new(Color3.fromRGB(255, 170, 180), Color3.fromRGB(90, 15, 35))
+p3Grad.Rotation = 60
+p3Grad.Parent = planet3
+
+-- Плавное парение планет
+TweenService:Create(planet1Container, TweenInfo.new(6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+    Position = UDim2.new(0.72, -15, 0.18, 12)
+}):Play()
+TweenService:Create(planet2, TweenInfo.new(5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+    Position = UDim2.new(0.12, 12, 0.62, -10)
+}):Play()
+TweenService:Create(planet3, TweenInfo.new(4.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+    Position = UDim2.new(0.64, -8, 0.78, -8)
+}):Play()
+
+-- Детализированные звезды (3 слоя: яркие, средние, мелкие)
+for i = 1, 24 do
+    local isBright = (i % 5 == 0)
     local star = Instance.new("Frame")
-    star.Size = UDim2.new(0, math.random(2, 3), 0, math.random(2, 3))
-    star.Position = UDim2.new(math.random(5, 95) / 100, 0, math.random(10, 95) / 100, 0)
-    star.BackgroundColor3 = Color3.fromRGB(240, 230, 255)
-    star.BackgroundTransparency = math.random(3, 7) / 10
+    star.Size = isBright and UDim2.new(0, 3, 0, 3) or UDim2.new(0, 2, 0, 2)
+    star.Position = UDim2.new(math.random(4, 96) / 100, 0, math.random(8, 94) / 100, 0)
+    star.BackgroundColor3 = isBright and Color3.fromRGB(255, 245, 220) or Color3.fromRGB(215, 225, 255)
+    star.BackgroundTransparency = math.random(2, 6) / 10
     star.BorderSizePixel = 0
     star.ZIndex = 1
     star.Parent = spaceBg
 
-    local sCorner = Instance.new("UICorner")
-    sCorner.CornerRadius = UDim.new(1, 0)
-    sCorner.Parent = star
+    local sc = Instance.new("UICorner")
+    sc.CornerRadius = UDim.new(1, 0)
+    sc.Parent = star
 
-    local twInfo = TweenInfo.new(math.random(15, 35) / 10, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-    TweenService:Create(star, twInfo, {BackgroundTransparency = math.random(1, 3) / 10}):Play()
+    local tw = TweenInfo.new(math.random(15, 35) / 10, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+    TweenService:Create(star, tw, {BackgroundTransparency = isBright and 0.1 or 0.8}):Play()
 end
+
+-- Падающая комета / Метеор
+local comet = Instance.new("Frame")
+comet.Size = UDim2.new(0, 45, 0, 2)
+comet.Position = UDim2.new(-0.2, 0, 0.1, 0)
+comet.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+comet.BorderSizePixel = 0
+comet.Rotation = -35
+comet.ZIndex = 1
+comet.Parent = spaceBg
+
+local cometGrad = Instance.new("UIGradient")
+cometGrad.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(150, 80, 255))
+cometGrad.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0),
+    NumberSequenceKeypoint.new(0.6, 0.3),
+    NumberSequenceKeypoint.new(1, 1)
+})
+cometGrad.Parent = comet
+
+cometThread = task.spawn(function()
+    while true do
+        task.wait(math.random(6, 11))
+        if spaceBgActive and spaceBg.Visible then
+            local startY = math.random(5, 45) / 100
+            comet.Position = UDim2.new(-0.25, 0, startY, 0)
+            comet.BackgroundTransparency = 0
+            local tw = TweenService:Create(comet, TweenInfo.new(1.1, Enum.EasingStyle.Linear), {
+                Position = UDim2.new(1.2, 0, startY + 0.45, 0),
+                BackgroundTransparency = 1
+            })
+            tw:Play()
+        end
+    end
+end)
 
 -- TopBar
 local topBar = Instance.new("Frame")
@@ -1049,10 +1242,27 @@ local alCorner = Instance.new("UICorner")
 alCorner.CornerRadius = UDim.new(0, 5)
 alCorner.Parent = antiLagBtn
 
+-- КНОПКА ВКЛЮЧЕНИЯ/ВЫКЛЮЧЕНИЯ КОСМИЧЕСКОГО ФОНА
+local spaceBgBtn = Instance.new("TextButton")
+spaceBgBtn.Size = UDim2.new(1, -24, 0, 20)
+spaceBgBtn.Position = UDim2.new(0, 12, 0, 274)
+spaceBgBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+spaceBgBtn.Text = "🌌 Космо-фон: ВКЛ"
+spaceBgBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+spaceBgBtn.Font = Enum.Font.GothamBold
+spaceBgBtn.TextSize = 10
+spaceBgBtn.BorderSizePixel = 0
+spaceBgBtn.ZIndex = 2
+spaceBgBtn.Parent = scrollFrame
+
+local sBgCorner = Instance.new("UICorner")
+sBgCorner.CornerRadius = UDim.new(0, 5)
+sBgCorner.Parent = spaceBgBtn
+
 -- Telegram Inputs
 local tgTokenInputBox = Instance.new("TextBox")
 tgTokenInputBox.Size = UDim2.new(1, -24, 0, 20)
-tgTokenInputBox.Position = UDim2.new(0, 12, 0, 275)
+tgTokenInputBox.Position = UDim2.new(0, 12, 0, 298)
 tgTokenInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 tgTokenInputBox.PlaceholderText = "Telegram Bot Token..."
 tgTokenInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -1071,7 +1281,7 @@ tgTokenCorner.Parent = tgTokenInputBox
 
 local tgChatIdInputBox = Instance.new("TextBox")
 tgChatIdInputBox.Size = UDim2.new(1, -24, 0, 20)
-tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 298)
+tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 321)
 tgChatIdInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 tgChatIdInputBox.PlaceholderText = "Telegram Chat ID (число)..."
 tgChatIdInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -1090,7 +1300,7 @@ tgChatCorner.Parent = tgChatIdInputBox
 
 local saveBtn = Instance.new("TextButton")
 saveBtn.Size = UDim2.new(1, -24, 0, 24)
-saveBtn.Position = UDim2.new(0, 12, 0, 322)
+saveBtn.Position = UDim2.new(0, 12, 0, 345)
 saveBtn.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
 saveBtn.Text = "💾 СОХРАНИТЬ НАСТРОЙКИ"
 saveBtn.TextColor3 = Color3.fromRGB(215, 195, 255)
@@ -1111,7 +1321,7 @@ saveBtnStroke.Parent = saveBtn
 
 local toggleButton = Instance.new("TextButton")
 toggleButton.Size = UDim2.new(1, -24, 0, 32)
-toggleButton.Position = UDim2.new(0, 12, 0, 350)
+toggleButton.Position = UDim2.new(0, 12, 0, 373)
 toggleButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 toggleButton.Text = "START AUTO FARM"
 toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -1127,7 +1337,7 @@ btnCorner.Parent = toggleButton
 
 local creditsLabel = Instance.new("TextLabel")
 creditsLabel.Size = UDim2.new(1, 0, 0, 16)
-creditsLabel.Position = UDim2.new(0, 0, 0, 386)
+creditsLabel.Position = UDim2.new(0, 0, 0, 410)
 creditsLabel.BackgroundTransparency = 1
 creditsLabel.Text = "By: Probothotspot"
 creditsLabel.TextColor3 = Color3.fromRGB(175, 150, 220)
@@ -1136,7 +1346,7 @@ creditsLabel.TextSize = 11
 creditsLabel.ZIndex = 2
 creditsLabel.Parent = scrollFrame
 
--- 📐 УГОЛОК ИЗМЕНЕНИЯ РАЗМЕРА (RESIZE GRIP)
+-- УГОЛОК ИЗМЕНЕНИЯ РАЗМЕРА (RESIZE GRIP)
 local resizeGrip = Instance.new("TextButton")
 resizeGrip.Size = UDim2.new(0, 18, 0, 18)
 resizeGrip.Position = UDim2.new(1, -18, 1, -18)
@@ -1148,7 +1358,6 @@ resizeGrip.TextSize = 13
 resizeGrip.ZIndex = 10
 resizeGrip.Parent = mainFrame
 
--- Логика перетаскивания и изменения размера
 local resizing = false
 local resizeStart = Vector2.zero
 local startWindowSize = Vector2.zero
@@ -1178,7 +1387,7 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- Перетаскивание окна (Drag)
+-- Перетаскивание (Drag)
 local dragging, dragStart, startPos
 topBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -1205,7 +1414,7 @@ topBar.InputChanged:Connect(function(input)
     end
 end)
 
--- ✨ АНИМИРОВАННОЕ СВОРАЧИВАНИЕ И РАЗВОРАЧИВАНИЕ
+-- Анимированное сворачивание
 minBtn.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
     if isMinimized then
@@ -1229,35 +1438,50 @@ minBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- 💫 АНИМИРОВАННОЕ ЗАКРЫТИЕ НА КРЕСТИК
-closeBtn.MouseButton1Click:Connect(function()
-    if isClosing then return end
-    isClosing = true
+-- Функция полной деактивации и закрытия
+local function fullCleanup()
     farming = false
     autoBuyActive = false
     autoStartOnJoin = false
-    saveConfig(false)
     disableClearVision()
     toggleAntiHazard(false)
     toggleBlackScreen(false)
 
+    if idledConn then idledConn:Disconnect() end
+    if playerAddedConn then playerAddedConn:Disconnect() end
     if farmThread then task.cancel(farmThread) end
     if timerThread then task.cancel(timerThread) end
     if tgPollingThread then task.cancel(tgPollingThread) end
+    if cometThread then task.cancel(cometThread) end
     if rotConn then rotConn:Disconnect() end
 
     local hrp = getCurrentHRP()
     if hrp then setSpin(hrp, false) end
     if platform then platform:Destroy() end
 
-    -- Плавное схлопывание GUI
+    if screenGui and screenGui.Parent then
+        screenGui:Destroy()
+    end
+end
+
+-- Регистрация скрипта в глобальной таблице для антидублирования
+_G.BabftActiveScript = {
+    Destroy = fullCleanup
+}
+
+-- Анимированное закрытие на крестик
+closeBtn.MouseButton1Click:Connect(function()
+    if isClosing then return end
+    isClosing = true
+    saveConfig(false)
+
     local closeTween = TweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
         Size = UDim2.new(0, 0, 0, 0),
         BackgroundTransparency = 1
     })
     closeTween:Play()
     closeTween.Completed:Connect(function()
-        screenGui:Destroy()
+        fullCleanup()
     end)
 end)
 
@@ -1287,7 +1511,8 @@ saveConfig = function(customAutoStart)
         antiDarknessActive = antiDarknessActive,
         antiHazardActive = antiHazardActive,
         antiLagActive = antiLagActive,
-        staffDetectorActive = staffDetectorActive
+        staffDetectorActive = staffDetectorActive,
+        spaceBgActive = spaceBgActive
     }
 
     if writefile then
@@ -1397,6 +1622,13 @@ local function loadConfig()
                     antiLagBtn.Text = antiLagActive and "⚡ Анти-лаг очистка: ВКЛ" or "⚡ Анти-лаг очистка: ВЫКЛ"
                     if antiLagActive then applyAntiLag() end
                 end
+                if data.spaceBgActive ~= nil then
+                    spaceBgActive = data.spaceBgActive
+                    spaceBg.Visible = spaceBgActive
+                    spaceBgBtn.BackgroundColor3 = spaceBgActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+                    spaceBgBtn.TextColor3 = spaceBgActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
+                    spaceBgBtn.Text = spaceBgActive and "🌌 Космо-фон: ВКЛ" or "🌌 Космо-фон: ВЫКЛ"
+                end
 
                 if data.autoStart then
                     autoStartOnJoin = true
@@ -1433,6 +1665,15 @@ local function loadConfig()
 end
 
 -- Кнопки действий
+spaceBgBtn.MouseButton1Click:Connect(function()
+    spaceBgActive = not spaceBgActive
+    spaceBg.Visible = spaceBgActive
+    spaceBgBtn.BackgroundColor3 = spaceBgActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+    spaceBgBtn.TextColor3 = spaceBgActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
+    spaceBgBtn.Text = spaceBgActive and "🌌 Космо-фон: ВКЛ" or "🌌 Космо-фон: ВЫКЛ"
+    saveConfig()
+end)
+
 batterySaverBtn.MouseButton1Click:Connect(function()
     toggleBlackScreen(not isBlackScreen)
     batterySaverBtn.BackgroundColor3 = isBlackScreen and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
@@ -1862,6 +2103,7 @@ local function syncTelegramOffset()
     end
 end
 
+-- Обработка Telegram команд
 tgPollingThread = task.spawn(function()
     task.wait(2)
     syncTelegramOffset()
@@ -1945,16 +2187,9 @@ tgPollingThread = task.spawn(function()
                                     saveConfig()
                                     sendTelegramMessage("🛡 <b>Защита от воды/урона:</b> " .. (antiHazardActive and "ВКЛ" or "ВЫКЛ"))
                                 elseif cmd == "/kill" or cmd == "/shutdown" then
-                                    stopFarming()
-                                    autoStartOnJoin = false
-                                    autoRejoinActive = false
-                                    toggleAntiHazard(false)
-                                    toggleBlackScreen(false)
                                     saveConfig(false)
                                     sendTelegramMessage("💀 <b>Скрипт полностью остановлен и деактивирован!</b>\nАвто-старт и авто-перезаход отключены.")
-                                    if screenGui and screenGui.Parent then
-                                        screenGui:Destroy()
-                                    end
+                                    fullCleanup()
                                 elseif cmd == "/status" then
                                     local currentG = getCurrentGold()
                                     local elapsed = farming and (os.time() - startTime) or 0
@@ -1966,6 +2201,7 @@ tgPollingThread = task.spawn(function()
                                         "• Анти-вода/урон: <b>%s</b>\n" ..
                                         "• Анти-лаг: <b>%s</b>\n" ..
                                         "• Ночной экран: <b>%s</b>\n" ..
+                                        "• Космо-фон: <b>%s</b>\n" ..
                                         "• Время сессии: <b>%s</b>\n" ..
                                         "• Баланс: <b>%d Gold</b>\n" ..
                                         "• Заработано: <b>+%d Gold</b>",
@@ -1975,6 +2211,7 @@ tgPollingThread = task.spawn(function()
                                         antiHazardActive and "ВКЛ" or "ВЫКЛ",
                                         antiLagActive and "ВКЛ" or "ВЫКЛ",
                                         isBlackScreen and "ВКЛ" or "ВЫКЛ",
+                                        spaceBgActive and "ВКЛ" or "ВЫКЛ",
                                         formatTime(elapsed),
                                         currentG,
                                         totalEarned
@@ -1992,5 +2229,5 @@ tgPollingThread = task.spawn(function()
     end
 end)
 
--- Загрузка сохраненного конфига
+-- Загрузка настроек при старте
 loadConfig()
