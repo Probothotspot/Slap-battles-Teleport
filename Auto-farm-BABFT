@@ -34,7 +34,7 @@ local isClosing = false
 local spaceBgActive = true
 local soundEffectsActive = true
 
--- Режимы плавности: 1 = 120 FPS (Ultra), 2 = 60 FPS (Balance), 3 = 30 FPS (Eco)
+-- Режимы плавности: 1 = 120 FPS (Ultra), 2 = 60 FPS (Баланс), 3 = 30 FPS (Эко)
 local smoothnessMode = 1
 local smoothnessNames = {"120+ FPS (Ultra)", "60 FPS (Баланс)", "30 FPS (Эко)"}
 
@@ -42,7 +42,7 @@ local farmThread = nil
 local timerThread = nil
 local tgPollingThread = nil
 local cometThread = nil
-local spaceRenderConn = nil
+local masterRenderConn = nil
 
 -- Ссылка на GitHub
 local RAW_GITHUB_URL = "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Auto-farm-BABFT"
@@ -176,18 +176,20 @@ local STAGE_COORDINATES = {
 local CHEST_POSITION = Vector3.new(-55, -356, 9489)
 local SPAWN_Z_MAX = 1200
 
--- Звуковые эффекты
-local function createSound(id, vol)
-    local s = Instance.new("Sound")
-    s.SoundId = "rbxassetid://" .. tostring(id)
-    s.Volume = vol or 0.5
-    s.Parent = SoundService
-    return s
-end
-
-local clickSfx = createSound(6895079853, 0.4)
-local coinSfx = createSound(5153734608, 0.5)
-local achievementSfx = createSound(5153724623, 0.7)
+-- Безопасные звуковые эффекты
+local clickSfx, coinSfx, achievementSfx
+pcall(function()
+    local function createSound(id, vol)
+        local s = Instance.new("Sound")
+        s.SoundId = "rbxassetid://" .. tostring(id)
+        s.Volume = vol or 0.5
+        s.Parent = SoundService
+        return s
+    end
+    clickSfx = createSound(6895079853, 0.4)
+    coinSfx = createSound(5153734608, 0.5)
+    achievementSfx = createSound(5153724623, 0.7)
+end)
 
 local function playSfx(sfx)
     if soundEffectsActive and sfx then
@@ -250,63 +252,72 @@ task.spawn(function()
     end
 end)
 
--- Анти-Лаг
-local function applyAntiLag()
+-- ОПТИМИЗИРОВАННЫЙ АНТИ-ЛАГ (Без постоянных блокирующих вызовов)
+local lastAntiLagRun = 0
+local function applyAntiLag(force)
     if not antiLagActive then return end
-    pcall(function()
-        for _, v in ipairs(Workspace:GetDescendants()) do
-            if v:IsA("BasePart") and not v:IsDescendantOf(player.Character) and v.Name ~= "FarmPlatform" then
-                v.Material = Enum.Material.SmoothPlastic
-                v.CastShadow = false
-            elseif v:IsA("Decal") or v:IsA("Texture") or v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Fire") then
-                if not v:IsDescendantOf(player.Character) then
-                    v:Destroy()
-                end
-            end
-        end
-    end)
-end
+    if not force and (os.clock() - lastAntiLagRun < 20) then return end
+    lastAntiLagRun = os.clock()
 
--- Анти-урон / Вода
-local hazardConnection = nil
-local hazardLoopThread = nil
-
-local function applyAntiHazard(state)
-    pcall(function()
-        local stages = Workspace:FindFirstChild("BoatStages")
-        if stages then
-            for _, v in ipairs(stages:GetDescendants()) do
-                if v:IsA("BasePart") then
-                    local name = v.Name:lower()
-                    if name:find("water") or name:find("lava") or name:find("kill") or name:find("damage") then
-                        v.CanTouch = not state
+    task.spawn(function()
+        pcall(function()
+            for _, v in ipairs(Workspace:GetDescendants()) do
+                if v:IsA("BasePart") and not v:IsDescendantOf(player.Character) and v.Name ~= "FarmPlatform" then
+                    v.Material = Enum.Material.SmoothPlastic
+                    v.CastShadow = false
+                elseif v:IsA("Decal") or v:IsA("Texture") or v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Fire") then
+                    if not v:IsDescendantOf(player.Character) then
+                        v:Destroy()
                     end
                 end
             end
-        end
+        end)
     end)
+end
+
+-- ОПТИМИЗИРОВАННАЯ ЗАЩИТА ОТ ВОДЫ (С кэшированием частей)
+local cachedHazards = {}
+local hazardConnection = nil
+
+local function refreshHazardCache()
+    table.clear(cachedHazards)
+    local stages = Workspace:FindFirstChild("BoatStages")
+    if stages then
+        for _, v in ipairs(stages:GetDescendants()) do
+            if v:IsA("BasePart") then
+                local name = v.Name:lower()
+                if name:find("water") or name:find("lava") or name:find("kill") or name:find("damage") then
+                    table.insert(cachedHazards, v)
+                end
+            end
+        end
+    end
+end
+
+local function applyAntiHazard(state)
+    for i = #cachedHazards, 1, -1 do
+        local part = cachedHazards[i]
+        if part and part.Parent then
+            part.CanTouch = not state
+        else
+            table.remove(cachedHazards, i)
+        end
+    end
 end
 
 local function toggleAntiHazard(enabled)
     antiHazardActive = enabled
-    applyAntiHazard(antiHazardActive)
-
     if antiHazardActive then
+        refreshHazardCache()
+        applyAntiHazard(true)
         if not hazardConnection then
             hazardConnection = Workspace.DescendantAdded:Connect(function(v)
                 if antiHazardActive and v:IsA("BasePart") then
                     local name = v.Name:lower()
                     if name:find("water") or name:find("lava") or name:find("kill") or name:find("damage") then
+                        table.insert(cachedHazards, v)
                         v.CanTouch = false
                     end
-                end
-            end)
-        end
-        if not hazardLoopThread then
-            hazardLoopThread = task.spawn(function()
-                while antiHazardActive do
-                    applyAntiHazard(true)
-                    task.wait(2)
                 end
             end)
         end
@@ -314,10 +325,6 @@ local function toggleAntiHazard(enabled)
         if hazardConnection then
             hazardConnection:Disconnect()
             hazardConnection = nil
-        end
-        if hazardLoopThread then
-            task.cancel(hazardLoopThread)
-            hazardLoopThread = nil
         end
         applyAntiHazard(false)
     end
@@ -531,16 +538,44 @@ local function placeOnPlatform(targetPos, hrp)
     setSpin(hrp, true)
 end
 
--- GUI Root
+-- =====================================================================
+-- 2. БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ РОДИТЕЛЯ GUI (Исключает краш при старте)
+-- =====================================================================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "BabftPurpleUI"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-local guiParent = (gethui and gethui()) or (pcall(function() return game:GetService("CoreGui") end) and game:GetService("CoreGui")) or player:WaitForChild("PlayerGui")
-local existingGui = guiParent:FindFirstChild("BabftPurpleUI")
-if existingGui then existingGui:Destroy() end
-screenGui.Parent = guiParent
+local isParented = false
+if gethui then
+    local ok, h = pcall(gethui)
+    if ok and h then
+        local okP = pcall(function() screenGui.Parent = h end)
+        if okP then isParented = true end
+    end
+end
+
+if not isParented then
+    local okCore, core = pcall(function() return game:GetService("CoreGui") end)
+    if okCore and core then
+        local testP = pcall(function()
+            local test = Instance.new("Folder")
+            test.Parent = core
+            test:Destroy()
+        end)
+        if testP then
+            local okP = pcall(function() screenGui.Parent = core end)
+            if okP then isParented = true end
+        end
+    end
+end
+
+if not isParented then
+    local pGui = player:WaitForChild("PlayerGui", 10)
+    if pGui then
+        screenGui.Parent = pGui
+    end
+end
 
 -- Всплывающее достижение
 showAchievementToast = function(title, text)
@@ -588,10 +623,10 @@ showAchievementToast = function(title, text)
     tDesc.ZIndex = 101
     tDesc.Parent = toast
 
-    toast:TweenPosition(UDim2.new(0.5, -130, 0.04, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Back, 0.5, true)
-    task.delay(4, function()
+    toast:TweenPosition(UDim2.new(0.5, -130, 0.04, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Back, 0.4, true)
+    task.delay(3.5, function()
         if toast and toast.Parent then
-            toast:TweenPosition(UDim2.new(0.5, -130, -0.15, 0), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.4, true, function()
+            toast:TweenPosition(UDim2.new(0.5, -130, -0.15, 0), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.35, true, function()
                 toast:Destroy()
             end)
         end
@@ -679,14 +714,8 @@ strokeGradient.Color = ColorSequence.new({
 })
 strokeGradient.Parent = frameStroke
 
-local rotConn = RunService.RenderStepped:Connect(function()
-    if strokeGradient and strokeGradient.Parent then
-        strokeGradient.Rotation = (strokeGradient.Rotation + 1.5) % 360
-    end
-end)
-
 -- =====================================================================
--- 2. ГЛУБОКИЙ КОСМОС (СТРОГО НА ЗАДНЕМ ПЛАНЕ ZIndex = 1..4)
+-- 3. КОСМИЧЕСКИЙ ФОН (Строго на заднем плане ZIndex = 1..3)
 -- =====================================================================
 local spaceBg = Instance.new("Frame")
 spaceBg.Size = UDim2.new(1, 0, 1, 0)
@@ -699,7 +728,7 @@ local function createNebula(size, pos, color, rot)
     neb.Size = size
     neb.Position = pos
     neb.BackgroundColor3 = color
-    neb.BackgroundTransparency = 0.82
+    neb.BackgroundTransparency = 0.85
     neb.BorderSizePixel = 0
     neb.ZIndex = 1
     neb.Parent = spaceBg
@@ -719,7 +748,7 @@ end
 createNebula(UDim2.new(0, 160, 0, 160), UDim2.new(0.55, -20, 0.05, 0), Color3.fromRGB(150, 40, 220), 45)
 createNebula(UDim2.new(0, 120, 0, 120), UDim2.new(0.02, 0, 0.58, 0), Color3.fromRGB(30, 80, 200), -30)
 
--- Сатурн с разделением слоев (ZIndex = 1..4, никогда не выше ZIndex = 4)
+-- Сатурн
 local saturnContainer = Instance.new("Frame")
 saturnContainer.Size = UDim2.new(0, 84, 0, 60)
 saturnContainer.Position = UDim2.new(0.68, -10, 0.15, 0)
@@ -796,7 +825,7 @@ saturnShadow.Size = UDim2.new(1.2, 0, 1.2, 0)
 saturnShadow.Position = UDim2.new(-0.25, 0, -0.1, 0)
 saturnShadow.BackgroundColor3 = Color3.fromRGB(8, 6, 14)
 saturnShadow.BorderSizePixel = 0
-saturnShadow.ZIndex = 3
+saturnShadow.ZIndex = 2
 saturnShadow.Parent = saturnGlobe
 local ssCorner = Instance.new("UICorner") ssCorner.CornerRadius = UDim.new(1, 0) ssCorner.Parent = saturnShadow
 local ssGrad = Instance.new("UIGradient")
@@ -814,7 +843,7 @@ frontRingContainer.Size = UDim2.new(1, 0, 0.52, 0)
 frontRingContainer.Position = UDim2.new(0, 0, 0.48, 0)
 frontRingContainer.BackgroundTransparency = 1
 frontRingContainer.ClipsDescendants = true
-frontRingContainer.ZIndex = 4
+frontRingContainer.ZIndex = 3
 frontRingContainer.Parent = saturnContainer
 
 local frontRingDisc = Instance.new("Frame")
@@ -829,7 +858,7 @@ local frCorner = Instance.new("UICorner") frCorner.CornerRadius = UDim.new(1, 0)
 local frGrad = brGrad:Clone()
 frGrad.Parent = frontRingDisc
 
--- Земля (ZIndex = 1..3)
+-- Земля
 local earthContainer = Instance.new("Frame")
 earthContainer.Size = UDim2.new(0, 34, 0, 34)
 earthContainer.Position = UDim2.new(0.1, 0, 0.62, 0)
@@ -841,7 +870,7 @@ local earthHalo = Instance.new("Frame")
 earthHalo.Size = UDim2.new(1, 8, 1, 8)
 earthHalo.Position = UDim2.new(0, -4, 0, -4)
 earthHalo.BackgroundColor3 = Color3.fromRGB(80, 190, 255)
-earthHalo.BackgroundTransparency = 0.72
+earthHalo.BackgroundTransparency = 0.75
 earthHalo.BorderSizePixel = 0
 earthHalo.ZIndex = 1
 earthHalo.Parent = earthContainer
@@ -874,9 +903,9 @@ createContinent(UDim2.new(0, 8, 0, 7), UDim2.new(0.3, 0, 0.65, 0), Color3.fromRG
 local clouds = Instance.new("Frame")
 clouds.Size = UDim2.new(1, 0, 1, 0)
 clouds.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-clouds.BackgroundTransparency = 0.75
+clouds.BackgroundTransparency = 0.8
 clouds.BorderSizePixel = 0
-clouds.ZIndex = 3
+clouds.ZIndex = 2
 clouds.Parent = earthGlobe
 local cGrad = Instance.new("UIGradient")
 cGrad.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(200, 230, 255))
@@ -894,7 +923,7 @@ earthShadow.Size = UDim2.new(1.2, 0, 1.2, 0)
 earthShadow.Position = UDim2.new(-0.25, 0, -0.1, 0)
 earthShadow.BackgroundColor3 = Color3.fromRGB(5, 10, 25)
 earthShadow.BorderSizePixel = 0
-earthShadow.ZIndex = 3
+earthShadow.ZIndex = 2
 earthShadow.Parent = earthGlobe
 local esCorner = Instance.new("UICorner") esCorner.CornerRadius = UDim.new(1, 0) esCorner.Parent = earthShadow
 local esGrad = ssGrad:Clone()
@@ -909,7 +938,7 @@ moon.ZIndex = 1
 moon.Parent = earthContainer
 local mCorner = Instance.new("UICorner") mCorner.CornerRadius = UDim.new(1, 0) mCorner.Parent = moon
 
--- Марс (ZIndex = 1..2)
+-- Марс
 local mars = Instance.new("Frame")
 mars.Size = UDim2.new(0, 20, 0, 20)
 mars.Position = UDim2.new(0.68, 0, 0.78, 0)
@@ -938,75 +967,19 @@ marsIce.ZIndex = 2
 marsIce.Parent = mars
 local miCorner = Instance.new("UICorner") miCorner.CornerRadius = UDim.new(1, 0) miCorner.Parent = marsIce
 
--- Звезды
-for i = 1, 26 do
-    local isCross = (i % 8 == 0)
+-- Оптимизированные звезды (14 легких звезд)
+for i = 1, 14 do
+    local isCross = (i % 6 == 0)
     local star = Instance.new("Frame")
-    star.Size = isCross and UDim2.new(0, 4, 0, 4) or UDim2.new(0, math.random(1, 2), 0, math.random(1, 2))
-    star.Position = UDim2.new(math.random(3, 97) / 100, 0, math.random(8, 94) / 100, 0)
+    star.Size = isCross and UDim2.new(0, 3, 0, 3) or UDim2.new(0, 2, 0, 2)
+    star.Position = UDim2.new(math.random(4, 96) / 100, 0, math.random(8, 94) / 100, 0)
     star.BackgroundColor3 = isCross and Color3.fromRGB(255, 250, 225) or Color3.fromRGB(215, 230, 255)
-    star.BackgroundTransparency = math.random(2, 6) / 10
+    star.BackgroundTransparency = 0.4
     star.BorderSizePixel = 0
     star.ZIndex = 1
     star.Parent = spaceBg
-
     local sc = Instance.new("UICorner") sc.CornerRadius = UDim.new(1, 0) sc.Parent = star
-
-    if isCross then
-        local hRay = Instance.new("Frame")
-        hRay.Size = UDim2.new(0, 8, 0, 1)
-        hRay.Position = UDim2.new(0.5, -4, 0.5, 0)
-        hRay.BackgroundColor3 = Color3.fromRGB(255, 245, 220)
-        hRay.BackgroundTransparency = 0.4
-        hRay.BorderSizePixel = 0
-        hRay.Parent = star
-
-        local vRay = Instance.new("Frame")
-        vRay.Size = UDim2.new(0, 1, 0, 8)
-        vRay.Position = UDim2.new(0.5, 0, 0.5, -4)
-        vRay.BackgroundColor3 = Color3.fromRGB(255, 245, 220)
-        vRay.BackgroundTransparency = 0.4
-        vRay.BorderSizePixel = 0
-        vRay.Parent = star
-    end
-
-    local tw = TweenInfo.new(math.random(18, 36) / 10, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-    TweenService:Create(star, tw, {BackgroundTransparency = isCross and 0.05 or 0.85}):Play()
 end
-
--- =====================================================================
--- 3. ДВИЖОК ПЛАВНОСТИ 120+ FPS ДЛЯ ПЛАНЕТ
--- =====================================================================
-local simTime = 0
-local timeSinceLastUpdate = 0
-
-spaceRenderConn = RunService.RenderStepped:Connect(function(dt)
-    if not spaceBgActive or not spaceBg.Visible then return end
-
-    -- Ограничитель кадров в зависимости от выбранного режима
-    local targetInterval = 0
-    if smoothnessMode == 2 then targetInterval = 1 / 60
-    elseif smoothnessMode == 3 then targetInterval = 1 / 30 end
-
-    timeSinceLastUpdate = timeSinceLastUpdate + dt
-    if timeSinceLastUpdate >= targetInterval then
-        simTime = simTime + timeSinceLastUpdate
-        timeSinceLastUpdate = 0
-
-        -- Математически гладкий расчет координат без рывков
-        local saturnX = -10 + math.sin(simTime * 0.48) * 14
-        local saturnY = math.cos(simTime * 0.48) * 8
-        saturnContainer.Position = UDim2.new(0.68, saturnX, 0.15, saturnY)
-
-        local earthX = math.sin(simTime * 0.62) * 10
-        local earthY = -math.cos(simTime * 0.62) * 7
-        earthContainer.Position = UDim2.new(0.1, earthX, 0.62, earthY)
-
-        local marsX = math.cos(simTime * 0.55) * 8
-        local marsY = math.sin(simTime * 0.55) * 6
-        mars.Position = UDim2.new(0.68, marsX, 0.78, marsY)
-    end
-end)
 
 -- Падающая комета
 local comet = Instance.new("Frame")
@@ -1029,12 +1002,12 @@ cometGrad.Parent = comet
 
 cometThread = task.spawn(function()
     while true do
-        task.wait(math.random(6, 11))
-        if spaceBgActive and spaceBg.Visible then
+        task.wait(math.random(8, 14))
+        if spaceBgActive and spaceBg.Visible and not isMinimized and not isBlackScreen then
             local startY = math.random(5, 45) / 100
             comet.Position = UDim2.new(-0.25, 0, startY, 0)
             comet.BackgroundTransparency = 0
-            local tw = TweenService:Create(comet, TweenInfo.new(1.1, Enum.EasingStyle.Linear), {
+            local tw = TweenService:Create(comet, TweenInfo.new(1.0, Enum.EasingStyle.Linear), {
                 Position = UDim2.new(1.2, 0, startY + 0.45, 0),
                 BackgroundTransparency = 1
             })
@@ -1044,7 +1017,48 @@ cometThread = task.spawn(function()
 end)
 
 -- =====================================================================
--- 4. ИНТЕРФЕЙС И КНОПКИ (СТРОГО ZIndex = 20..30 — ПОВЕРХ ПЛАНЕТ)
+-- 4. ЕДИНЫЙ ОПТИМИЗИРОВАННЫЙ РЕНДЕР-ДВИЖОК (120+ FPS БЕЗ ПРОСАДОК)
+-- =====================================================================
+local simTime = 0
+local frameAccumulator = 0
+local gradStepCounter = 0
+
+masterRenderConn = RunService.RenderStepped:Connect(function(dt)
+    if isMinimized or isBlackScreen then return end
+
+    -- Поворот градиента обводки каждые 2 кадра (экономит 50% отрисовки)
+    gradStepCounter = gradStepCounter + 1
+    if gradStepCounter % 2 == 0 and strokeGradient and strokeGradient.Parent then
+        strokeGradient.Rotation = (strokeGradient.Rotation + 1.6) % 360
+    end
+
+    if not spaceBgActive or not spaceBg.Visible then return end
+
+    local interval = 0
+    if smoothnessMode == 2 then interval = 1 / 60
+    elseif smoothnessMode == 3 then interval = 1 / 30 end
+
+    frameAccumulator = frameAccumulator + dt
+    if frameAccumulator >= interval then
+        simTime = simTime + frameAccumulator
+        frameAccumulator = 0
+
+        local saturnX = -10 + math.sin(simTime * 0.48) * 14
+        local saturnY = math.cos(simTime * 0.48) * 8
+        saturnContainer.Position = UDim2.new(0.68, saturnX, 0.15, saturnY)
+
+        local earthX = math.sin(simTime * 0.62) * 10
+        local earthY = -math.cos(simTime * 0.62) * 7
+        earthContainer.Position = UDim2.new(0.1, earthX, 0.62, earthY)
+
+        local marsX = math.cos(simTime * 0.55) * 8
+        local marsY = math.sin(simTime * 0.55) * 6
+        mars.Position = UDim2.new(0.68, marsX, 0.78, marsY)
+    end
+end)
+
+-- =====================================================================
+-- 5. ИНТЕРФЕЙС И КНОПКИ (СТРОГО ZIndex = 20..60 — ПОВЕРХ ПЛАНЕТ)
 -- =====================================================================
 local topBar = Instance.new("Frame")
 topBar.Size = UDim2.new(1, 0, 0, 34)
@@ -1096,7 +1110,7 @@ scrollFrame.Position = UDim2.new(0, 0, 0, 34)
 scrollFrame.BackgroundTransparency = 1
 scrollFrame.ScrollBarThickness = 3
 scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(138, 43, 226)
-scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 540)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 505)
 scrollFrame.ZIndex = 20
 scrollFrame.Parent = mainFrame
 
@@ -1199,7 +1213,6 @@ goldTrackerLabel.TextSize = 10
 goldTrackerLabel.ZIndex = 22
 goldTrackerLabel.Parent = scrollFrame
 
--- Метки скорости и таймера
 local goldSpeedLabel = Instance.new("TextLabel")
 goldSpeedLabel.Size = UDim2.new(1, -24, 0, 14)
 goldSpeedLabel.Position = UDim2.new(0, 12, 0, 98)
@@ -1348,7 +1361,6 @@ antiLagBtn.ZIndex = 22
 antiLagBtn.Parent = scrollFrame
 local alCorner = Instance.new("UICorner") alCorner.CornerRadius = UDim.new(0, 5) alCorner.Parent = antiLagBtn
 
--- Кнопка переключения плавности (FPS Switcher)
 local smoothnessBtn = Instance.new("TextButton")
 smoothnessBtn.Size = UDim2.new(1, -24, 0, 20)
 smoothnessBtn.Position = UDim2.new(0, 12, 0, 288)
@@ -1362,7 +1374,6 @@ smoothnessBtn.ZIndex = 22
 smoothnessBtn.Parent = scrollFrame
 local smCorner = Instance.new("UICorner") smCorner.CornerRadius = UDim.new(0, 5) smCorner.Parent = smoothnessBtn
 
--- Кнопка включения Космо-фона
 local spaceBgBtn = Instance.new("TextButton")
 spaceBgBtn.Size = UDim2.new(1, -24, 0, 20)
 spaceBgBtn.Position = UDim2.new(0, 12, 0, 311)
@@ -1376,7 +1387,6 @@ spaceBgBtn.ZIndex = 22
 spaceBgBtn.Parent = scrollFrame
 local sBgCorner = Instance.new("UICorner") sBgCorner.CornerRadius = UDim.new(0, 5) sBgCorner.Parent = spaceBgBtn
 
--- Кнопка переключения звуков
 local soundToggleBtn = Instance.new("TextButton")
 soundToggleBtn.Size = UDim2.new(1, -24, 0, 20)
 soundToggleBtn.Position = UDim2.new(0, 12, 0, 334)
@@ -1547,7 +1557,7 @@ minBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Полное очищение скрипта при закрытии
+-- Полная выгрузка скрипта
 local function fullCleanup()
     farming = false
     autoBuyActive = false
@@ -1558,12 +1568,11 @@ local function fullCleanup()
 
     if idledConn then idledConn:Disconnect() end
     if playerAddedConn then playerAddedConn:Disconnect() end
-    if spaceRenderConn then spaceRenderConn:Disconnect() end
+    if masterRenderConn then masterRenderConn:Disconnect() end
     if farmThread then task.cancel(farmThread) end
     if timerThread then task.cancel(timerThread) end
     if tgPollingThread then task.cancel(tgPollingThread) end
     if cometThread then task.cancel(cometThread) end
-    if rotConn then rotConn:Disconnect() end
 
     local hrp = getCurrentHRP()
     if hrp then setSpin(hrp, false) end
@@ -1707,7 +1716,7 @@ local function loadConfig()
                     antiLagBtn.BackgroundColor3 = antiLagActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
                     antiLagBtn.TextColor3 = antiLagActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
                     antiLagBtn.Text = antiLagActive and "⚡ Анти-лаг очистка: ВКЛ" or "⚡ Анти-лаг очистка: ВЫКЛ"
-                    if antiLagActive then applyAntiLag() end
+                    if antiLagActive then applyAntiLag(true) end
                 end
                 if data.spaceBgActive ~= nil then
                     spaceBgActive = data.spaceBgActive
@@ -1802,7 +1811,7 @@ antiLagBtn.MouseButton1Click:Connect(function()
     antiLagBtn.BackgroundColor3 = antiLagActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     antiLagBtn.TextColor3 = antiLagActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
     antiLagBtn.Text = antiLagActive and "⚡ Анти-лаг очистка: ВКЛ" or "⚡ Анти-лаг очистка: ВЫКЛ"
-    if antiLagActive then applyAntiLag() end
+    if antiLagActive then applyAntiLag(true) end
     saveConfig()
 end)
 
@@ -1917,7 +1926,7 @@ tgChatIdInputBox.FocusLost:Connect(function()
     saveConfig()
 end)
 
--- Обновление золота, расчет скорости фарма и ETA
+-- Обновление статистики
 local function updateGoldStats()
     local current = getCurrentGold()
     if farming then
@@ -1972,9 +1981,6 @@ end
 local function startFarmingLoop()
     farmThread = task.spawn(function()
         while farming do
-            if antiHazardActive then applyAntiHazard(true) end
-            if antiLagActive then applyAntiLag() end
-
             local hrp, char, hum = getCurrentHRP()
             while farming and not hrp do
                 task.wait(0.2)
@@ -2152,7 +2158,6 @@ startFarming = function()
     table.clear(reachedMilestones)
     updateGoldStats()
     if antiHazardActive then applyAntiHazard(true) end
-    if antiLagActive then applyAntiLag() end
 
     startTime = os.time()
     timeTrackerLabel.Text = "Время фарма: 00:00:00"
@@ -2279,7 +2284,7 @@ tgPollingThread = task.spawn(function()
                                     antiLagBtn.BackgroundColor3 = antiLagActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
                                     antiLagBtn.TextColor3 = antiLagActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
                                     antiLagBtn.Text = antiLagActive and "⚡ Анти-лаг очистка: ВКЛ" or "⚡ Анти-лаг очистка: ВЫКЛ"
-                                    if antiLagActive then applyAntiLag() end
+                                    if antiLagActive then applyAntiLag(true) end
                                     saveConfig()
                                     sendTelegramMessage("⚡ <b>Анти-лаг очистка:</b> " .. (antiLagActive and "ВКЛЮЧЕНА" or "ВЫКЛЮЧЕНА"))
                                 elseif cmd == "/buy" then
@@ -2347,5 +2352,5 @@ tgPollingThread = task.spawn(function()
     end
 end)
 
--- Загрузка настроек при старте
+-- Загрузка сохраненного конфига
 loadConfig()
