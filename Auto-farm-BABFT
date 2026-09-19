@@ -34,7 +34,8 @@ local targetItemRealName = ""
 local targetItemPrice = 0
 local autoRejoinActive = true
 local autoStartOnJoin = false
-local antiDarknessActive = true -- Функция анти-темноты
+local antiDarknessActive = true
+local antiHazardActive = true -- Защита от воды и ловушек
 
 -- Telegram Bot параметры
 local tgToken = ""
@@ -154,7 +155,63 @@ player.Idled:Connect(function()
     VirtualUser:ClickButton2(Vector2.new(0, 0))
 end)
 
--- Хранилище исходных настроек освещения
+-- Система отключения урона (Анти-вода / Анти-лава / Анти-шипы)
+local hazardConnection = nil
+local hazardLoopThread = nil
+
+local function applyAntiHazard(state)
+    pcall(function()
+        local stages = Workspace:FindFirstChild("BoatStages")
+        if stages then
+            for _, v in ipairs(stages:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    local name = v.Name:lower()
+                    if name:find("water") or name:find("lava") or name:find("kill") or name:find("damage") then
+                        v.CanTouch = not state
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local function toggleAntiHazard(enabled)
+    antiHazardActive = enabled
+    applyAntiHazard(antiHazardActive)
+
+    if antiHazardActive then
+        if not hazardConnection then
+            hazardConnection = Workspace.DescendantAdded:Connect(function(v)
+                if antiHazardActive and v:IsA("BasePart") then
+                    local name = v.Name:lower()
+                    if name:find("water") or name:find("lava") or name:find("kill") or name:find("damage") then
+                        v.CanTouch = false
+                    end
+                end
+            end)
+        end
+        if not hazardLoopThread then
+            hazardLoopThread = task.spawn(function()
+                while antiHazardActive do
+                    applyAntiHazard(true)
+                    task.wait(2)
+                end
+            end)
+        end
+    else
+        if hazardConnection then
+            hazardConnection:Disconnect()
+            hazardConnection = nil
+        end
+        if hazardLoopThread then
+            task.cancel(hazardLoopThread)
+            hazardLoopThread = nil
+        end
+        applyAntiHazard(false)
+    end
+end
+
+-- Настройки освещения
 local defaultLighting = {
     Ambient = Lighting.Ambient,
     OutdoorAmbient = Lighting.OutdoorAmbient,
@@ -225,22 +282,6 @@ local function disableClearVision()
 end
 
 local startFarming, stopFarming, saveConfig, executeRejoin
-
-local function disableHazards()
-    pcall(function()
-        local stages = Workspace:FindFirstChild("BoatStages")
-        if stages then
-            for _, v in ipairs(stages:GetDescendants()) do
-                if v:IsA("BasePart") then
-                    local name = v.Name:lower()
-                    if name:find("water") or name:find("lava") or name:find("kill") or name:find("damage") then
-                        v.CanTouch = false
-                    end
-                end
-            end
-        end
-    end)
-end
 
 local function formatTime(seconds)
     local hrs = math.floor(seconds / 3600)
@@ -472,7 +513,7 @@ scrollFrame.Position = UDim2.new(0, 0, 0, 34)
 scrollFrame.BackgroundTransparency = 1
 scrollFrame.ScrollBarThickness = 3
 scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(138, 43, 226)
-scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 370)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 395)
 scrollFrame.Parent = mainFrame
 
 local modeContainer = Instance.new("Frame")
@@ -663,7 +704,7 @@ itemStatusLabel.Parent = scrollFrame
 -- Кнопка Анти-темноты
 local antiDarkBtn = Instance.new("TextButton")
 antiDarkBtn.Size = UDim2.new(1, -24, 0, 22)
-antiDarkBtn.Position = UDim2.new(0, 12, 0, 183)
+antiDarkBtn.Position = UDim2.new(0, 12, 0, 182)
 antiDarkBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 antiDarkBtn.Text = "Анти-темнота: ВКЛ"
 antiDarkBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -676,10 +717,26 @@ local adCorner = Instance.new("UICorner")
 adCorner.CornerRadius = UDim.new(0, 5)
 adCorner.Parent = antiDarkBtn
 
+-- Новая кнопка Анти-урон / Вода
+local antiHazardBtn = Instance.new("TextButton")
+antiHazardBtn.Size = UDim2.new(1, -24, 0, 22)
+antiHazardBtn.Position = UDim2.new(0, 12, 0, 207)
+antiHazardBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВКЛ"
+antiHazardBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+antiHazardBtn.Font = Enum.Font.GothamBold
+antiHazardBtn.TextSize = 10
+antiHazardBtn.BorderSizePixel = 0
+antiHazardBtn.Parent = scrollFrame
+
+local ahCorner = Instance.new("UICorner")
+ahCorner.CornerRadius = UDim.new(0, 5)
+ahCorner.Parent = antiHazardBtn
+
 -- Telegram Inputs
 local tgTokenInputBox = Instance.new("TextBox")
 tgTokenInputBox.Size = UDim2.new(1, -24, 0, 20)
-tgTokenInputBox.Position = UDim2.new(0, 12, 0, 209)
+tgTokenInputBox.Position = UDim2.new(0, 12, 0, 232)
 tgTokenInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 tgTokenInputBox.PlaceholderText = "Telegram Bot Token..."
 tgTokenInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -697,7 +754,7 @@ tgTokenCorner.Parent = tgTokenInputBox
 
 local tgChatIdInputBox = Instance.new("TextBox")
 tgChatIdInputBox.Size = UDim2.new(1, -24, 0, 20)
-tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 233)
+tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 255)
 tgChatIdInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 tgChatIdInputBox.PlaceholderText = "Telegram Chat ID (число)..."
 tgChatIdInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -715,7 +772,7 @@ tgChatCorner.Parent = tgChatIdInputBox
 
 local saveBtn = Instance.new("TextButton")
 saveBtn.Size = UDim2.new(1, -24, 0, 24)
-saveBtn.Position = UDim2.new(0, 12, 0, 258)
+saveBtn.Position = UDim2.new(0, 12, 0, 279)
 saveBtn.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
 saveBtn.Text = "💾 СОХРАНИТЬ НАСТРОЙКИ"
 saveBtn.TextColor3 = Color3.fromRGB(215, 195, 255)
@@ -735,7 +792,7 @@ saveBtnStroke.Parent = saveBtn
 
 local toggleButton = Instance.new("TextButton")
 toggleButton.Size = UDim2.new(1, -24, 0, 32)
-toggleButton.Position = UDim2.new(0, 12, 0, 286)
+toggleButton.Position = UDim2.new(0, 12, 0, 307)
 toggleButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 toggleButton.Text = "START AUTO FARM"
 toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -750,7 +807,7 @@ btnCorner.Parent = toggleButton
 
 local creditsLabel = Instance.new("TextLabel")
 creditsLabel.Size = UDim2.new(1, 0, 0, 16)
-creditsLabel.Position = UDim2.new(0, 0, 0, 322)
+creditsLabel.Position = UDim2.new(0, 0, 0, 343)
 creditsLabel.BackgroundTransparency = 1
 creditsLabel.Text = "By: Probothotspot"
 creditsLabel.TextColor3 = Color3.fromRGB(175, 150, 220)
@@ -781,7 +838,8 @@ saveConfig = function(customAutoStart)
         tgToken = tgToken,
         tgChatId = tgChatId,
         autoStart = shouldAutoStart,
-        antiDarknessActive = antiDarknessActive
+        antiDarknessActive = antiDarknessActive,
+        antiHazardActive = antiHazardActive
     }
 
     if writefile then
@@ -890,6 +948,22 @@ local function loadConfig()
                         antiDarkBtn.Text = "Анти-темнота: ВЫКЛ"
                     end
                 end
+                if data.antiHazardActive ~= nil then
+                    antiHazardActive = data.antiHazardActive
+                    if antiHazardActive then
+                        antiHazardBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+                        antiHazardBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                        antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВКЛ"
+                        toggleAntiHazard(true)
+                    else
+                        antiHazardBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
+                        antiHazardBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
+                        antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВЫКЛ"
+                        toggleAntiHazard(false)
+                    end
+                else
+                    toggleAntiHazard(true)
+                end
 
                 if data.autoStart then
                     autoStartOnJoin = true
@@ -920,10 +994,26 @@ local function loadConfig()
                 end
             end
         end)
+    else
+        toggleAntiHazard(true)
     end
 end
 
--- Переключатель Анти-темноты
+-- Переключатель Анти-урон / Вода
+antiHazardBtn.MouseButton1Click:Connect(function()
+    toggleAntiHazard(not antiHazardActive)
+    if antiHazardActive then
+        antiHazardBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+        antiHazardBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВКЛ"
+    else
+        antiHazardBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
+        antiHazardBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
+        antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВЫКЛ"
+    end
+    saveConfig()
+end)
+
 antiDarkBtn.MouseButton1Click:Connect(function()
     antiDarknessActive = not antiDarknessActive
     if antiDarknessActive then
@@ -1082,6 +1172,7 @@ closeBtn.MouseButton1Click:Connect(function()
     autoStartOnJoin = false
     saveConfig(false)
     disableClearVision()
+    toggleAntiHazard(false)
     if farmThread then task.cancel(farmThread) end
     if timerThread then task.cancel(timerThread) end
     if tgPollingThread then task.cancel(tgPollingThread) end
@@ -1129,7 +1220,7 @@ end
 local function startFarmingLoop()
     farmThread = task.spawn(function()
         while farming do
-            disableHazards()
+            if antiHazardActive then applyAntiHazard(true) end
             local hrp, char, hum = getCurrentHRP()
             while farming and not hrp do
                 task.wait(0.2)
@@ -1172,7 +1263,7 @@ local function startFarmingLoop()
                 hrp, char, hum = getCurrentHRP()
                 if hrp then
                     statusLabel.Text = "Сундук (" .. tostring(chestDelay) .. " сек)..."
-                    enableClearVision() -- Включение четкого экрана на сундуке
+                    enableClearVision()
                     setNoclip(char)
                     placeOnPlatform(CHEST_POSITION, hrp)
 
@@ -1198,7 +1289,7 @@ local function startFarmingLoop()
                 hrp, char, hum = getCurrentHRP()
                 if hrp then
                     statusLabel.Text = "Возврат на зону 2..."
-                    disableClearVision() -- Возврат графики при возвращении к зонам
+                    disableClearVision()
                     setNoclip(char)
                     placeOnPlatform(STAGE_COORDINATES[2], hrp)
                     task.wait(1.5)
@@ -1309,7 +1400,7 @@ startFarming = function()
     previousGold = startGold
     totalEarned = 0
     updateGoldStats()
-    disableHazards()
+    if antiHazardActive then applyAntiHazard(true) end
 
     startTime = os.time()
     timeTrackerLabel.Text = "Время фарма: 00:00:00"
@@ -1408,10 +1499,25 @@ tgPollingThread = task.spawn(function()
                                     else
                                         sendTelegramMessage("⚠️ Фарм уже выключен.")
                                     end
+                                elseif cmd == "/god" or cmd == "/water" then
+                                    toggleAntiHazard(not antiHazardActive)
+                                    if antiHazardActive then
+                                        antiHazardBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+                                        antiHazardBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                                        antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВКЛ"
+                                        sendTelegramMessage("🛡 <b>Защита от воды/урона: ВКЛЮЧЕНА!</b>")
+                                    else
+                                        antiHazardBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
+                                        antiHazardBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
+                                        antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВЫКЛ"
+                                        sendTelegramMessage("🛡 <b>Защита от воды/урона: ВЫКЛЮЧЕНА!</b>")
+                                    end
+                                    saveConfig()
                                 elseif cmd == "/kill" or cmd == "/shutdown" then
                                     stopFarming()
                                     autoStartOnJoin = false
                                     autoRejoinActive = false
+                                    toggleAntiHazard(false)
                                     saveConfig(false)
                                     sendTelegramMessage("💀 <b>Скрипт полностью остановлен и деактивирован!</b>\nАвто-старт и авто-перезаход отключены.")
                                     if screenGui and screenGui.Parent then
@@ -1432,12 +1538,14 @@ tgPollingThread = task.spawn(function()
                                         "• Состояние: <b>%s</b>\n" ..
                                         "• Режим: <b>%s</b>\n" ..
                                         "• Анти-темнота: <b>%s</b>\n" ..
+                                        "• Анти-вода/урон: <b>%s</b>\n" ..
                                         "• Время сессии: <b>%s</b>\n" ..
                                         "• Баланс: <b>%d Gold</b>\n" ..
                                         "• Заработано: <b>+%d Gold</b>",
                                         farming and "🟢 Работает" or "🔴 Остановлен",
                                         farmMode == "Chest" and "Сундук" or "Золото",
                                         antiDarknessActive and "ВКЛ" or "ВЫКЛ",
+                                        antiHazardActive and "ВКЛ" or "ВЫКЛ",
                                         formatTime(elapsed),
                                         currentG,
                                         totalEarned
@@ -1455,5 +1563,5 @@ tgPollingThread = task.spawn(function()
     end
 end)
 
--- Загрузка сохраненного конфига
+-- Загрузка настроек при запуске
 loadConfig()
