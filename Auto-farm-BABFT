@@ -14,6 +14,7 @@ local TeleportService = game:GetService("TeleportService")
 local GuiService = game:GetService("GuiService")
 local HttpService = game:GetService("HttpService")
 local VirtualUser = game:GetService("VirtualUser")
+local Lighting = game:GetService("Lighting")
 
 local farming = false
 local isRejoining = false
@@ -21,10 +22,10 @@ local farmThread = nil
 local timerThread = nil
 local tgPollingThread = nil
 
--- Ссылка на сырой код на GitHub
+-- Ссылка на сырой код GitHub
 local RAW_GITHUB_URL = "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Auto-farm-BABFT"
 
--- Настройки по умолчанию
+-- Настройки
 local farmMode = "Chest"
 local chestDelay = 2
 local autoBuyActive = false
@@ -33,13 +34,14 @@ local targetItemRealName = ""
 local targetItemPrice = 0
 local autoRejoinActive = true
 local autoStartOnJoin = false
+local antiDarknessActive = true -- Функция анти-темноты
 
 -- Telegram Bot параметры
 local tgToken = ""
 local tgChatId = ""
 local lastUpdateId = 0
 
--- Статистика (дельта-трекер)
+-- Статистика
 local startGold = 0
 local previousGold = 0
 local totalEarned = 0
@@ -47,13 +49,12 @@ local startTime = 0
 local goldValObject = nil
 local CONFIG_FILE = "babft_farm_config.json"
 
--- Функции эксплоита
+-- Эксплоит функции
 local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
 local queue_on_teleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
 
--- База цен BABFT (ToyBlock = 250 Gold)
+-- База цен BABFT
 local KNOWN_ITEMS = {
-    -- Сундуки
     ["common"] = {name = "Common Chest", price = 5},
     ["common chest"] = {name = "Common Chest", price = 5},
     ["uncommon"] = {name = "Uncommon Chest", price = 15},
@@ -65,7 +66,6 @@ local KNOWN_ITEMS = {
     ["legendary"] = {name = "Legendary Chest", price = 405},
     ["legendary chest"] = {name = "Legendary Chest", price = 405},
 
-    -- Инструменты
     ["trowel"] = {name = "TrowelTool", price = 1500},
     ["мастерок"] = {name = "TrowelTool", price = 1500},
     ["paint"] = {name = "PaintTool", price = 1500},
@@ -77,7 +77,6 @@ local KNOWN_ITEMS = {
     ["scaling"] = {name = "ScalingTool", price = 5000},
     ["рулетка"] = {name = "ScalingTool", price = 5000},
 
-    -- Блоки
     ["лего"] = {name = "ToyBlock", price = 250},
     ["lego"] = {name = "ToyBlock", price = 250},
     ["toy"] = {name = "ToyBlock", price = 250},
@@ -103,7 +102,6 @@ local KNOWN_ITEMS = {
     ["обсидиан"] = {name = "ObsidianBlock", price = 400},
     ["титан"] = {name = "TitaniumBlock", price = 425},
 
-    -- Механизмы
     ["знак"] = {name = "SignBlock", price = 45},
     ["мотор"] = {name = "BoatMotor", price = 450},
     ["колеса"] = {name = "CarWheels", price = 750},
@@ -135,7 +133,6 @@ local KNOWN_ITEMS = {
     ["ступеньки"] = {name = "Step", price = 50}
 }
 
--- Координаты зон
 local STAGE_COORDINATES = {
     Vector3.new(-52, 70, 1369),
     Vector3.new(-52, 70, 2139),
@@ -156,6 +153,76 @@ player.Idled:Connect(function()
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new(0, 0))
 end)
+
+-- Хранилище исходных настроек освещения
+local defaultLighting = {
+    Ambient = Lighting.Ambient,
+    OutdoorAmbient = Lighting.OutdoorAmbient,
+    Brightness = Lighting.Brightness,
+    ClockTime = Lighting.ClockTime,
+    FogEnd = Lighting.FogEnd,
+    GlobalShadows = Lighting.GlobalShadows
+}
+local disabledEffects = {}
+local hiddenFadeFrames = {}
+
+local function enableClearVision()
+    if not antiDarknessActive then return end
+    pcall(function()
+        Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+        Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+        Lighting.Brightness = 2
+        Lighting.ClockTime = 14
+        Lighting.FogEnd = 1e6
+        Lighting.GlobalShadows = false
+
+        for _, fx in ipairs(Lighting:GetChildren()) do
+            if fx:IsA("PostEffect") and fx.Enabled then
+                table.insert(disabledEffects, fx)
+                fx.Enabled = false
+            end
+        end
+
+        local pGui = player:FindFirstChild("PlayerGui")
+        if pGui then
+            for _, v in ipairs(pGui:GetDescendants()) do
+                if v:IsA("Frame") and v.Visible and v.BackgroundTransparency < 0.5 then
+                    local col = v.BackgroundColor3
+                    if (col.R + col.G + col.B) < 0.25 then
+                        table.insert(hiddenFadeFrames, {frame = v, prevVis = v.Visible, prevTrans = v.BackgroundTransparency})
+                        v.Visible = false
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local function disableClearVision()
+    pcall(function()
+        Lighting.Ambient = defaultLighting.Ambient
+        Lighting.OutdoorAmbient = defaultLighting.OutdoorAmbient
+        Lighting.Brightness = defaultLighting.Brightness
+        Lighting.ClockTime = defaultLighting.ClockTime
+        Lighting.FogEnd = defaultLighting.FogEnd
+        Lighting.GlobalShadows = defaultLighting.GlobalShadows
+
+        for _, fx in ipairs(disabledEffects) do
+            if fx and fx.Parent then
+                fx.Enabled = true
+            end
+        end
+        table.clear(disabledEffects)
+
+        for _, item in ipairs(hiddenFadeFrames) do
+            if item.frame and item.frame.Parent then
+                item.frame.Visible = item.prevVis
+                item.frame.BackgroundTransparency = item.prevTrans
+            end
+        end
+        table.clear(hiddenFadeFrames)
+    end)
+end
 
 local startFarming, stopFarming, saveConfig, executeRejoin
 
@@ -405,7 +472,7 @@ scrollFrame.Position = UDim2.new(0, 0, 0, 34)
 scrollFrame.BackgroundTransparency = 1
 scrollFrame.ScrollBarThickness = 3
 scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(138, 43, 226)
-scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 420)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 370)
 scrollFrame.Parent = mainFrame
 
 local modeContainer = Instance.new("Frame")
@@ -517,6 +584,7 @@ timeTrackerLabel.Font = Enum.Font.GothamBold
 timeTrackerLabel.TextSize = 10
 timeTrackerLabel.Parent = scrollFrame
 
+-- Авто-закупка
 local autoBuyRow = Instance.new("Frame")
 autoBuyRow.Size = UDim2.new(1, -24, 0, 22)
 autoBuyRow.Position = UDim2.new(0, 12, 0, 116)
@@ -592,9 +660,26 @@ itemStatusLabel.Font = Enum.Font.Gotham
 itemStatusLabel.TextSize = 10
 itemStatusLabel.Parent = scrollFrame
 
+-- Кнопка Анти-темноты
+local antiDarkBtn = Instance.new("TextButton")
+antiDarkBtn.Size = UDim2.new(1, -24, 0, 22)
+antiDarkBtn.Position = UDim2.new(0, 12, 0, 183)
+antiDarkBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+antiDarkBtn.Text = "Анти-темнота: ВКЛ"
+antiDarkBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+antiDarkBtn.Font = Enum.Font.GothamBold
+antiDarkBtn.TextSize = 10
+antiDarkBtn.BorderSizePixel = 0
+antiDarkBtn.Parent = scrollFrame
+
+local adCorner = Instance.new("UICorner")
+adCorner.CornerRadius = UDim.new(0, 5)
+adCorner.Parent = antiDarkBtn
+
+-- Telegram Inputs
 local tgTokenInputBox = Instance.new("TextBox")
 tgTokenInputBox.Size = UDim2.new(1, -24, 0, 20)
-tgTokenInputBox.Position = UDim2.new(0, 12, 0, 183)
+tgTokenInputBox.Position = UDim2.new(0, 12, 0, 209)
 tgTokenInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 tgTokenInputBox.PlaceholderText = "Telegram Bot Token..."
 tgTokenInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -612,7 +697,7 @@ tgTokenCorner.Parent = tgTokenInputBox
 
 local tgChatIdInputBox = Instance.new("TextBox")
 tgChatIdInputBox.Size = UDim2.new(1, -24, 0, 20)
-tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 206)
+tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 233)
 tgChatIdInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 tgChatIdInputBox.PlaceholderText = "Telegram Chat ID (число)..."
 tgChatIdInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -630,7 +715,7 @@ tgChatCorner.Parent = tgChatIdInputBox
 
 local saveBtn = Instance.new("TextButton")
 saveBtn.Size = UDim2.new(1, -24, 0, 24)
-saveBtn.Position = UDim2.new(0, 12, 0, 230)
+saveBtn.Position = UDim2.new(0, 12, 0, 258)
 saveBtn.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
 saveBtn.Text = "💾 СОХРАНИТЬ НАСТРОЙКИ"
 saveBtn.TextColor3 = Color3.fromRGB(215, 195, 255)
@@ -650,7 +735,7 @@ saveBtnStroke.Parent = saveBtn
 
 local toggleButton = Instance.new("TextButton")
 toggleButton.Size = UDim2.new(1, -24, 0, 32)
-toggleButton.Position = UDim2.new(0, 12, 0, 258)
+toggleButton.Position = UDim2.new(0, 12, 0, 286)
 toggleButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 toggleButton.Text = "START AUTO FARM"
 toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -665,7 +750,7 @@ btnCorner.Parent = toggleButton
 
 local creditsLabel = Instance.new("TextLabel")
 creditsLabel.Size = UDim2.new(1, 0, 0, 16)
-creditsLabel.Position = UDim2.new(0, 0, 0, 294)
+creditsLabel.Position = UDim2.new(0, 0, 0, 322)
 creditsLabel.BackgroundTransparency = 1
 creditsLabel.Text = "By: Probothotspot"
 creditsLabel.TextColor3 = Color3.fromRGB(175, 150, 220)
@@ -695,7 +780,8 @@ saveConfig = function(customAutoStart)
         targetItem = itemInputBox.Text,
         tgToken = tgToken,
         tgChatId = tgChatId,
-        autoStart = shouldAutoStart
+        autoStart = shouldAutoStart,
+        antiDarknessActive = antiDarknessActive
     }
 
     if writefile then
@@ -705,7 +791,7 @@ saveConfig = function(customAutoStart)
     end
 end
 
--- Перезаход с защитой от спама
+-- Перезаход
 executeRejoin = function()
     if isRejoining then return end
     isRejoining = true
@@ -737,6 +823,7 @@ GuiService.ErrorMessageChanged:Connect(function()
     end
 end)
 
+-- Загрузка конфига
 local function loadConfig()
     if isfile and readfile and isfile(CONFIG_FILE) then
         pcall(function()
@@ -791,10 +878,22 @@ local function loadConfig()
                         autoBuyToggleBtn.Text = "Авто-закупка: ВКЛ"
                     end
                 end
+                if data.antiDarknessActive ~= nil then
+                    antiDarknessActive = data.antiDarknessActive
+                    if antiDarknessActive then
+                        antiDarkBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+                        antiDarkBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                        antiDarkBtn.Text = "Анти-темнота: ВКЛ"
+                    else
+                        antiDarkBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
+                        antiDarkBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
+                        antiDarkBtn.Text = "Анти-темнота: ВЫКЛ"
+                    end
+                end
 
                 if data.autoStart then
                     autoStartOnJoin = true
-                    sendTelegramMessage("🔔 <b>Скрипт подгружен через GitHub! Запускаю авто-фарм...</b>")
+                    sendTelegramMessage("🔔 <b>Скрипт запущен! Ожидаю загрузку мира...</b>")
                     task.spawn(function()
                         local char = player.Character or player.CharacterAdded:Wait()
                         local hrp = char:WaitForChild("HumanoidRootPart", 15)
@@ -815,7 +914,7 @@ local function loadConfig()
                         task.wait(2)
                         if not farming then
                             startFarming()
-                            sendTelegramMessage("✅ <b>Успешный перезаход! Фарм автоматически запущен.</b>")
+                            sendTelegramMessage("✅ <b>Успешный перезаход! Фарм запущен.</b>")
                         end
                     end)
                 end
@@ -823,6 +922,22 @@ local function loadConfig()
         end)
     end
 end
+
+-- Переключатель Анти-темноты
+antiDarkBtn.MouseButton1Click:Connect(function()
+    antiDarknessActive = not antiDarknessActive
+    if antiDarknessActive then
+        antiDarkBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+        antiDarkBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        antiDarkBtn.Text = "Анти-темнота: ВКЛ"
+    else
+        antiDarkBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
+        antiDarkBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
+        antiDarkBtn.Text = "Анти-темнота: ВЫКЛ"
+        disableClearVision()
+    end
+    saveConfig()
+end)
 
 saveBtn.MouseButton1Click:Connect(function()
     saveConfig()
@@ -966,6 +1081,7 @@ closeBtn.MouseButton1Click:Connect(function()
     autoBuyActive = false
     autoStartOnJoin = false
     saveConfig(false)
+    disableClearVision()
     if farmThread then task.cancel(farmThread) end
     if timerThread then task.cancel(timerThread) end
     if tgPollingThread then task.cancel(tgPollingThread) end
@@ -1048,6 +1164,7 @@ local function startFarmingLoop()
 
                 if resetToFirstStage or not farming then
                     platform.Parent = nil
+                    disableClearVision()
                     task.wait(0.5)
                     continue
                 end
@@ -1055,6 +1172,7 @@ local function startFarmingLoop()
                 hrp, char, hum = getCurrentHRP()
                 if hrp then
                     statusLabel.Text = "Сундук (" .. tostring(chestDelay) .. " сек)..."
+                    enableClearVision() -- Включение четкого экрана на сундуке
                     setNoclip(char)
                     placeOnPlatform(CHEST_POSITION, hrp)
 
@@ -1072,6 +1190,7 @@ local function startFarmingLoop()
 
                 if resetToFirstStage or not farming then
                     platform.Parent = nil
+                    disableClearVision()
                     task.wait(0.5)
                     continue
                 end
@@ -1079,6 +1198,7 @@ local function startFarmingLoop()
                 hrp, char, hum = getCurrentHRP()
                 if hrp then
                     statusLabel.Text = "Возврат на зону 2..."
+                    disableClearVision() -- Возврат графики при возвращении к зонам
                     setNoclip(char)
                     placeOnPlatform(STAGE_COORDINATES[2], hrp)
                     task.wait(1.5)
@@ -1108,6 +1228,7 @@ local function startFarmingLoop()
 
                 if resetToFirstStage or not farming then
                     platform.Parent = nil
+                    disableClearVision()
                     task.wait(0.5)
                     continue
                 end
@@ -1121,11 +1242,13 @@ local function startFarmingLoop()
                     end
                 end
 
+                disableClearVision()
                 checkAndAutoBuy()
                 platform.Parent = nil
                 task.wait(0.8)
 
             elseif farmMode == "Gold" then
+                disableClearVision()
                 for index, coord in ipairs(STAGE_COORDINATES) do
                     if not farming then break end
                     hrp, char, hum = getCurrentHRP()
@@ -1210,6 +1333,7 @@ stopFarming = function()
     farming = false
     autoStartOnJoin = false
     saveConfig(false)
+    disableClearVision()
 
     toggleButton.Text = "START AUTO FARM"
     toggleButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
@@ -1233,7 +1357,6 @@ toggleButton.MouseButton1Click:Connect(function()
     end
 end)
 
--- Очистка очереди Telegram при старте скрипта (устраняет спам старых команд)
 local function syncTelegramOffset()
     if httpRequest and tgToken ~= "" then
         pcall(function()
@@ -1255,7 +1378,6 @@ local function syncTelegramOffset()
     end
 end
 
--- Фоновый опрос команд из Telegram
 tgPollingThread = task.spawn(function()
     task.wait(2)
     syncTelegramOffset()
@@ -1309,11 +1431,13 @@ tgPollingThread = task.spawn(function()
                                         "📊 <b>Статистика BABFT:</b>\n\n" ..
                                         "• Состояние: <b>%s</b>\n" ..
                                         "• Режим: <b>%s</b>\n" ..
+                                        "• Анти-темнота: <b>%s</b>\n" ..
                                         "• Время сессии: <b>%s</b>\n" ..
                                         "• Баланс: <b>%d Gold</b>\n" ..
                                         "• Заработано: <b>+%d Gold</b>",
                                         farming and "🟢 Работает" or "🔴 Остановлен",
                                         farmMode == "Chest" and "Сундук" or "Золото",
+                                        antiDarknessActive and "ВКЛ" or "ВЫКЛ",
                                         formatTime(elapsed),
                                         currentG,
                                         totalEarned
