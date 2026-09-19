@@ -26,7 +26,7 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local SoundService = game:GetService("SoundService")
 
--- ПРЕДВАРИТЕЛЬНОЕ ОБЪЯВЛЕНИЕ ВСЕХ ФУНКЦИЙ (Защита от краша на Xeno)
+-- Предварительное объявление функций для безопасного scope
 local startFarming, stopFarming, saveConfig, executeRejoin, toggleBlackScreen, showAchievementToast
 local updateSpeedAndEtaMetrics, updateGoldStats, fullCleanup, applyAntiHazard, applyAntiLag
 local enableClearVision, disableClearVision, toggleAntiHazard
@@ -72,7 +72,7 @@ local tgToken = ""
 local tgChatId = ""
 local lastUpdateId = 0
 
--- Статистика, расчет скорости (2-минутный замер) и достижения
+-- Статистика, расчет скорости по минутам и достижения
 local startGold = 0
 local previousGold = 0
 local totalEarned = 0
@@ -82,10 +82,14 @@ local CONFIG_FILE = "babft_farm_config.json"
 local MILESTONES = {10000, 25000, 50000, 100000, 250000, 500000, 1000000}
 local reachedMilestones = {}
 
-local minuteBuckets = {}
-local currentMinuteEarned = 0
-local minuteSecondsCounter = 0
-local currentGPH = 0
+-- Поминутная система
+local statsStartTime = 0
+local lastCompletedMinuteIndex = 0
+local currentMinuteGold = 0
+local completedMinutesList = {}
+local completedMinutesSum = 0
+local avgGoldPerMinute = 0
+local estGoldPerHour = 0
 local currentETA = "Выкл"
 
 -- Эксплоит функции
@@ -261,7 +265,7 @@ task.spawn(function()
     end
 end)
 
--- Анти-Лаг (Мягкий режим без фризов)
+-- Анти-Лаг (Мягкая очистка)
 local lastAntiLagRun = 0
 applyAntiLag = function(force)
     if not antiLagActive then return end
@@ -284,7 +288,7 @@ applyAntiLag = function(force)
     end)
 end
 
--- Защита от воды с кэшированием (Без сканирования карты на каждом шаге)
+-- Защита от воды с кэшированием
 local cachedHazards = {}
 local hazardConnection = nil
 
@@ -666,7 +670,7 @@ local bsStats = Instance.new("TextLabel")
 bsStats.Size = UDim2.new(1, 0, 0, 85)
 bsStats.Position = UDim2.new(0, 0, 0.39, 0)
 bsStats.BackgroundTransparency = 1
-bsStats.Text = "Заработано: +0 Gold\nСкорость: ~0 Gold/час\nДо покупки: Выкл\nВремя: 00:00:00"
+bsStats.Text = "Заработано: +0 Gold\nСкорость: ~0 Gold/час (0.0/мин)\nВремя: 00:00:00"
 bsStats.TextColor3 = Color3.fromRGB(200, 190, 225)
 bsStats.Font = Enum.Font.Gotham
 bsStats.TextSize = 12
@@ -829,14 +833,6 @@ saturnBands.Color = ColorSequence.new({
 saturnBands.Rotation = 66
 saturnBands.Parent = saturnGlobe
 
-local saturnShadow = Instance.new("Frame")
-saturnShadow.Size = UDim2.new(1.2, 0, 1.2, 0)
-saturnShadow.Position = UDim2.new(-0.25, 0, -0.1, 0)
-saturnShadow.BackgroundColor3 = Color3.fromRGB(8, 6, 14)
-saturnShadow.BorderSizePixel = 0
-saturnShadow.ZIndex = 2
-saturnShadow.Parent = saturnGlobe
-local ssCorner = Instance.new("UICorner") ssCorner.CornerRadius = UDim.new(1, 0) ssCorner.Parent = saturnShadow
 local ssGrad = Instance.new("UIGradient")
 ssGrad.Transparency = NumberSequence.new({
     NumberSequenceKeypoint.new(0, 1),
@@ -845,7 +841,17 @@ ssGrad.Transparency = NumberSequence.new({
     NumberSequenceKeypoint.new(1, 0)
 })
 ssGrad.Rotation = 45
-ssGrad.Parent = saturnShadow
+
+local saturnShadow = Instance.new("Frame")
+saturnShadow.Size = UDim2.new(1.2, 0, 1.2, 0)
+saturnShadow.Position = UDim2.new(-0.25, 0, -0.1, 0)
+saturnShadow.BackgroundColor3 = Color3.fromRGB(8, 6, 14)
+saturnShadow.BorderSizePixel = 0
+saturnShadow.ZIndex = 2
+saturnShadow.Parent = saturnGlobe
+local ssCorner = Instance.new("UICorner") ssCorner.CornerRadius = UDim.new(1, 0) ssCorner.Parent = saturnShadow
+local ssGradClone = ssGrad:Clone()
+ssGradClone.Parent = saturnShadow
 
 local frontRingContainer = Instance.new("Frame")
 frontRingContainer.Size = UDim2.new(1, 0, 0.52, 0)
@@ -990,7 +996,7 @@ for i = 1, 14 do
     local sc = Instance.new("UICorner") sc.CornerRadius = UDim.new(1, 0) sc.Parent = star
 end
 
--- Комета
+-- Падающая комета
 local comet = Instance.new("Frame")
 comet.Size = UDim2.new(0, 45, 0, 2)
 comet.Position = UDim2.new(-0.2, 0, 0.1, 0)
@@ -1116,7 +1122,7 @@ scrollFrame.Position = UDim2.new(0, 0, 0, 34)
 scrollFrame.BackgroundTransparency = 1
 scrollFrame.ScrollBarThickness = 3
 scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(138, 43, 226)
-scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 520)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 530)
 scrollFrame.ZIndex = 20
 scrollFrame.Parent = mainFrame
 
@@ -1219,22 +1225,34 @@ goldTrackerLabel.TextSize = 10
 goldTrackerLabel.ZIndex = 22
 goldTrackerLabel.Parent = scrollFrame
 
--- Метка скорости (2-минутный замер)
+-- Метка скорости
 local goldSpeedLabel = Instance.new("TextLabel")
 goldSpeedLabel.Size = UDim2.new(1, -24, 0, 14)
 goldSpeedLabel.Position = UDim2.new(0, 12, 0, 98)
 goldSpeedLabel.BackgroundTransparency = 1
-goldSpeedLabel.Text = "Скорость: ~0 Gold/час (замер...)"
+goldSpeedLabel.Text = "Скорость: ~0 G/ч (0.0 G/мин)"
 goldSpeedLabel.TextColor3 = Color3.fromRGB(130, 240, 175)
 goldSpeedLabel.Font = Enum.Font.GothamBold
 goldSpeedLabel.TextSize = 10
 goldSpeedLabel.ZIndex = 22
 goldSpeedLabel.Parent = scrollFrame
 
+-- Новая строка: статистика минут
+local minuteStatsLabel = Instance.new("TextLabel")
+minuteStatsLabel.Size = UDim2.new(1, -24, 0, 14)
+minuteStatsLabel.Position = UDim2.new(0, 12, 0, 113)
+minuteStatsLabel.BackgroundTransparency = 1
+minuteStatsLabel.Text = "Мин. статистика: нет данных"
+minuteStatsLabel.TextColor3 = Color3.fromRGB(215, 185, 255)
+minuteStatsLabel.Font = Enum.Font.Gotham
+minuteStatsLabel.TextSize = 9
+minuteStatsLabel.ZIndex = 22
+minuteStatsLabel.Parent = scrollFrame
+
 -- Метка времени до авто-покупки (ETA)
 local etaLabel = Instance.new("TextLabel")
 etaLabel.Size = UDim2.new(1, -24, 0, 14)
-etaLabel.Position = UDim2.new(0, 12, 0, 113)
+etaLabel.Position = UDim2.new(0, 12, 0, 128)
 etaLabel.BackgroundTransparency = 1
 etaLabel.Text = "До покупки: Выкл"
 etaLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
@@ -1245,7 +1263,7 @@ etaLabel.Parent = scrollFrame
 
 local timeTrackerLabel = Instance.new("TextLabel")
 timeTrackerLabel.Size = UDim2.new(1, -24, 0, 14)
-timeTrackerLabel.Position = UDim2.new(0, 12, 0, 128)
+timeTrackerLabel.Position = UDim2.new(0, 12, 0, 143)
 timeTrackerLabel.BackgroundTransparency = 1
 timeTrackerLabel.Text = "Время фарма: 00:00:00"
 timeTrackerLabel.TextColor3 = Color3.fromRGB(165, 195, 255)
@@ -1257,7 +1275,7 @@ timeTrackerLabel.Parent = scrollFrame
 -- Авто-закупка
 local autoBuyRow = Instance.new("Frame")
 autoBuyRow.Size = UDim2.new(1, -24, 0, 22)
-autoBuyRow.Position = UDim2.new(0, 12, 0, 146)
+autoBuyRow.Position = UDim2.new(0, 12, 0, 161)
 autoBuyRow.BackgroundTransparency = 1
 autoBuyRow.ZIndex = 21
 autoBuyRow.Parent = scrollFrame
@@ -1302,7 +1320,7 @@ local abAmtCorner = Instance.new("UICorner") abAmtCorner.CornerRadius = UDim.new
 
 local itemInputBox = Instance.new("TextBox")
 itemInputBox.Size = UDim2.new(1, -24, 0, 20)
-itemInputBox.Position = UDim2.new(0, 12, 0, 171)
+itemInputBox.Position = UDim2.new(0, 12, 0, 187)
 itemInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 itemInputBox.PlaceholderText = "Введите блок (напр. Лего)..."
 itemInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -1318,7 +1336,7 @@ local itemInputCorner = Instance.new("UICorner") itemInputCorner.CornerRadius = 
 
 local itemStatusLabel = Instance.new("TextLabel")
 itemStatusLabel.Size = UDim2.new(1, -24, 0, 15)
-itemStatusLabel.Position = UDim2.new(0, 12, 0, 193)
+itemStatusLabel.Position = UDim2.new(0, 12, 0, 210)
 itemStatusLabel.BackgroundTransparency = 1
 itemStatusLabel.Text = "Введите название для поиска"
 itemStatusLabel.TextColor3 = Color3.fromRGB(140, 130, 160)
@@ -1330,7 +1348,7 @@ itemStatusLabel.Parent = scrollFrame
 -- Функциональные кнопки
 local antiDarkBtn = Instance.new("TextButton")
 antiDarkBtn.Size = UDim2.new(1, -24, 0, 20)
-antiDarkBtn.Position = UDim2.new(0, 12, 0, 211)
+antiDarkBtn.Position = UDim2.new(0, 12, 0, 228)
 antiDarkBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 antiDarkBtn.Text = "Анти-темнота: ВКЛ"
 antiDarkBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -1343,7 +1361,7 @@ local adCorner = Instance.new("UICorner") adCorner.CornerRadius = UDim.new(0, 5)
 
 local antiHazardBtn = Instance.new("TextButton")
 antiHazardBtn.Size = UDim2.new(1, -24, 0, 20)
-antiHazardBtn.Position = UDim2.new(0, 12, 0, 234)
+antiHazardBtn.Position = UDim2.new(0, 12, 0, 251)
 antiHazardBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВКЛ"
 antiHazardBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -1356,7 +1374,7 @@ local ahCorner = Instance.new("UICorner") ahCorner.CornerRadius = UDim.new(0, 5)
 
 local batterySaverBtn = Instance.new("TextButton")
 batterySaverBtn.Size = UDim2.new(1, -24, 0, 20)
-batterySaverBtn.Position = UDim2.new(0, 12, 0, 257)
+batterySaverBtn.Position = UDim2.new(0, 12, 0, 274)
 batterySaverBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
 batterySaverBtn.Text = "🔋 Ночной режим (Экран): ВЫКЛ"
 batterySaverBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
@@ -1369,7 +1387,7 @@ local bsCorner = Instance.new("UICorner") bsCorner.CornerRadius = UDim.new(0, 5)
 
 local antiLagBtn = Instance.new("TextButton")
 antiLagBtn.Size = UDim2.new(1, -24, 0, 20)
-antiLagBtn.Position = UDim2.new(0, 12, 0, 280)
+antiLagBtn.Position = UDim2.new(0, 12, 0, 297)
 antiLagBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
 antiLagBtn.Text = "⚡ Анти-лаг очистка: ВЫКЛ"
 antiLagBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
@@ -1382,7 +1400,7 @@ local alCorner = Instance.new("UICorner") alCorner.CornerRadius = UDim.new(0, 5)
 
 local smoothnessBtn = Instance.new("TextButton")
 smoothnessBtn.Size = UDim2.new(1, -24, 0, 20)
-smoothnessBtn.Position = UDim2.new(0, 12, 0, 303)
+smoothnessBtn.Position = UDim2.new(0, 12, 0, 320)
 smoothnessBtn.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
 smoothnessBtn.Text = "🚀 Плавность: " .. smoothnessNames[smoothnessMode]
 smoothnessBtn.TextColor3 = Color3.fromRGB(225, 210, 255)
@@ -1395,7 +1413,7 @@ local smCorner = Instance.new("UICorner") smCorner.CornerRadius = UDim.new(0, 5)
 
 local spaceBgBtn = Instance.new("TextButton")
 spaceBgBtn.Size = UDim2.new(1, -24, 0, 20)
-spaceBgBtn.Position = UDim2.new(0, 12, 0, 326)
+spaceBgBtn.Position = UDim2.new(0, 12, 0, 343)
 spaceBgBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 spaceBgBtn.Text = "🌌 Космо-фон: ВКЛ"
 spaceBgBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -1408,7 +1426,7 @@ local sBgCorner = Instance.new("UICorner") sBgCorner.CornerRadius = UDim.new(0, 
 
 local soundToggleBtn = Instance.new("TextButton")
 soundToggleBtn.Size = UDim2.new(1, -24, 0, 20)
-soundToggleBtn.Position = UDim2.new(0, 12, 0, 349)
+soundToggleBtn.Position = UDim2.new(0, 12, 0, 366)
 soundToggleBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 soundToggleBtn.Text = "🔊 Звуковые эффекты: ВКЛ"
 soundToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -1422,7 +1440,7 @@ local sndCorner = Instance.new("UICorner") sndCorner.CornerRadius = UDim.new(0, 
 -- Telegram Inputs
 local tgTokenInputBox = Instance.new("TextBox")
 tgTokenInputBox.Size = UDim2.new(1, -24, 0, 20)
-tgTokenInputBox.Position = UDim2.new(0, 12, 0, 372)
+tgTokenInputBox.Position = UDim2.new(0, 12, 0, 389)
 tgTokenInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 tgTokenInputBox.PlaceholderText = "Telegram Bot Token..."
 tgTokenInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -1438,7 +1456,7 @@ local tgTokenCorner = Instance.new("UICorner") tgTokenCorner.CornerRadius = UDim
 
 local tgChatIdInputBox = Instance.new("TextBox")
 tgChatIdInputBox.Size = UDim2.new(1, -24, 0, 20)
-tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 395)
+tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 412)
 tgChatIdInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 tgChatIdInputBox.PlaceholderText = "Telegram Chat ID (число)..."
 tgChatIdInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -1454,7 +1472,7 @@ local tgChatCorner = Instance.new("UICorner") tgChatCorner.CornerRadius = UDim.n
 
 local saveBtn = Instance.new("TextButton")
 saveBtn.Size = UDim2.new(1, -24, 0, 24)
-saveBtn.Position = UDim2.new(0, 12, 0, 419)
+saveBtn.Position = UDim2.new(0, 12, 0, 436)
 saveBtn.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
 saveBtn.Text = "💾 СОХРАНИТЬ НАСТРОЙКИ"
 saveBtn.TextColor3 = Color3.fromRGB(215, 195, 255)
@@ -1468,7 +1486,7 @@ local saveBtnStroke = Instance.new("UIStroke") saveBtnStroke.Thickness = 1 saveB
 
 local toggleButton = Instance.new("TextButton")
 toggleButton.Size = UDim2.new(1, -24, 0, 32)
-toggleButton.Position = UDim2.new(0, 12, 0, 447)
+toggleButton.Position = UDim2.new(0, 12, 0, 464)
 toggleButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 toggleButton.Text = "START AUTO FARM"
 toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -1481,7 +1499,7 @@ local btnCorner = Instance.new("UICorner") btnCorner.CornerRadius = UDim.new(0, 
 
 local creditsLabel = Instance.new("TextLabel")
 creditsLabel.Size = UDim2.new(1, 0, 0, 16)
-creditsLabel.Position = UDim2.new(0, 0, 0, 485)
+creditsLabel.Position = UDim2.new(0, 0, 0, 502)
 creditsLabel.BackgroundTransparency = 1
 creditsLabel.Text = "By: Probothotspot"
 creditsLabel.TextColor3 = Color3.fromRGB(175, 150, 220)
@@ -1577,56 +1595,76 @@ minBtn.MouseButton1Click:Connect(function()
 end)
 
 -- =====================================================================
--- 5. ОПРЕДЕЛЕНИЕ ЛОГИКИ РАСЧЕТА (ВЫШЕ ВСЕХ ЕЁ ВЫЗОВОВ)
+-- 5. ТОЧНЫЙ РАСЧЕТ СКОРОСТИ, МИНУТНОЙ СТАТИСТИКИ И ETA
 -- =====================================================================
 updateSpeedAndEtaMetrics = function()
     if not farming then
-        currentGPH = 0
-        currentETA = "Выкл"
-        goldSpeedLabel.Text = "Скорость: ~0 Gold/час"
+        if #completedMinutesList == 0 then
+            goldSpeedLabel.Text = "Скорость: ~0 G/ч (0.0 G/мин)"
+            minuteStatsLabel.Text = "Мин. статистика: фарм остановлен"
+        end
         etaLabel.Text = "До покупки: Выкл"
         return
     end
 
-    -- Расчет средней скорости за 2 минуты
-    if #minuteBuckets == 0 then
-        if minuteSecondsCounter >= 10 then
-            local approxPerSec = currentMinuteEarned / minuteSecondsCounter
-            currentGPH = math.floor(approxPerSec * 3600)
-            goldSpeedLabel.Text = string.format("Скорость: ~%d Gold/час (минута 1: %dс)", currentGPH, 60 - minuteSecondsCounter)
-        else
-            currentGPH = 0
-            goldSpeedLabel.Text = string.format("Скорость: замер минуты 1 (%dс)...", 60 - minuteSecondsCounter)
+    local elapsed = time() - statsStartTime
+    local completedMinutes = math.floor(elapsed / 60)
+
+    -- Фиксация завершенных полных минут
+    if completedMinutes > lastCompletedMinuteIndex then
+        while lastCompletedMinuteIndex < completedMinutes do
+            lastCompletedMinuteIndex = lastCompletedMinuteIndex + 1
+            if lastCompletedMinuteIndex == completedMinutes then
+                table.insert(completedMinutesList, currentMinuteGold)
+                completedMinutesSum = completedMinutesSum + currentMinuteGold
+                currentMinuteGold = 0
+            else
+                table.insert(completedMinutesList, 0)
+            end
         end
-    elseif #minuteBuckets == 1 then
-        local avgMin = minuteBuckets[1]
-        currentGPH = math.floor(avgMin * 60)
-        goldSpeedLabel.Text = string.format("Скорость: ~%d Gold/час (минута 2: %dс)", currentGPH, 60 - minuteSecondsCounter)
-    else
-        local avgMin = (minuteBuckets[1] + minuteBuckets[2]) / 2
-        currentGPH = math.floor(avgMin * 60)
-        goldSpeedLabel.Text = string.format("Скорость: ~%d Gold/час (ср. 2 мин)", currentGPH)
+
+        local count = #completedMinutesList
+        if count > 0 then
+            avgGoldPerMinute = completedMinutesSum / count
+            estGoldPerHour = math.floor(avgGoldPerMinute * 60)
+        end
     end
 
-    -- Расчет времени до покупки (ETA)
+    local count = #completedMinutesList
+    if count == 0 then
+        -- Сбор данных до первой завершенной минуты
+        goldSpeedLabel.Text = "Скорость: сбор данных до 1-й минуты..."
+        minuteStatsLabel.Text = string.format("Замер минуты 1: +%d G (%dс/60с)", currentMinuteGold, math.floor(elapsed % 60))
+    else
+        goldSpeedLabel.Text = string.format("Скорость: ~%d G/ч (%.1f G/мин)", estGoldPerHour, avgGoldPerMinute)
+        if count == 1 then
+            minuteStatsLabel.Text = string.format("М1: +%d | Среднее: %.1f G/мин", completedMinutesList[1], avgGoldPerMinute)
+        else
+            local mPrev = count - 1
+            minuteStatsLabel.Text = string.format("М%d:+%d | М%d:+%d | Ср:%.1f/мин", mPrev, completedMinutesList[mPrev], count, completedMinutesList[count], avgGoldPerMinute)
+        end
+    end
+
+    -- Расчет ETA
     if autoBuyActive and targetItemPrice > 0 and buyAmount > 0 then
         local currentG = getCurrentGold()
         local targetTotal = targetItemPrice * buyAmount
-        local diff = targetTotal - currentG
+        local needed = targetTotal - currentG
 
-        if diff <= 0 then
+        if needed <= 0 then
             currentETA = "Готово (хватает)"
             etaLabel.TextColor3 = Color3.fromRGB(120, 255, 150)
-            etaLabel.Text = "До покупки: Готово (хватает)"
-        elseif currentGPH > 0 then
-            local secondsNeeded = math.floor((diff / currentGPH) * 3600)
+            etaLabel.Text = "Нужно 0 G | ETA: Готово (хватает)"
+        elseif count == 0 or avgGoldPerMinute <= 0 then
+            currentETA = "после 1 мин."
+            etaLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+            etaLabel.Text = string.format("Нужно %d G | ETA после 1 мин.", needed)
+        else
+            local minutesNeeded = needed / avgGoldPerMinute
+            local secondsNeeded = math.floor(minutesNeeded * 60)
             currentETA = formatTime(secondsNeeded)
             etaLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-            etaLabel.Text = "До покупки: " .. currentETA
-        else
-            currentETA = "Замер скорости..."
-            etaLabel.TextColor3 = Color3.fromRGB(200, 190, 225)
-            etaLabel.Text = "До покупки: Замер скорости..."
+            etaLabel.Text = string.format("Нужно %d G | ETA: %s", needed, currentETA)
         end
     else
         currentETA = "Выкл"
@@ -1636,10 +1674,10 @@ updateSpeedAndEtaMetrics = function()
 
     if isBlackScreen then
         bsStats.Text = string.format(
-            "Заработано: +%d Gold\nСкорость: ~%d Gold/час\nДо покупки: %s\nВремя: %s",
+            "Заработано: +%d Gold\nСкорость: ~%d Gold/час (%.1f/мин)\nВремя: %s",
             totalEarned,
-            currentGPH,
-            currentETA,
+            estGoldPerHour,
+            avgGoldPerMinute,
             timeTrackerLabel.Text:gsub("Время фарма: ", "")
         )
     end
@@ -2018,14 +2056,14 @@ tgChatIdInputBox.FocusLost:Connect(function()
     saveConfig()
 end)
 
--- Обновление входящей прибыли золота
+-- Обновление статистики (учет только входящих начислений delta > 0)
 updateGoldStats = function()
     local current = getCurrentGold()
     if farming then
         local delta = current - previousGold
         if delta > 0 then
             totalEarned = totalEarned + delta
-            currentMinuteEarned = currentMinuteEarned + delta
+            currentMinuteGold = currentMinuteGold + delta
             playSfx(coinSfx)
 
             for _, m in ipairs(MILESTONES) do
@@ -2245,9 +2283,15 @@ startFarming = function()
     totalEarned = 0
     table.clear(reachedMilestones)
 
-    table.clear(minuteBuckets)
-    currentMinuteEarned = 0
-    minuteSecondsCounter = 0
+    -- Полный сброс минутной статистики для новой сессии
+    statsStartTime = time()
+    lastCompletedMinuteIndex = 0
+    currentMinuteGold = 0
+    table.clear(completedMinutesList)
+    completedMinutesSum = 0
+    avgGoldPerMinute = 0
+    estGoldPerHour = 0
+    currentETA = "Выкл"
 
     updateGoldStats()
     if antiHazardActive then applyAntiHazard(true) end
@@ -2257,21 +2301,8 @@ startFarming = function()
 
     timerThread = task.spawn(function()
         while farming do
-            local elapsed = math.max(os.time() - startTime, 1)
+            local elapsed = math.floor(time() - statsStartTime)
             timeTrackerLabel.Text = "Время фарма: " .. formatTime(elapsed)
-
-            minuteSecondsCounter = minuteSecondsCounter + 1
-            if minuteSecondsCounter >= 60 then
-                minuteSecondsCounter = 0
-                table.insert(minuteBuckets, currentMinuteEarned)
-                currentMinuteEarned = 0
-
-                -- Храним только 2 последние завершенные минуты
-                if #minuteBuckets > 2 then
-                    table.remove(minuteBuckets, 1)
-                end
-            end
-
             updateSpeedAndEtaMetrics()
             task.wait(1)
         end
@@ -2416,12 +2447,26 @@ tgPollingThread = task.spawn(function()
                                 elseif cmd == "/status" then
                                     local currentG = getCurrentGold()
                                     local elapsed = farming and math.max(os.time() - startTime, 1) or 0
+                                    local etaReportLine = ""
+                                    if autoBuyActive and targetItemPrice > 0 and buyAmount > 0 then
+                                        local targetTotal = targetItemPrice * buyAmount
+                                        local needed = targetTotal - currentG
+                                        if needed <= 0 then
+                                            etaReportLine = "\n• Автопокупка: <b>Готово (хватает)</b>"
+                                        elseif avgGoldPerMinute > 0 then
+                                            local secondsNeeded = math.floor((needed / avgGoldPerMinute) * 60)
+                                            etaReportLine = "\n• Автопокупка через: <b>" .. formatTime(secondsNeeded) .. "</b>"
+                                        else
+                                            etaReportLine = "\n• Автопокупка: <b>расчёт после 1 мин...</b>"
+                                        end
+                                    end
+
                                     local report = string.format(
                                         "📊 <b>Статистика BABFT:</b>\n\n" ..
                                         "• Состояние: <b>%s</b>\n" ..
                                         "• Режим: <b>%s</b>\n" ..
-                                        "• Скорость (ср. 2 мин): <b>~%d Gold/час</b>\n" ..
-                                        "• До покупки: <b>%s</b>\n" ..
+                                        "• Среднее: <b>%.1f Gold/мин</b>\n" ..
+                                        "• Прогноз: <b>~%d Gold/час</b>%s\n" ..
                                         "• Анти-темнота: <b>%s</b>\n" ..
                                         "• Анти-вода/урон: <b>%s</b>\n" ..
                                         "• Анти-лаг: <b>%s</b>\n" ..
@@ -2431,8 +2476,9 @@ tgPollingThread = task.spawn(function()
                                         "• Заработано: <b>+%d Gold</b>",
                                         farming and "🟢 Работает" or "🔴 Остановлен",
                                         farmMode == "Chest" and "Сундук" or "Золото",
-                                        currentGPH,
-                                        currentETA,
+                                        avgGoldPerMinute,
+                                        estGoldPerHour,
+                                        etaReportLine,
                                         antiDarknessActive and "ВКЛ" or "ВЫКЛ",
                                         antiHazardActive and "ВКЛ" or "ВЫКЛ",
                                         antiLagActive and "ВКЛ" or "ВЫКЛ",
