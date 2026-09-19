@@ -1,7 +1,7 @@
 repeat task.wait(0.2) until game:IsLoaded()
 
 -- =====================================================================
--- 1. СИСТЕМА АНТИДУБЛИРОВАНИЯ (Гарантированная выгрузка старой копии)
+-- 1. АНТИДУБЛИРОВАНИЕ (Безопасная очистка старой копии)
 -- =====================================================================
 if _G.BabftActiveScript and type(_G.BabftActiveScript.Destroy) == "function" then
     pcall(_G.BabftActiveScript.Destroy)
@@ -42,7 +42,7 @@ local farmThread = nil
 local timerThread = nil
 local tgPollingThread = nil
 local cometThread = nil
-local masterRenderConn = nil
+local planetTweens = {}
 
 -- Ссылка на GitHub
 local RAW_GITHUB_URL = "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Auto-farm-BABFT"
@@ -79,7 +79,7 @@ local reachedMilestones = {}
 
 -- Эксплоит функции
 local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-local queue_on_teleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
+local queue_on_teleport = (syn and syn.queue_on_teleport) or queue_on_teleport or queueonteleport or (fluxus and fluxus.queue_on_teleport)
 
 -- База цен BABFT
 local KNOWN_ITEMS = {
@@ -176,20 +176,34 @@ local STAGE_COORDINATES = {
 local CHEST_POSITION = Vector3.new(-55, -356, 9489)
 local SPAWN_Z_MAX = 1200
 
--- Безопасные звуковые эффекты
-local clickSfx, coinSfx, achievementSfx
-pcall(function()
-    local function createSound(id, vol)
-        local s = Instance.new("Sound")
-        s.SoundId = "rbxassetid://" .. tostring(id)
-        s.Volume = vol or 0.5
-        s.Parent = SoundService
-        return s
-    end
-    clickSfx = createSound(6895079853, 0.4)
-    coinSfx = createSound(5153734608, 0.5)
-    achievementSfx = createSound(5153724623, 0.7)
-end)
+-- Безопасная инициализация GUI (100% совместимость с Xeno)
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "BabftPurpleUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local targetParent = player:WaitForChild("PlayerGui", 10)
+if targetParent then
+    local oldGui = targetParent:FindFirstChild("BabftPurpleUI")
+    if oldGui then pcall(function() oldGui:Destroy() end) end
+    screenGui.Parent = targetParent
+end
+
+-- Безопасные звуки (хранятся внутри GUI)
+local clickSfx = Instance.new("Sound")
+clickSfx.SoundId = "rbxassetid://6895079853"
+clickSfx.Volume = 0.4
+clickSfx.Parent = screenGui
+
+local coinSfx = Instance.new("Sound")
+coinSfx.SoundId = "rbxassetid://5153734608"
+coinSfx.Volume = 0.5
+coinSfx.Parent = screenGui
+
+local achievementSfx = Instance.new("Sound")
+achievementSfx.SoundId = "rbxassetid://5153724623"
+achievementSfx.Volume = 0.7
+achievementSfx.Parent = screenGui
 
 local function playSfx(sfx)
     if soundEffectsActive and sfx then
@@ -252,11 +266,11 @@ task.spawn(function()
     end
 end)
 
--- ОПТИМИЗИРОВАННЫЙ АНТИ-ЛАГ (Без постоянных блокирующих вызовов)
+-- ОПТИМИЗИРОВАННЫЙ АНТИ-ЛАГ
 local lastAntiLagRun = 0
 local function applyAntiLag(force)
     if not antiLagActive then return end
-    if not force and (os.clock() - lastAntiLagRun < 20) then return end
+    if not force and (os.clock() - lastAntiLagRun < 25) then return end
     lastAntiLagRun = os.clock()
 
     task.spawn(function()
@@ -275,7 +289,7 @@ local function applyAntiLag(force)
     end)
 end
 
--- ОПТИМИЗИРОВАННАЯ ЗАЩИТА ОТ ВОДЫ (С кэшированием частей)
+-- ОПТИМИЗИРОВАННАЯ ЗАЩИТА ОТ ВОДЫ (Кэш в памяти)
 local cachedHazards = {}
 local hazardConnection = nil
 
@@ -538,45 +552,6 @@ local function placeOnPlatform(targetPos, hrp)
     setSpin(hrp, true)
 end
 
--- =====================================================================
--- 2. БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ РОДИТЕЛЯ GUI (Исключает краш при старте)
--- =====================================================================
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "BabftPurpleUI"
-screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-local isParented = false
-if gethui then
-    local ok, h = pcall(gethui)
-    if ok and h then
-        local okP = pcall(function() screenGui.Parent = h end)
-        if okP then isParented = true end
-    end
-end
-
-if not isParented then
-    local okCore, core = pcall(function() return game:GetService("CoreGui") end)
-    if okCore and core then
-        local testP = pcall(function()
-            local test = Instance.new("Folder")
-            test.Parent = core
-            test:Destroy()
-        end)
-        if testP then
-            local okP = pcall(function() screenGui.Parent = core end)
-            if okP then isParented = true end
-        end
-    end
-end
-
-if not isParented then
-    local pGui = player:WaitForChild("PlayerGui", 10)
-    if pGui then
-        screenGui.Parent = pGui
-    end
-end
-
 -- Всплывающее достижение
 showAchievementToast = function(title, text)
     playSfx(achievementSfx)
@@ -633,7 +608,7 @@ showAchievementToast = function(title, text)
     end)
 end
 
--- Black Screen Panel
+-- Панель Black Screen
 local blackScreenFrame = Instance.new("Frame")
 blackScreenFrame.Size = UDim2.new(1, 0, 1, 0)
 blackScreenFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
@@ -715,7 +690,7 @@ strokeGradient.Color = ColorSequence.new({
 strokeGradient.Parent = frameStroke
 
 -- =====================================================================
--- 3. КОСМИЧЕСКИЙ ФОН (Строго на заднем плане ZIndex = 1..3)
+-- 3. КОСМИЧЕСКИЙ ФОН (Строго на заднем плане ZIndex = 1..4)
 -- =====================================================================
 local spaceBg = Instance.new("Frame")
 spaceBg.Size = UDim2.new(1, 0, 1, 0)
@@ -967,7 +942,7 @@ marsIce.ZIndex = 2
 marsIce.Parent = mars
 local miCorner = Instance.new("UICorner") miCorner.CornerRadius = UDim.new(1, 0) miCorner.Parent = marsIce
 
--- Оптимизированные звезды (14 легких звезд)
+-- Звезды
 for i = 1, 14 do
     local isCross = (i % 6 == 0)
     local star = Instance.new("Frame")
@@ -1016,49 +991,49 @@ cometThread = task.spawn(function()
     end
 end)
 
--- =====================================================================
--- 4. ЕДИНЫЙ ОПТИМИЗИРОВАННЫЙ РЕНДЕР-ДВИЖОК (120+ FPS БЕЗ ПРОСАДОК)
--- =====================================================================
-local simTime = 0
-local frameAccumulator = 0
-local gradStepCounter = 0
+-- ДВИЖОК ПЛАВНОСТИ 120+ FPS ЧЕРЕЗ NATIVE TWEENS (0% НАГРУЗКИ)
+local function refreshPlanetTweens()
+    for _, tw in ipairs(planetTweens) do pcall(function() tw:Cancel() end) end
+    table.clear(planetTweens)
 
-masterRenderConn = RunService.RenderStepped:Connect(function(dt)
-    if isMinimized or isBlackScreen then return end
-
-    -- Поворот градиента обводки каждые 2 кадра (экономит 50% отрисовки)
-    gradStepCounter = gradStepCounter + 1
-    if gradStepCounter % 2 == 0 and strokeGradient and strokeGradient.Parent then
-        strokeGradient.Rotation = (strokeGradient.Rotation + 1.6) % 360
+    if not spaceBgActive or smoothnessMode == 3 then
+        saturnContainer.Position = UDim2.new(0.68, -10, 0.15, 0)
+        earthContainer.Position = UDim2.new(0.1, 0, 0.62, 0)
+        mars.Position = UDim2.new(0.68, 0, 0.78, 0)
+        return
     end
 
-    if not spaceBgActive or not spaceBg.Visible then return end
+    local durationMult = (smoothnessMode == 1) and 1.0 or 1.4
+    local tw1 = TweenService:Create(saturnContainer, TweenInfo.new(6 * durationMult, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+        Position = UDim2.new(0.68, -24, 0.15, 12)
+    })
+    local tw2 = TweenService:Create(earthContainer, TweenInfo.new(5 * durationMult, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+        Position = UDim2.new(0.1, 12, 0.62, -10)
+    })
+    local tw3 = TweenService:Create(mars, TweenInfo.new(4.5 * durationMult, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+        Position = UDim2.new(0.68, -8, 0.78, -8)
+    })
 
-    local interval = 0
-    if smoothnessMode == 2 then interval = 1 / 60
-    elseif smoothnessMode == 3 then interval = 1 / 30 end
+    table.insert(planetTweens, tw1)
+    table.insert(planetTweens, tw2)
+    table.insert(planetTweens, tw3)
+    tw1:Play() tw2:Play() tw3:Play()
+end
 
-    frameAccumulator = frameAccumulator + dt
-    if frameAccumulator >= interval then
-        simTime = simTime + frameAccumulator
-        frameAccumulator = 0
+refreshPlanetTweens()
 
-        local saturnX = -10 + math.sin(simTime * 0.48) * 14
-        local saturnY = math.cos(simTime * 0.48) * 8
-        saturnContainer.Position = UDim2.new(0.68, saturnX, 0.15, saturnY)
-
-        local earthX = math.sin(simTime * 0.62) * 10
-        local earthY = -math.cos(simTime * 0.62) * 7
-        earthContainer.Position = UDim2.new(0.1, earthX, 0.62, earthY)
-
-        local marsX = math.cos(simTime * 0.55) * 8
-        local marsY = math.sin(simTime * 0.55) * 6
-        mars.Position = UDim2.new(0.68, marsX, 0.78, marsY)
+-- Поворот градиента обводки через мягкий интервал (без просадок FPS)
+task.spawn(function()
+    while true do
+        task.wait(0.04)
+        if not isMinimized and not isBlackScreen and strokeGradient and strokeGradient.Parent then
+            strokeGradient.Rotation = (strokeGradient.Rotation + 1.8) % 360
+        end
     end
 end)
 
 -- =====================================================================
--- 5. ИНТЕРФЕЙС И КНОПКИ (СТРОГО ZIndex = 20..60 — ПОВЕРХ ПЛАНЕТ)
+-- 4. ИНТЕРФЕЙС И КНОПКИ (СТРОГО ZIndex = 20..60 — ПОВЕРХ ПЛАНЕТ)
 -- =====================================================================
 local topBar = Instance.new("Frame")
 topBar.Size = UDim2.new(1, 0, 0, 34)
@@ -1110,7 +1085,7 @@ scrollFrame.Position = UDim2.new(0, 0, 0, 34)
 scrollFrame.BackgroundTransparency = 1
 scrollFrame.ScrollBarThickness = 3
 scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(138, 43, 226)
-scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 505)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 510)
 scrollFrame.ZIndex = 20
 scrollFrame.Parent = mainFrame
 
@@ -1471,7 +1446,7 @@ creditsLabel.TextSize = 11
 creditsLabel.ZIndex = 22
 creditsLabel.Parent = scrollFrame
 
--- УГОЛОК ИЗМЕНЕНИЯ РАЗМЕРА
+-- Уголок изменения размера (Resize Grip)
 local resizeGrip = Instance.new("TextButton")
 resizeGrip.Size = UDim2.new(0, 18, 0, 18)
 resizeGrip.Position = UDim2.new(1, -18, 1, -18)
@@ -1510,7 +1485,7 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- Перетаскивание
+-- Перетаскивание (Drag)
 local dragging, dragStart, startPos
 topBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -1557,7 +1532,7 @@ minBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Полная выгрузка скрипта
+-- Полная выгрузка
 local function fullCleanup()
     farming = false
     autoBuyActive = false
@@ -1566,9 +1541,9 @@ local function fullCleanup()
     toggleAntiHazard(false)
     toggleBlackScreen(false)
 
+    for _, tw in ipairs(planetTweens) do pcall(function() tw:Cancel() end) end
     if idledConn then idledConn:Disconnect() end
     if playerAddedConn then playerAddedConn:Disconnect() end
-    if masterRenderConn then masterRenderConn:Disconnect() end
     if farmThread then task.cancel(farmThread) end
     if timerThread then task.cancel(timerThread) end
     if tgPollingThread then task.cancel(tgPollingThread) end
@@ -1728,6 +1703,7 @@ local function loadConfig()
                 if data.smoothnessMode then
                     smoothnessMode = math.clamp(tonumber(data.smoothnessMode) or 1, 1, 3)
                     smoothnessBtn.Text = "🚀 Плавность: " .. smoothnessNames[smoothnessMode]
+                    refreshPlanetTweens()
                 end
                 if data.soundEffectsActive ~= nil then
                     soundEffectsActive = data.soundEffectsActive
@@ -1775,6 +1751,7 @@ smoothnessBtn.MouseButton1Click:Connect(function()
     playSfx(clickSfx)
     smoothnessMode = (smoothnessMode % 3) + 1
     smoothnessBtn.Text = "🚀 Плавность: " .. smoothnessNames[smoothnessMode]
+    refreshPlanetTweens()
     saveConfig()
 end)
 
@@ -1794,6 +1771,7 @@ spaceBgBtn.MouseButton1Click:Connect(function()
     spaceBgBtn.BackgroundColor3 = spaceBgActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     spaceBgBtn.TextColor3 = spaceBgActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
     spaceBgBtn.Text = spaceBgActive and "🌌 Космо-фон: ВКЛ" or "🌌 Космо-фон: ВЫКЛ"
+    refreshPlanetTweens()
     saveConfig()
 end)
 
@@ -2158,6 +2136,7 @@ startFarming = function()
     table.clear(reachedMilestones)
     updateGoldStats()
     if antiHazardActive then applyAntiHazard(true) end
+    if antiLagActive then applyAntiLag(true) end
 
     startTime = os.time()
     timeTrackerLabel.Text = "Время фарма: 00:00:00"
@@ -2325,6 +2304,7 @@ tgPollingThread = task.spawn(function()
                                         "• Анти-вода/урон: <b>%s</b>\n" ..
                                         "• Анти-лаг: <b>%s</b>\n" ..
                                         "• Ночной экран: <b>%s</b>\n" ..
+                                        "• Космо-фон: <b>%s</b>\n" ..
                                         "• Время сессии: <b>%s</b>\n" ..
                                         "• Баланс: <b>%d Gold</b>\n" ..
                                         "• Заработано: <b>+%d Gold</b>",
@@ -2335,6 +2315,7 @@ tgPollingThread = task.spawn(function()
                                         antiHazardActive and "ВКЛ" or "ВЫКЛ",
                                         antiLagActive and "ВКЛ" or "ВЫКЛ",
                                         isBlackScreen and "ВКЛ" or "ВЫКЛ",
+                                        spaceBgActive and "ВКЛ" or "ВЫКЛ",
                                         formatTime(elapsed),
                                         currentG,
                                         totalEarned
