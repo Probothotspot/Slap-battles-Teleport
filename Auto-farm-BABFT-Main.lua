@@ -2,12 +2,12 @@ repeat task.wait(0.2) until game:IsLoaded()
 
 print("[BABFT] Инициализация логического ядра...")
 
--- Антидублирование
+-- Система антидублирования
 if _G.BabftActiveScript and type(_G.BabftActiveScript.Destroy) == "function" then
     pcall(_G.BabftActiveScript.Destroy)
 end
 
--- Создание общей таблицы API
+-- Единая таблица API ядра
 _G.BABFT = {}
 local API = _G.BABFT
 API.UI = {}
@@ -44,11 +44,14 @@ API.TweenService = TweenService
 API.UserInputService = UserInputService
 API.SoundService = SoundService
 
--- Настройки и состояние
-API.RAW_GITHUB_URL = "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Auto-farm-BABFT"
+-- Конфигурация и ссылки GitHub
+API.RAW_GITHUB_URL = "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Auto-farm-BABFT-Main.lua"
+API.GUI_URL = "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Auto-Farm-BABFT-GUI.lua"
+API.CART_URL = "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Auto-Farm-BABFT-Cart.lua"
 API.CHILLZ_GROUP_ID = 2919213
 API.CONFIG_FILE = "babft_farm_config.json"
 
+-- Состояние
 API.farming = false
 API.isRejoining = false
 API.isBlackScreen = false
@@ -81,7 +84,7 @@ API.tgToken = ""
 API.tgChatId = ""
 API.lastUpdateId = 0
 
--- Статистика и поминутные расчеты
+-- Статистика и замеры
 API.startGold = 0
 API.previousGold = 0
 API.totalEarned = 0
@@ -101,11 +104,12 @@ API.currentETA = "Выкл"
 API.MILESTONES = {10000, 25000, 50000, 100000, 250000, 500000, 1000000}
 API.reachedMilestones = {}
 
--- Потоки и подключения
+-- Потоки
 API.farmThread = nil
 API.timerThread = nil
 API.tgPollingThread = nil
 API.cometThread = nil
+API.cartAutoBuyThread = nil
 API.masterRenderConn = nil
 API.rotConn = nil
 API.hazardConnection = nil
@@ -115,7 +119,7 @@ API.playerAddedConn = nil
 API.httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
 API.queue_on_teleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
 
--- База предметов
+-- База цен
 API.KNOWN_ITEMS = {
     ["common"] = {name = "Common Chest", price = 5},
     ["common chest"] = {name = "Common Chest", price = 5},
@@ -127,7 +131,6 @@ API.KNOWN_ITEMS = {
     ["epic chest"] = {name = "Epic Chest", price = 135},
     ["legendary"] = {name = "Legendary Chest", price = 405},
     ["legendary chest"] = {name = "Legendary Chest", price = 405},
-
     ["trowel"] = {name = "TrowelTool", price = 1500},
     ["мастерок"] = {name = "TrowelTool", price = 1500},
     ["paint"] = {name = "PaintTool", price = 1500},
@@ -138,13 +141,11 @@ API.KNOWN_ITEMS = {
     ["отвертка"] = {name = "PropertyTool", price = 2500},
     ["scaling"] = {name = "ScalingTool", price = 5000},
     ["рулетка"] = {name = "ScalingTool", price = 5000},
-
     ["лего"] = {name = "ToyBlock", price = 250},
     ["lego"] = {name = "ToyBlock", price = 250},
     ["toy"] = {name = "ToyBlock", price = 250},
     ["toyblock"] = {name = "ToyBlock", price = 250},
     ["toy building block"] = {name = "ToyBlock", price = 250},
-
     ["дерево"] = {name = "WoodBlock", price = 250},
     ["wood"] = {name = "WoodBlock", price = 250},
     ["стекло"] = {name = "GlassBlock", price = 200},
@@ -163,7 +164,6 @@ API.KNOWN_ITEMS = {
     ["мрамор"] = {name = "MarbleBlock", price = 375},
     ["обсидиан"] = {name = "ObsidianBlock", price = 400},
     ["титан"] = {name = "TitaniumBlock", price = 425},
-
     ["знак"] = {name = "SignBlock", price = 45},
     ["мотор"] = {name = "BoatMotor", price = 450},
     ["колеса"] = {name = "CarWheels", price = 750},
@@ -205,12 +205,12 @@ API.STAGE_COORDINATES = {
     Vector3.new(-52, 70, 5989),
     Vector3.new(-52, 70, 6759),
     Vector3.new(-52, 70, 7529),
-    Vector3.new(-52, 70, 8299),
+    Vector3.new(-52, 70, 8299)
 }
 API.CHEST_POSITION = Vector3.new(-55, -356, 9489)
 API.SPAWN_Z_MAX = 1200
 
--- Звуковые эффекты
+-- Звуки
 pcall(function()
     local function createSound(id, vol)
         local s = Instance.new("Sound")
@@ -311,6 +311,10 @@ function API.getCurrentGold()
     return obj and (tonumber(obj.Value) or 0) or 0
 end
 
+function API.getAvgGoldPerMin()
+    return API.averageGoldPerMinute or 0
+end
+
 function API.sendTelegramMessage(text)
     if not API.httpRequest or API.tgToken == "" or API.tgChatId == "" then return end
     task.spawn(function()
@@ -329,7 +333,6 @@ function API.sendTelegramMessage(text)
     end)
 end
 
--- Заглушка показа достижений (переопределяется файлом GUI)
 function API.showAchievementToast(title, text)
     API.playSfx(API.achievementSfx)
     print("[BABFT Достижение] " .. tostring(title) .. ": " .. tostring(text))
@@ -366,7 +369,7 @@ task.spawn(function()
     end
 end)
 
--- Анти-Лаг (Мягкий режим)
+-- Анти-Лаг
 local lastAntiLagRun = 0
 function API.applyAntiLag(force)
     if not API.antiLagActive then return end
@@ -389,7 +392,7 @@ function API.applyAntiLag(force)
     end)
 end
 
--- Защита от воды (кэширование зон)
+-- Защита от воды
 local cachedHazards = {}
 local function refreshHazardCache()
     table.clear(cachedHazards)
@@ -577,7 +580,7 @@ function API.checkAndAutoBuy()
     end
 end
 
--- Точный расчет поминутной скорости и ETA
+-- Поминутная статистика и ETA
 function API.updateSpeedAndEtaMetrics()
     local UI = API.UI
     if not API.farming then
@@ -598,7 +601,7 @@ function API.updateSpeedAndEtaMetrics()
             if API.lastFinalizedMinute == completedMinutes then
                 API.minuteSamples[API.lastFinalizedMinute] = API.currentMinuteGold
                 API.minuteSampleSum = API.minuteSampleSum + API.currentMinuteGold
-                API.currentMinuteGold = 0
+                currentMinuteGold = 0
             else
                 API.minuteSamples[API.lastFinalizedMinute] = 0
             end
@@ -673,7 +676,7 @@ function API.updateSpeedAndEtaMetrics()
     end
 end
 
--- Обработка баланса (только положительные дельты)
+-- Обработка баланса
 function API.updateGoldStats()
     local UI = API.UI
     local current = API.getCurrentGold()
@@ -714,7 +717,7 @@ task.spawn(function()
     obj.Changed:Connect(API.updateGoldStats)
 end)
 
--- Основной цикл фарма (Версия A)
+-- Фарм цикл
 function API.startFarmingLoop()
     local UI = API.UI
     API.farmThread = task.spawn(function()
@@ -873,7 +876,7 @@ function API.startFarmingLoop()
                     if UI.statusLabel then UI.statusLabel.Text = "Возрождение на спавне..." end
                     while API.farming do
                         task.wait(0.1)
-                        local curHrp = API.getCurrentHRP()
+                        local curHrp = getCurrentHRP()
                         if curHrp and curHrp.Position.Z < API.SPAWN_Z_MAX then break end
                     end
                     API.checkAndAutoBuy()
@@ -956,7 +959,6 @@ function API.stopFarming()
     print("[BABFT] Автофарм остановлен.")
 end
 
--- Полная выгрузка
 function API.fullCleanup()
     API.farming = false
     API.autoBuyActive = false
@@ -974,6 +976,7 @@ function API.fullCleanup()
     if API.timerThread then task.cancel(API.timerThread) end
     if API.tgPollingThread then task.cancel(API.tgPollingThread) end
     if API.cometThread then task.cancel(API.cometThread) end
+    if API.cartAutoBuyThread then task.cancel(API.cartAutoBuyThread) end
 
     local hrp = API.getCurrentHRP()
     if hrp then API.setSpin(hrp, false) end
@@ -984,7 +987,6 @@ end
 
 _G.BabftActiveScript = { Destroy = API.fullCleanup }
 
--- Конфигурация
 function API.saveConfig(customAutoStart)
     local UI = API.UI
     if UI.tgTokenInputBox then API.tgToken = UI.tgTokenInputBox.Text end
@@ -1095,7 +1097,7 @@ function API.loadConfig()
                     end
                     API.toggleAntiHazard(API.antiHazardActive)
                 else
-                    API.toggleAntiHazard(true)
+                    toggleAntiHazard(true)
                 end
                 if data.antiLagActive ~= nil then
                     API.antiLagActive = data.antiLagActive
@@ -1107,7 +1109,7 @@ function API.loadConfig()
                     if API.antiLagActive then API.applyAntiLag(true) end
                 end
                 if data.spaceBgActive ~= nil then
-                    API.spaceBgActive = data.spaceBgActive
+                    spaceBgActive = data.spaceBgActive
                     if UI.spaceBg then UI.spaceBg.Visible = API.spaceBgActive end
                     if UI.spaceBgBtn then
                         UI.spaceBgBtn.BackgroundColor3 = API.spaceBgActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
@@ -1161,11 +1163,10 @@ function API.loadConfig()
         end)
     else
         API.toggleAntiHazard(true)
-        print("[BABFT] Файл конфигурации не найден, применены стандартные настройки.")
+        print("[BABFT] Конфиг не найден, применены стандартные настройки.")
     end
 end
 
--- Перезаход
 function API.executeRejoin()
     if API.isRejoining then return end
     API.isRejoining = true
@@ -1357,17 +1358,13 @@ API.tgPollingThread = task.spawn(function()
     end
 end)
 
--- =====================================================================
--- ЗАПУСК ФАЙЛА 2 (GUI ИНТЕРФЕЙС)
--- =====================================================================
-local GUI_URL = "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/babft_gui.lua"
-
-print("[BABFT] Загрузка GUI из сети...")
+-- Авто-загрузка GUI
+print("[BABFT] Загрузка GUI файла...")
 task.spawn(function()
     local ok, err = pcall(function()
-        loadstring(game:HttpGet(GUI_URL))()
+        loadstring(game:HttpGet(API.GUI_URL .. "?t=" .. tostring(os.time())))()
     end)
     if not ok then
-        warn("[BABFT] Ошибка загрузки GUI файла: " .. tostring(err))
+        warn("[BABFT] Ошибка загрузки GUI: " .. tostring(err))
     end
 end)
