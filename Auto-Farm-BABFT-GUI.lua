@@ -1,10 +1,11 @@
 local API = _G.BABFT
 if not API then
-    warn("[BABFT-GUI] Ошибка: Ядро API не найдено!")
+    warn("[BABFT-GUI] Ошибка: Ядро API не найдено! Сначала запустите Auto-farm-BABFT-Main.lua")
     return
 end
 
 local player = API.player
+local RunService = API.RunService
 local TweenService = API.TweenService
 local UserInputService = API.UserInputService
 local UI = API.UI
@@ -24,13 +25,16 @@ local function createStroke(parent, color, thickness)
     return s
 end
 
+-- Безопасный родитель GUI
 local function getSafeGuiParent()
     if typeof(gethui) == "function" then
         local ok, res = pcall(gethui)
         if ok and res then return res end
     end
 
-    local coreOk, coreGui = pcall(function() return game:GetService("CoreGui") end)
+    local coreOk, coreGui = pcall(function()
+        return game:GetService("CoreGui")
+    end)
     if coreOk and coreGui then
         local canAccess = pcall(function()
             local testObj = Instance.new("Folder")
@@ -65,7 +69,10 @@ screenGui.Name = "BabftPurpleUI"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-local parentSetOk = pcall(function() screenGui.Parent = guiParent end)
+local parentSetOk = pcall(function()
+    screenGui.Parent = guiParent
+end)
+
 if not parentSetOk or not screenGui.Parent then
     local fallbackGui = player:WaitForChild("PlayerGui", 5)
     screenGui.Parent = fallbackGui
@@ -74,6 +81,7 @@ end
 
 API.screenGui = screenGui
 
+-- Всплывающее достижение
 function API.showAchievementToast(title, text)
     API.playSfx(API.achievementSfx)
     local toast = Instance.new("Frame")
@@ -129,6 +137,7 @@ function API.showAchievementToast(title, text)
     end)
 end
 
+-- Black Screen Панель
 local blackScreenFrame = Instance.new("Frame")
 blackScreenFrame.Size = UDim2.new(1, 0, 1, 0)
 blackScreenFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
@@ -140,7 +149,7 @@ UI.blackScreenFrame = blackScreenFrame
 
 local bsTitle = Instance.new("TextLabel")
 bsTitle.Size = UDim2.new(1, 0, 0, 30)
-bsTitle.Position = UDim2.new(0, 0, 0.33, 0)
+bsTitle.Position = UDim2.new(0, 0, 0, 0.33, 0)
 bsTitle.BackgroundTransparency = 1
 bsTitle.Text = "🔋 РЕЖИМ ЭНЕРГОСБЕРЕЖЕНИЯ"
 bsTitle.TextColor3 = Color3.fromRGB(138, 43, 226)
@@ -151,7 +160,7 @@ bsTitle.Parent = blackScreenFrame
 
 local bsStats = Instance.new("TextLabel")
 bsStats.Size = UDim2.new(1, 0, 0, 85)
-bsStats.Position = UDim2.new(0, 0, 0.39, 0)
+bsStats.Position = UDim2.new(0, 0, 0, 0.39, 0)
 bsStats.BackgroundTransparency = 1
 bsStats.Text = "Заработано: +0 Gold\nСкорость: сбор данных...\nВремя: 00:00:00"
 bsStats.TextColor3 = Color3.fromRGB(200, 190, 225)
@@ -172,13 +181,14 @@ bsUnlockBtn.TextSize = 11
 bsUnlockBtn.BorderSizePixel = 0
 bsUnlockBtn.ZIndex = 501
 bsUnlockBtn.Parent = blackScreenFrame
+
 createCorner(bsUnlockBtn, 8)
 createStroke(bsUnlockBtn, Color3.fromRGB(138, 43, 226), 1.5)
 
 function API.toggleBlackScreen(state)
     API.isBlackScreen = state
     blackScreenFrame.Visible = API.isBlackScreen
-    pcall(function() API.RunService:Set3dRenderingEnabled(not API.isBlackScreen) end)
+    pcall(function() RunService:Set3dRenderingEnabled(not API.isBlackScreen) end)
 end
 
 bsUnlockBtn.MouseButton1Click:Connect(function()
@@ -186,6 +196,7 @@ bsUnlockBtn.MouseButton1Click:Connect(function()
     API.toggleBlackScreen(false)
 end)
 
+-- Главное окно
 local savedWindowSize = UDim2.new(0, API.windowSizeX or 260, 0, API.windowSizeY or 320)
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = savedWindowSize
@@ -210,8 +221,312 @@ strokeGradient.Color = ColorSequence.new({
     ColorSequenceKeypoint.new(1.0, Color3.fromRGB(75, 0, 130))
 })
 strokeGradient.Parent = frameStroke
-UI.strokeGradient = strokeGradient
 
+-- Космо-фон
+local spaceBg = Instance.new("Frame")
+spaceBg.Size = UDim2.new(1, 0, 1, 0)
+spaceBg.BackgroundTransparency = 1
+spaceBg.ZIndex = 1
+spaceBg.Parent = mainFrame
+UI.spaceBg = spaceBg
+
+local function createNebula(size, pos, color, rot)
+    local neb = Instance.new("Frame")
+    neb.Size = size
+    neb.Position = pos
+    neb.BackgroundColor3 = color
+    neb.BackgroundTransparency = 0.85
+    neb.BorderSizePixel = 0
+    neb.ZIndex = 1
+    neb.Parent = spaceBg
+    createCorner(neb, 100)
+    local g = Instance.new("UIGradient")
+    g.Color = ColorSequence.new(color, Color3.fromRGB(10, 8, 16))
+    g.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.4),
+        NumberSequenceKeypoint.new(0.6, 0.8),
+        NumberSequenceKeypoint.new(1, 1)
+    })
+    g.Rotation = rot
+    g.Parent = neb
+end
+
+createNebula(UDim2.new(0, 160, 0, 160), UDim2.new(0.55, -20, 0.05, 0), Color3.fromRGB(150, 40, 220), 45)
+createNebula(UDim2.new(0, 120, 0, 120), UDim2.new(0.02, 0, 0.58, 0), Color3.fromRGB(30, 80, 200), -30)
+
+-- Сатурн
+local saturnContainer = Instance.new("Frame")
+saturnContainer.Size = UDim2.new(0, 84, 0, 60)
+saturnContainer.Position = UDim2.new(0.68, -10, 0.15, 0)
+saturnContainer.BackgroundTransparency = 1
+saturnContainer.ZIndex = 1
+saturnContainer.Parent = spaceBg
+
+local backRingClipper = Instance.new("Frame")
+backRingClipper.Size = UDim2.new(1, 0, 0.52, 0)
+backRingClipper.BackgroundTransparency = 1
+backRingClipper.ClipsDescendants = true
+backRingClipper.ZIndex = 1
+backRingClipper.Parent = saturnContainer
+
+local backRingDisc = Instance.new("Frame")
+backRingDisc.Size = UDim2.new(0, 82, 0, 24)
+backRingDisc.Position = UDim2.new(0.5, -41, 0.5, -12)
+backRingDisc.BackgroundColor3 = Color3.fromRGB(225, 195, 145)
+backRingDisc.BackgroundTransparency = 0.2
+backRingDisc.BorderSizePixel = 0
+backRingDisc.Rotation = -24
+backRingDisc.Parent = backRingClipper
+createCorner(backRingDisc, 100)
+
+local brGrad = Instance.new("UIGradient")
+brGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(150, 115, 75)),
+    ColorSequenceKeypoint.new(0.25, Color3.fromRGB(235, 205, 155)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(80, 60, 40)),
+    ColorSequenceKeypoint.new(0.75, Color3.fromRGB(215, 185, 135)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(120, 90, 55))
+})
+brGrad.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.9),
+    NumberSequenceKeypoint.new(0.2, 0.1),
+    NumberSequenceKeypoint.new(0.48, 0.2),
+    NumberSequenceKeypoint.new(0.52, 0.85),
+    NumberSequenceKeypoint.new(0.8, 0.15),
+    NumberSequenceKeypoint.new(1, 0.95)
+})
+brGrad.Parent = backRingDisc
+
+local saturnGlobe = Instance.new("Frame")
+saturnGlobe.Size = UDim2.new(0, 40, 0, 40)
+saturnGlobe.Position = UDim2.new(0.5, -20, 0.5, -20)
+saturnGlobe.BackgroundColor3 = Color3.fromRGB(224, 192, 140)
+saturnGlobe.BorderSizePixel = 0
+saturnGlobe.ClipsDescendants = true
+saturnGlobe.ZIndex = 2
+saturnGlobe.Parent = saturnContainer
+createCorner(saturnGlobe, 100)
+
+local saturnBands = Instance.new("UIGradient")
+saturnBands.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0.0, Color3.fromRGB(235, 210, 165)),
+    ColorSequenceKeypoint.new(0.2, Color3.fromRGB(195, 150, 100)),
+    ColorSequenceKeypoint.new(0.4, Color3.fromRGB(240, 220, 180)),
+    ColorSequenceKeypoint.new(0.55, Color3.fromRGB(180, 135, 90)),
+    ColorSequenceKeypoint.new(0.75, Color3.fromRGB(220, 185, 135)),
+    ColorSequenceKeypoint.new(1.0, Color3.fromRGB(160, 120, 75))
+})
+saturnBands.Rotation = 66
+saturnBands.Parent = saturnGlobe
+
+local ssGrad = Instance.new("UIGradient")
+ssGrad.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 1),
+    NumberSequenceKeypoint.new(0.45, 0.7),
+    NumberSequenceKeypoint.new(0.85, 0.05),
+    NumberSequenceKeypoint.new(1, 0)
+})
+ssGrad.Rotation = 45
+
+local saturnShadow = Instance.new("Frame")
+saturnShadow.Size = UDim2.new(1.2, 0, 1.2, 0)
+saturnShadow.Position = UDim2.new(-0.25, 0, -0.1, 0)
+saturnShadow.BackgroundColor3 = Color3.fromRGB(8, 6, 14)
+saturnShadow.BorderSizePixel = 0
+saturnShadow.ZIndex = 2
+saturnShadow.Parent = saturnGlobe
+createCorner(saturnShadow, 100)
+local ssGradClone = ssGrad:Clone()
+ssGradClone.Parent = saturnShadow
+
+local frontRingContainer = Instance.new("Frame")
+frontRingContainer.Size = UDim2.new(1, 0, 0.52, 0)
+frontRingContainer.Position = UDim2.new(0, 0, 0.48, 0)
+frontRingContainer.BackgroundTransparency = 1
+frontRingContainer.ClipsDescendants = true
+frontRingContainer.ZIndex = 3
+frontRingContainer.Parent = saturnContainer
+
+local frontRingDisc = Instance.new("Frame")
+frontRingDisc.Size = UDim2.new(0, 82, 0, 24)
+frontRingDisc.Position = UDim2.new(0.5, -41, 0, -12)
+frontRingDisc.BackgroundColor3 = Color3.fromRGB(225, 195, 145)
+frontRingDisc.BackgroundTransparency = 0.2
+frontRingDisc.BorderSizePixel = 0
+frontRingDisc.Rotation = -24
+frontRingDisc.Parent = frontRingContainer
+createCorner(frontRingDisc, 100)
+local frGrad = brGrad:Clone()
+frGrad.Parent = frontRingDisc
+
+-- Земля
+local earthContainer = Instance.new("Frame")
+earthContainer.Size = UDim2.new(0, 34, 0, 34)
+earthContainer.Position = UDim2.new(0.1, 0, 0.62, 0)
+earthContainer.BackgroundTransparency = 1
+earthContainer.ZIndex = 1
+earthContainer.Parent = spaceBg
+
+local earthHalo = Instance.new("Frame")
+earthHalo.Size = UDim2.new(1, 8, 1, 8)
+earthHalo.Position = UDim2.new(0, -4, 0, -4)
+earthHalo.BackgroundColor3 = Color3.fromRGB(80, 190, 255)
+earthHalo.BackgroundTransparency = 0.75
+earthHalo.BorderSizePixel = 0
+earthHalo.ZIndex = 1
+earthHalo.Parent = earthContainer
+createCorner(earthHalo, 100)
+
+local earthGlobe = Instance.new("Frame")
+earthGlobe.Size = UDim2.new(1, 0, 1, 0)
+earthGlobe.BackgroundColor3 = Color3.fromRGB(15, 65, 140)
+earthGlobe.BorderSizePixel = 0
+earthGlobe.ClipsDescendants = true
+earthGlobe.ZIndex = 2
+earthGlobe.Parent = earthContainer
+createCorner(earthGlobe, 100)
+
+local function createContinent(size, pos, color, rot)
+    local cont = Instance.new("Frame")
+    cont.Size = size
+    cont.Position = pos
+    cont.BackgroundColor3 = color
+    cont.BorderSizePixel = 0
+    cont.Rotation = rot
+    cont.ZIndex = 2
+    cont.Parent = earthGlobe
+    createCorner(cont, 60)
+end
+createContinent(UDim2.new(0, 14, 0, 18), UDim2.new(0.18, 0, 0.15, 0), Color3.fromRGB(45, 125, 55), 15)
+createContinent(UDim2.new(0, 10, 0, 12), UDim2.new(0.55, 0, 0.45, 0), Color3.fromRGB(130, 115, 60), -20)
+createContinent(UDim2.new(0, 8, 0, 7), UDim2.new(0.3, 0, 0.65, 0), Color3.fromRGB(35, 110, 45), 40)
+
+local earthShadow = Instance.new("Frame")
+earthShadow.Size = UDim2.new(1.2, 0, 1.2, 0)
+earthShadow.Position = UDim2.new(-0.25, 0, -0.1, 0)
+earthShadow.BackgroundColor3 = Color3.fromRGB(5, 10, 25)
+earthShadow.BorderSizePixel = 0
+earthShadow.ZIndex = 2
+earthShadow.Parent = earthGlobe
+createCorner(earthShadow, 100)
+local esGrad = ssGrad:Clone()
+esGrad.Parent = earthShadow
+
+local moon = Instance.new("Frame")
+moon.Size = UDim2.new(0, 8, 0, 8)
+moon.Position = UDim2.new(1, 6, 0.15, 0)
+moon.BackgroundColor3 = Color3.fromRGB(195, 200, 210)
+moon.BorderSizePixel = 0
+moon.ZIndex = 1
+moon.Parent = earthContainer
+createCorner(moon, 100)
+
+-- Марс
+local mars = Instance.new("Frame")
+mars.Size = UDim2.new(0, 20, 0, 20)
+mars.Position = UDim2.new(0.68, 0, 0.78, 0)
+mars.BackgroundColor3 = Color3.fromRGB(195, 65, 35)
+mars.BorderSizePixel = 0
+mars.ClipsDescendants = true
+mars.ZIndex = 1
+mars.Parent = spaceBg
+createCorner(mars, 100)
+
+local marsGrad = Instance.new("UIGradient")
+marsGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(245, 120, 75)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(180, 55, 25)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(75, 15, 10))
+})
+marsGrad.Rotation = 45
+marsGrad.Parent = mars
+
+-- Звезды
+for i = 1, 14 do
+    local isCross = (i % 6 == 0)
+    local star = Instance.new("Frame")
+    star.Size = isCross and UDim2.new(0, 3, 0, 3) or UDim2.new(0, 2, 0, 2)
+    star.Position = UDim2.new(math.random(4, 96) / 100, 0, math.random(8, 94) / 100, 0)
+    star.BackgroundColor3 = isCross and Color3.fromRGB(255, 250, 225) or Color3.fromRGB(215, 230, 255)
+    star.BackgroundTransparency = 0.4
+    star.BorderSizePixel = 0
+    star.ZIndex = 1
+    star.Parent = spaceBg
+    createCorner(star, 100)
+end
+
+-- Комета
+local comet = Instance.new("Frame")
+comet.Size = UDim2.new(0, 45, 0, 2)
+comet.Position = UDim2.new(-0.2, 0, 0.1, 0)
+comet.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+comet.BorderSizePixel = 0
+comet.Rotation = -35
+comet.ZIndex = 1
+comet.Parent = spaceBg
+
+local cometGrad = Instance.new("UIGradient")
+cometGrad.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(150, 80, 255))
+cometGrad.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0),
+    NumberSequenceKeypoint.new(0.5, 0.3),
+    NumberSequenceKeypoint.new(1, 1)
+})
+cometGrad.Parent = comet
+
+API.cometThread = task.spawn(function()
+    while true do
+        task.wait(math.random(8, 14))
+        if API.spaceBgActive and spaceBg.Visible and not API.isMinimized and not API.isBlackScreen then
+            local startY = math.random(5, 45) / 100
+            comet.Position = UDim2.new(-0.25, 0, startY, 0)
+            comet.BackgroundTransparency = 0
+            local tw = TweenService:Create(comet, TweenInfo.new(1.0, Enum.EasingStyle.Linear), {
+                Position = UDim2.new(1.2, 0, startY + 0.45, 0),
+                BackgroundTransparency = 1
+            })
+            tw:Play()
+        end
+    end
+end)
+
+-- Ультра-плавный рендер (120+ FPS Delta-time)
+local simTime = 0
+local frameAccumulator = 0
+
+API.masterRenderConn = RunService.RenderStepped:Connect(function(dt)
+    if API.isMinimized or API.isBlackScreen then return end
+
+    if strokeGradient and strokeGradient.Parent then
+        strokeGradient.Rotation = (strokeGradient.Rotation + dt * 45) % 360
+    end
+
+    if not API.spaceBgActive or not spaceBg.Visible then return end
+
+    local interval = 0
+    if API.smoothnessMode == 2 then interval = 1 / 60
+    elseif API.smoothnessMode == 3 then interval = 1 / 30 end
+
+    frameAccumulator = frameAccumulator + dt
+    if frameAccumulator >= interval then
+        simTime = simTime + frameAccumulator
+        frameAccumulator = 0
+
+        local saturnX = -10 + math.sin(simTime * 0.45) * 12
+        local saturnY = math.cos(simTime * 0.45) * 7
+        saturnContainer.Position = UDim2.new(0.68, saturnX, 0.15, saturnY)
+
+        local earthX = math.sin(simTime * 0.55) * 8
+        local earthY = -math.cos(simTime * 0.55) * 6
+        earthContainer.Position = UDim2.new(0.1, earthX, 0.62, earthY)
+
+        local marsX = math.cos(simTime * 0.5) * 6
+        local marsY = math.sin(simTime * 0.5) * 5
+        mars.Position = UDim2.new(0.68, marsX, 0.78, marsY)
+    end
+end)
+
+-- TopBar
 local topBar = Instance.new("Frame")
 topBar.Size = UDim2.new(1, 0, 0, 34)
 topBar.BackgroundTransparency = 1
@@ -256,6 +571,7 @@ closeBtn.ZIndex = 51
 closeBtn.Parent = topBar
 createCorner(closeBtn, 6)
 
+-- ScrollingFrame
 local scrollFrame = Instance.new("ScrollingFrame")
 scrollFrame.Size = UDim2.new(1, 0, 1, -34)
 scrollFrame.Position = UDim2.new(0, 0, 0, 34)
@@ -302,6 +618,7 @@ goldModeBtn.Parent = modeContainer
 createCorner(goldModeBtn, 6)
 UI.goldModeBtn = goldModeBtn
 
+-- Задержка сундука
 local delayContainer = Instance.new("Frame")
 delayContainer.Size = UDim2.new(1, -24, 0, 18)
 delayContainer.Position = UDim2.new(0, 12, 0, 32)
@@ -336,6 +653,7 @@ delayBox.Parent = delayContainer
 createCorner(delayBox, 5)
 UI.delayBox = delayBox
 
+-- Задержка телепортации
 local stageDelayContainer = Instance.new("Frame")
 stageDelayContainer.Size = UDim2.new(1, -24, 0, 18)
 stageDelayContainer.Position = UDim2.new(0, 12, 0, 52)
@@ -370,6 +688,7 @@ stageDelayBox.Parent = stageDelayContainer
 createCorner(stageDelayBox, 5)
 UI.stageDelayBox = stageDelayBox
 
+-- Настраиваемый этап сундука (1-10)
 local chestStageContainer = Instance.new("Frame")
 chestStageContainer.Size = UDim2.new(1, -24, 0, 18)
 chestStageContainer.Position = UDim2.new(0, 12, 0, 72)
@@ -488,6 +807,7 @@ timeTrackerLabel.ZIndex = 22
 timeTrackerLabel.Parent = scrollFrame
 UI.timeTrackerLabel = timeTrackerLabel
 
+-- Авто-закупка (одиночная)
 local autoBuyRow = Instance.new("Frame")
 autoBuyRow.Size = UDim2.new(1, -24, 0, 22)
 autoBuyRow.Position = UDim2.new(0, 12, 0, 202)
@@ -564,6 +884,7 @@ itemStatusLabel.ZIndex = 22
 itemStatusLabel.Parent = scrollFrame
 UI.itemStatusLabel = itemStatusLabel
 
+-- Тумблеры
 local antiDarkBtn = Instance.new("TextButton")
 antiDarkBtn.Size = UDim2.new(1, -24, 0, 20)
 antiDarkBtn.Position = UDim2.new(0, 12, 0, 269)
@@ -676,11 +997,12 @@ customSoundsBtn.Parent = scrollFrame
 createCorner(customSoundsBtn, 5)
 UI.customSoundsBtn = customSoundsBtn
 
+-- Кнопка корзины (слева)
 local cartOpenBtn = Instance.new("TextButton")
-cartOpenBtn.Size = UDim2.new(1, -24, 0, 22)
+cartOpenBtn.Size = UDim2.new(0.5, -16, 0, 22)
 cartOpenBtn.Position = UDim2.new(0, 12, 0, 453)
 cartOpenBtn.BackgroundColor3 = Color3.fromRGB(110, 30, 180)
-cartOpenBtn.Text = "🛒 КОРЗИНА ПОКУПОК"
+cartOpenBtn.Text = "🛒 КОРЗИНА"
 cartOpenBtn.TextColor3 = Color3.fromRGB(255, 230, 130)
 cartOpenBtn.Font = Enum.Font.GothamBold
 cartOpenBtn.TextSize = 10
@@ -689,6 +1011,21 @@ cartOpenBtn.ZIndex = 22
 cartOpenBtn.Parent = scrollFrame
 createCorner(cartOpenBtn, 5)
 createStroke(cartOpenBtn, Color3.fromRGB(218, 112, 214), 1)
+
+-- Кнопка квестов (справа)
+local questOpenBtn = Instance.new("TextButton")
+questOpenBtn.Size = UDim2.new(0.5, -16, 0, 22)
+questOpenBtn.Position = UDim2.new(0.5, 4, 0, 453)
+questOpenBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+questOpenBtn.Text = "⚡ КВЕСТЫ"
+questOpenBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+questOpenBtn.Font = Enum.Font.GothamBold
+questOpenBtn.TextSize = 10
+questOpenBtn.BorderSizePixel = 0
+questOpenBtn.ZIndex = 22
+questOpenBtn.Parent = scrollFrame
+createCorner(questOpenBtn, 5)
+createStroke(questOpenBtn, Color3.fromRGB(180, 100, 255), 1)
 
 local tgTokenInputBox = Instance.new("TextBox")
 tgTokenInputBox.Size = UDim2.new(1, -24, 0, 20)
@@ -914,7 +1251,7 @@ end)
 
 amountBox.FocusLost:Connect(function()
     local val = tonumber(amountBox.Text)
-    if val and val > 0 then API.buyAmount = math.floor(val) else amountBox.Text = tostring(API.buyAmount) end
+    if val and val > 0 then buyAmount = math.floor(val) else amountBox.Text = tostring(API.buyAmount) end
     if API.saveConfig then API.saveConfig() end
     API.updateSpeedAndEtaMetrics()
 end)
@@ -1005,7 +1342,7 @@ batterySaverBtn.MouseButton1Click:Connect(function()
 end)
 
 antiLagBtn.MouseButton1Click:Connect(function()
-    playSfx(API.clickSfx)
+    playSfx(clickSfx)
     API.antiLagActive = not API.antiLagActive
     antiLagBtn.BackgroundColor3 = API.antiLagActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     antiLagBtn.TextColor3 = API.antiLagActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
@@ -1015,7 +1352,7 @@ antiLagBtn.MouseButton1Click:Connect(function()
 end)
 
 antiHazardBtn.MouseButton1Click:Connect(function()
-    playSfx(API.clickSfx)
+    playSfx(clickSfx)
     API.toggleAntiHazard(not API.antiHazardActive)
     antiHazardBtn.BackgroundColor3 = API.antiHazardActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     antiHazardBtn.TextColor3 = API.antiHazardActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
@@ -1024,7 +1361,7 @@ antiHazardBtn.MouseButton1Click:Connect(function()
 end)
 
 antiDarkBtn.MouseButton1Click:Connect(function()
-    playSfx(API.clickSfx)
+    playSfx(clickSfx)
     API.antiDarknessActive = not API.antiDarknessActive
     antiDarkBtn.BackgroundColor3 = API.antiDarknessActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     antiDarkBtn.TextColor3 = API.antiDarknessActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
@@ -1063,15 +1400,16 @@ tgChatIdInputBox.FocusLost:Connect(function()
     if API.saveConfig then API.saveConfig() end
 end)
 
+-- Подключение кнопки корзины
 cartOpenBtn.MouseButton1Click:Connect(function()
     API.playSfx(API.clickSfx)
     if API.openCart then
         API.openCart()
     else
-        print("[BABFT-GUI] Загрузка Корзины...")
         task.spawn(function()
+            local url = API.CART_URL or "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Auto-Farm-BABFT-Cart.lua"
             local ok, err = pcall(function()
-                loadstring(game:HttpGet(API.CART_URL .. "?t=" .. tostring(os.time())))()
+                loadstring(game:HttpGet(url .. "?t=" .. tostring(os.time())))()
             end)
             if ok and API.openCart then
                 API.openCart()
@@ -1082,4 +1420,29 @@ cartOpenBtn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- Подключение кнопки квестов
+questOpenBtn.MouseButton1Click:Connect(function()
+    API.playSfx(API.clickSfx)
+    if API.openQuests then
+        API.openQuests()
+    else
+        task.spawn(function()
+            local url = API.QUEST_URL or "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Auto-Farm-BABFT-Quest.lua"
+            local ok, err = pcall(function()
+                loadstring(game:HttpGet(url .. "?t=" .. tostring(os.time())))()
+            end)
+            if ok and API.openQuests then
+                API.openQuests()
+            else
+                warn("[BABFT-GUI] Ошибка загрузки Квестов: " .. tostring(err))
+            end
+        end)
+    end
+end)
+
 print("[BABFT-GUI] Интерфейс готов!")
+
+-- Загрузка сохраненного конфига
+if API.loadConfig then
+    API.loadConfig()
+end
