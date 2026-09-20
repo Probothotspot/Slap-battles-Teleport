@@ -10,6 +10,7 @@ end
 local player = API.player
 local Workspace = API.Workspace
 local TweenService = API.TweenService
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local screenGui = API.screenGui
 
 local function createCorner(parent, radius)
@@ -42,6 +43,17 @@ local Q = {
     progressBar = nil
 }
 
+-- Прямой вызов RemoteEvent сервера для активации квеста
+function Q.fireQuestRemote(questId)
+    pcall(function()
+        local qEvent = ReplicatedStorage:FindFirstChild("QuestMakerEvent")
+        if qEvent and qEvent:IsA("RemoteEvent") then
+            qEvent:FireServer(questId)
+        end
+    end)
+end
+
+-- Резервный клик по кнопке в GUI игры
 function Q.clickButton(btn)
     if not btn then return false end
     pcall(function()
@@ -57,15 +69,14 @@ function Q.clickButton(btn)
     return true
 end
 
-function Q.activateQuest(questName)
+function Q.activateQuestInGui(questName)
     local pGui = player:FindFirstChild("PlayerGui")
     if not pGui then return false end
 
     local query = questName:lower()
     for _, desc in ipairs(pGui:GetDescendants()) do
         if desc:IsA("TextLabel") or desc:IsA("TextButton") then
-            local txt = desc.Text:lower()
-            if txt:find(query) then
+            if desc.Text:lower():find(query) then
                 local parent = desc.Parent
                 if parent then
                     for _, b in ipairs(parent:GetDescendants()) do
@@ -97,7 +108,7 @@ function Q.setStatus(msg, ratio)
 end
 
 -- =====================================================================
--- 1. КВЕСТ: МАСЛО (FIND ME)
+-- 1. КВЕСТ: МАСЛО (FIND ME) - ID 4
 -- =====================================================================
 local function isButterPart(v)
     if not v:IsA("MeshPart") then return false end
@@ -146,9 +157,13 @@ local function clickButter(part)
     end
 end
 
-function Q.doButterQuest()
-    Q.setStatus("Запуск квеста: Масло...", 0.1)
-    Q.activateQuest("find")
+function Q.doButterQuest(skipReturn)
+    local startHrp = API.getCurrentHRP()
+    local originalCF = startHrp and startHrp.CFrame
+
+    Q.setStatus("Запуск квеста: Масло (ID 4)...", 0.1)
+    Q.fireQuestRemote(4)
+    Q.activateQuestInGui("find")
     task.wait(1)
 
     local visited = {}
@@ -193,16 +208,19 @@ function Q.doButterQuest()
         Q.buttons.Butter.BackgroundColor3 = Color3.fromRGB(35, 90, 50)
     end
 
-    local finalHrp = API.getCurrentHRP()
-    if finalHrp then
-        finalHrp.AssemblyLinearVelocity = Vector3.zero
-        finalHrp.CFrame = CFrame.new(-55, 10, -50)
+    if not skipReturn and originalCF then
+        local finalHrp = API.getCurrentHRP()
+        if finalHrp then
+            finalHrp.AssemblyLinearVelocity = Vector3.zero
+            finalHrp.CFrame = originalCF
+        end
     end
+
     return true
 end
 
 -- =====================================================================
--- 2. КВЕСТ: ОБЛАКО (CLOUD) — ПОЛНАЯ РЕАЛИЗАЦИЯ
+-- 2. КВЕСТ: ОБЛАКО (CLOUD) - ID 1
 -- =====================================================================
 local function findCloudPart()
     for _, v in ipairs(Workspace:GetDescendants()) do
@@ -213,21 +231,24 @@ local function findCloudPart()
     return nil
 end
 
-function Q.doCloudQuest()
-    Q.setStatus("Запуск квеста: Облако...", 0.1)
-    Q.activateQuest("cloud")
+function Q.doCloudQuest(skipReturn)
+    local startHrp = API.getCurrentHRP()
+    local originalCF = startHrp and startHrp.CFrame
+
+    Q.setStatus("Запуск квеста: Облако (ID 1)...", 0.1)
+    Q.fireQuestRemote(1)
+    Q.activateQuestInGui("cloud")
     task.wait(1)
 
     local timeout = 0
-    local maxTimeout = 50 -- Максимальное время ожидания исчезновения облака
+    local maxTimeout = 50
 
     while timeout < maxTimeout do
         local hrp = API.getCurrentHRP()
         local cloud = findCloudPart()
 
         if not cloud then
-            -- Облако исчезло -> Квест выполнен!
-            break
+            break -- Облако пропало/собрано -> квест засчитан
         end
 
         if hrp and cloud then
@@ -257,20 +278,26 @@ function Q.doCloudQuest()
         Q.buttons.Cloud.BackgroundColor3 = Color3.fromRGB(35, 90, 50)
     end
 
-    local finalHrp = API.getCurrentHRP()
-    if finalHrp then
-        finalHrp.AssemblyLinearVelocity = Vector3.zero
-        finalHrp.CFrame = CFrame.new(-55, 10, -50)
+    if not skipReturn and originalCF then
+        local finalHrp = API.getCurrentHRP()
+        if finalHrp then
+            finalHrp.AssemblyLinearVelocity = Vector3.zero
+            finalHrp.CFrame = originalCF
+        end
     end
+
     return true
 end
 
 -- =====================================================================
 -- КАРКАСЫ ОСТАЛЬНЫХ КВЕСТОВ
 -- =====================================================================
-function Q.doTargetQuest()
+function Q.doTargetQuest(skipReturn)
+    local startHrp = API.getCurrentHRP()
+    local originalCF = startHrp and startHrp.CFrame
+
     Q.setStatus("Запуск квеста: Мишень...", 0.2)
-    Q.activateQuest("target")
+    Q.activateQuestInGui("target")
     task.wait(1)
     local hrp = API.getCurrentHRP()
     if hrp then
@@ -284,11 +311,22 @@ function Q.doTargetQuest()
         Q.buttons.Target.Text = "✓ 🎯 Квест: Мишень (Выполнено)"
         Q.buttons.Target.BackgroundColor3 = Color3.fromRGB(35, 90, 50)
     end
+
+    if not skipReturn and originalCF then
+        local finalHrp = API.getCurrentHRP()
+        if finalHrp then
+            finalHrp.AssemblyLinearVelocity = Vector3.zero
+            finalHrp.CFrame = originalCF
+        end
+    end
 end
 
-function Q.doRingsQuest()
+function Q.doRingsQuest(skipReturn)
+    local startHrp = API.getCurrentHRP()
+    local originalCF = startHrp and startHrp.CFrame
+
     Q.setStatus("Запуск квеста: Кольца...", 0.2)
-    Q.activateQuest("ring")
+    Q.activateQuestInGui("ring")
     task.wait(1)
     Q.completed.Rings = true
     Q.setStatus("Кольца: ожидает доработки", 1.0)
@@ -296,11 +334,22 @@ function Q.doRingsQuest()
         Q.buttons.Rings.Text = "✓ ⭕ Квест: Кольца (Выполнено)"
         Q.buttons.Rings.BackgroundColor3 = Color3.fromRGB(35, 90, 50)
     end
+
+    if not skipReturn and originalCF then
+        local finalHrp = API.getCurrentHRP()
+        if finalHrp then
+            finalHrp.AssemblyLinearVelocity = Vector3.zero
+            finalHrp.CFrame = originalCF
+        end
+    end
 end
 
-function Q.doSoccerQuest()
+function Q.doSoccerQuest(skipReturn)
+    local startHrp = API.getCurrentHRP()
+    local originalCF = startHrp and startHrp.CFrame
+
     Q.setStatus("Запуск квеста: Футбол...", 0.2)
-    Q.activateQuest("soccer")
+    Q.activateQuestInGui("soccer")
     task.wait(1)
     Q.completed.Soccer = true
     Q.setStatus("Футбол: ожидает доработки", 1.0)
@@ -308,9 +357,17 @@ function Q.doSoccerQuest()
         Q.buttons.Soccer.Text = "✓ ⚽ Квест: Футбол (Выполнено)"
         Q.buttons.Soccer.BackgroundColor3 = Color3.fromRGB(35, 90, 50)
     end
+
+    if not skipReturn and originalCF then
+        local finalHrp = API.getCurrentHRP()
+        if finalHrp then
+            finalHrp.AssemblyLinearVelocity = Vector3.zero
+            finalHrp.CFrame = originalCF
+        end
+    end
 end
 
--- Запуск ВСЕХ квестов по порядку
+-- Запуск ВСЕХ квестов по очереди
 function Q.runAllQuests()
     if Q.running then return end
     Q.running = true
@@ -318,23 +375,34 @@ function Q.runAllQuests()
     local wasFarming = API.farming
     if wasFarming then API.stopFarming() end
 
+    local initialHrp = API.getCurrentHRP()
+    local globalReturnCF = initialHrp and initialHrp.CFrame
+
     Q.setStatus("Запуск очереди квестов...", 0.05)
     task.wait(0.5)
 
-    pcall(Q.doButterQuest)
+    pcall(function() Q.doButterQuest(true) end)
     task.wait(1.5)
 
-    pcall(Q.doCloudQuest)
+    pcall(function() Q.doCloudQuest(true) end)
     task.wait(1.5)
 
-    pcall(Q.doTargetQuest)
+    pcall(function() Q.doTargetQuest(true) end)
     task.wait(1)
 
-    pcall(Q.doRingsQuest)
+    pcall(function() Q.doRingsQuest(true) end)
     task.wait(1)
 
-    pcall(Q.doSoccerQuest)
+    pcall(function() Q.doSoccerQuest(true) end)
     task.wait(1)
+
+    if globalReturnCF then
+        local finalHrp = API.getCurrentHRP()
+        if finalHrp then
+            finalHrp.AssemblyLinearVelocity = Vector3.zero
+            finalHrp.CFrame = globalReturnCF
+        end
+    end
 
     Q.setStatus("Очередь квестов завершена! ✓", 1.0)
     Q.running = false
@@ -346,7 +414,7 @@ function Q.runAllQuests()
 end
 
 -- =====================================================================
--- ИНТЕРФЕЙС МОДАЛЬНОГО ОКНА КВЕСТОВ
+-- МОДАЛЬНОЕ ОКНО (ZIndex = 70)
 -- =====================================================================
 local qWindow = Instance.new("Frame")
 qWindow.Size = UDim2.new(0, 275, 0, 365)
@@ -364,6 +432,7 @@ createCorner(qWindow, 12)
 local qStroke = createStroke(qWindow, Color3.fromRGB(180, 100, 255), 1.8)
 qStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
+-- Шапка
 local qTopBar = Instance.new("Frame")
 qTopBar.Size = UDim2.new(1, 0, 0, 32)
 qTopBar.BackgroundTransparency = 1
@@ -395,6 +464,7 @@ qCloseBtn.ZIndex = 72
 qCloseBtn.Parent = qTopBar
 createCorner(qCloseBtn, 6)
 
+-- Перетаскивание
 local qDragging, qDragStart, qStartPos
 qTopBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -419,6 +489,7 @@ qTopBar.InputChanged:Connect(function(input)
     end
 end)
 
+-- Статус-бар
 local qStatusBar = Instance.new("Frame")
 qStatusBar.Size = UDim2.new(1, -20, 0, 44)
 qStatusBar.Position = UDim2.new(0, 10, 0, 36)
@@ -459,6 +530,7 @@ qProgFill.Parent = qProgBg
 createCorner(qProgFill, 10)
 Q.progressBar = qProgFill
 
+-- Кнопка "Пройти ВСЕ квесты"
 local runAllBtn = Instance.new("TextButton")
 runAllBtn.Size = UDim2.new(1, -20, 0, 30)
 runAllBtn.Position = UDim2.new(0, 10, 0, 88)
@@ -477,6 +549,7 @@ runAllBtn.MouseButton1Click:Connect(function()
     task.spawn(Q.runAllQuests)
 end)
 
+-- Создание кнопок отдельных квестов
 local function createQuestButton(yPos, key, defaultName, cb)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -20, 0, 24)
@@ -500,11 +573,11 @@ local function createQuestButton(yPos, key, defaultName, cb)
     return btn
 end
 
-createQuestButton(124, "Butter", "🧈 Квест: Найди масло (Find Me)", Q.doButterQuest)
-createQuestButton(154, "Cloud", "☁️ Квест: Облако (Cloud)", Q.doCloudQuest)
-createQuestButton(184, "Target", "🎯 Квест: Мишень (Target)", Q.doTargetQuest)
-createQuestButton(214, "Rings", "⭕ Квест: Кольца (Rings)", Q.doRingsQuest)
-createQuestButton(244, "Soccer", "⚽ Квест: Футбол (Soccer)", Q.doSoccerQuest)
+createQuestButton(124, "Butter", "🧈 Квест: Найди масло (Find Me)", function() Q.doButterQuest(false) end)
+createQuestButton(154, "Cloud", "☁️ Квест: Облако (Cloud)", function() Q.doCloudQuest(false) end)
+createQuestButton(184, "Target", "🎯 Квест: Мишень (Target)", function() Q.doTargetQuest(false) end)
+createQuestButton(214, "Rings", "⭕ Квест: Кольца (Rings)", function() Q.doRingsQuest(false) end)
+createQuestButton(244, "Soccer", "⚽ Квест: Футбол (Soccer)", function() Q.doSoccerQuest(false) end)
 
 local closeBottom = Instance.new("TextButton")
 closeBottom.Size = UDim2.new(1, -20, 0, 24)
@@ -535,4 +608,4 @@ function API.closeQuests()
     qWindow.Visible = false
 end
 
-print("[BABFT-Quest] Каркас квестов с рабочим маслом и облаком загружен!")
+print("[BABFT-Quest] Квесты обновлены: облако активируется через ID 1!")
