@@ -71,6 +71,7 @@ API.smoothnessNames = {
 API.farmMode = "Chest"
 API.chestDelay = 2
 API.stageDelay = 1.5
+API.chestStage = 2
 API.autoBuyActive = false
 API.buyAmount = 1
 API.targetItemRealName = ""
@@ -221,10 +222,9 @@ API.STAGE_COORDINATES = {
 API.CHEST_POSITION = Vector3.new(-55, -356, 9489)
 API.SPAWN_Z_MAX = 1200
 
--- Публичный официальный звук шагов Roblox (100% не блокируется приватностью)
+-- Звуки
 API.stepSoundId = "rbxassetid://9069609204"
 
--- Базовые звуки UI
 pcall(function()
     local function createSound(id, vol)
         local s = Instance.new("Sound")
@@ -244,7 +244,6 @@ function API.playSfx(sfx)
     end
 end
 
--- Функция воспроизведения кастомного звука шага прямо из HRP
 function API.playStepSound()
     if not API.customSoundsActive or not API.soundEffectsActive then return end
     local char = player.Character
@@ -270,7 +269,6 @@ function API.playStepSound()
     end
 end
 
--- Применение кастомных звуков к персонажу (замена стандартного Running)
 function API.applyFootstepSounds(char)
     if not char then return end
     task.spawn(function()
@@ -299,7 +297,6 @@ if player.Character then
     API.applyFootstepSounds(player.Character)
 end
 
--- Цикл отслеживания шагов в движении
 local lastStepTime = 0
 API.stepConn = RunService.Heartbeat:Connect(function()
     if not API.customSoundsActive or not API.soundEffectsActive then return end
@@ -308,7 +305,6 @@ API.stepConn = RunService.Heartbeat:Connect(function()
         local hum = char:FindFirstChildOfClass("Humanoid")
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if hum and hrp and hum.Health > 0 then
-            -- Глушим стандартный звук, если он пытается играть параллельно
             local defaultRunning = hrp:FindFirstChild("Running")
             if defaultRunning and defaultRunning.SoundId ~= API.stepSoundId then
                 defaultRunning.Volume = 0
@@ -696,7 +692,7 @@ function API.updateSpeedAndEtaMetrics()
             if API.lastFinalizedMinute == completedMinutes then
                 API.minuteSamples[API.lastFinalizedMinute] = API.currentMinuteGold
                 API.minuteSampleSum = API.minuteSampleSum + API.currentMinuteGold
-                currentMinuteGold = 0
+                API.currentMinuteGold = 0
             else
                 API.minuteSamples[API.lastFinalizedMinute] = 0
             end
@@ -723,7 +719,7 @@ function API.updateSpeedAndEtaMetrics()
             else
                 local mPrev = API.lastFinalizedMinute - 1
                 local mCurr = API.lastFinalizedMinute
-                UI.minuteStatsLabel.Text = string.format("М%d:+%d | М%d:+%d | Ср:%.1f/мин", mPrev, API.minuteSamples[mPrev] or 0, mCurr, API.minuteSamples[mCurr] or 0, API.averageGoldPerMinute)
+                UI.minuteStatsLabel.Text = string.format("М%d:+%d | М%d:+%d | Ср:%.1f/мин", mPrev, API.minuteSamples[mPrev] or 0, mCurr, minuteSamples[mCurr] or 0, API.averageGoldPerMinute)
             end
         end
     end
@@ -783,9 +779,9 @@ function API.updateGoldStats()
             API.playSfx(API.coinSfx)
 
             for _, m in ipairs(API.MILESTONES) do
-                if API.totalEarned >= m and not API.reachedMilestones[m] then
+                if totalEarned >= m and not API.reachedMilestones[m] then
                     API.reachedMilestones[m] = true
-                    API.showAchievementToast("НОВОЕ ДОСТИЖЕНИЕ!", "Заработано +" .. tostring(m) .. " Gold!")
+                    showAchievementToast("НОВОЕ ДОСТИЖЕНИЕ!", "Заработано +" .. tostring(m) .. " Gold!")
                     API.sendTelegramMessage(string.format("🏆 <b>ДОСТИЖЕНИЕ РАЗБЛОКИРОВАНО!</b>\nСессия принесла уже более <b>+%d Gold</b>!", m))
                 end
             end
@@ -805,14 +801,14 @@ task.spawn(function()
     local obj = API.getGoldObject()
     while not obj do
         task.wait(1)
-        obj = API.getGoldObject()
+        obj = getGoldObject()
     end
     API.previousGold = API.getCurrentGold()
     API.updateGoldStats()
     obj.Changed:Connect(API.updateGoldStats)
 end)
 
--- Фарм цикл
+-- Фарм цикл с настраиваемым этапом сундука
 function API.startFarmingLoop()
     local UI = API.UI
     API.farmThread = task.spawn(function()
@@ -827,7 +823,10 @@ function API.startFarmingLoop()
             local resetToFirstStage = false
 
             if API.farmMode == "Chest" then
-                for index = 1, 2 do
+                local targetStage = math.clamp(math.floor(tonumber(API.chestStage) or 2), 1, 10)
+
+                -- 1. Проход этапов до этапа сундука
+                for index = 1, targetStage do
                     if not API.farming then break end
                     hrp, char, hum = API.getCurrentHRP()
                     if not hrp then resetToFirstStage = true break end
@@ -856,6 +855,7 @@ function API.startFarmingLoop()
                     continue
                 end
 
+                -- 2. Телепорт к сундуку
                 hrp, char, hum = API.getCurrentHRP()
                 if hrp then
                     if UI.statusLabel then UI.statusLabel.Text = "Сундук (" .. tostring(API.chestDelay) .. " сек)..." end
@@ -882,35 +882,39 @@ function API.startFarmingLoop()
                     continue
                 end
 
+                -- 3. Возврат на пройденный этап
                 hrp, char, hum = API.getCurrentHRP()
                 if hrp then
-                    if UI.statusLabel then UI.statusLabel.Text = "Возврат на зону 2..." end
+                    if UI.statusLabel then UI.statusLabel.Text = "Возврат на зону " .. targetStage .. "..." end
                     API.disableClearVision()
                     API.setNoclip(char)
-                    API.placeOnPlatform(API.STAGE_COORDINATES[2], hrp)
+                    API.placeOnPlatform(API.STAGE_COORDINATES[targetStage], hrp)
                     task.wait(API.stageDelay)
                 end
 
-                for index = 3, 10 do
-                    if not API.farming then break end
-                    hrp, char, hum = API.getCurrentHRP()
-                    if not hrp then resetToFirstStage = true break end
-
-                    if UI.statusLabel then UI.statusLabel.Text = "Зона " .. index .. "/10" end
-                    API.setNoclip(char)
-                    API.placeOnPlatform(API.STAGE_COORDINATES[index], hrp)
-
-                    local stageStart = tick()
-                    while tick() - stageStart < API.stageDelay do
-                        task.wait(0.05)
+                -- 4. Допроход оставшихся этапов (если этап < 10)
+                if targetStage < 10 then
+                    for index = (targetStage + 1), 10 do
                         if not API.farming then break end
-                        local curHrp = API.getCurrentHRP()
-                        if not curHrp or curHrp.Position.Z < API.SPAWN_Z_MAX then
-                            resetToFirstStage = true
-                            break
+                        hrp, char, hum = API.getCurrentHRP()
+                        if not hrp then resetToFirstStage = true break end
+
+                        if UI.statusLabel then UI.statusLabel.Text = "Зона " .. index .. "/10" end
+                        API.setNoclip(char)
+                        API.placeOnPlatform(API.STAGE_COORDINATES[index], hrp)
+
+                        local stageStart = tick()
+                        while tick() - stageStart < API.stageDelay do
+                            task.wait(0.05)
+                            if not API.farming then break end
+                            local curHrp = API.getCurrentHRP()
+                            if not curHrp or curHrp.Position.Z < API.SPAWN_Z_MAX then
+                                resetToFirstStage = true
+                                break
+                            end
                         end
+                        if resetToFirstStage then break end
                     end
-                    if resetToFirstStage then break end
                 end
 
                 if resetToFirstStage or not API.farming then
@@ -923,7 +927,7 @@ function API.startFarmingLoop()
                 if UI.statusLabel then UI.statusLabel.Text = "10 этап: ожидание спавна..." end
                 while API.farming do
                     task.wait(0.1)
-                    local curHrp = getCurrentHRP()
+                    local curHrp = API.getCurrentHRP()
                     if curHrp and curHrp.Position.Z < API.SPAWN_Z_MAX then break end
                 end
 
@@ -991,7 +995,7 @@ function API.startFarming()
 
     API.startGold = API.getCurrentGold()
     API.previousGold = API.startGold
-    API.totalEarned = 0
+    totalEarned = 0
     table.clear(API.reachedMilestones)
 
     API.statsStartTime = time()
@@ -1058,7 +1062,7 @@ function API.fullCleanup()
     API.farming = false
     API.autoBuyActive = false
     API.autoStartOnJoin = false
-    disableClearVision()
+    API.disableClearVision()
     API.toggleAntiHazard(false)
     if API.toggleBlackScreen then API.toggleBlackScreen(false) end
 
@@ -1095,6 +1099,10 @@ function API.saveConfig(customAutoStart)
         local valStage = tonumber(UI.stageDelayBox.Text)
         if valStage and valStage > 0 then API.stageDelay = valStage end
     end
+    if UI.chestStageBox then
+        local valChestStage = tonumber(UI.chestStageBox.Text)
+        if valChestStage then API.chestStage = math.clamp(math.floor(valChestStage), 1, 10) end
+    end
     if UI.amountBox then
         local valAmt = tonumber(UI.amountBox.Text)
         if valAmt and valAmt > 0 then API.buyAmount = math.floor(valAmt) end
@@ -1116,6 +1124,7 @@ function API.saveConfig(customAutoStart)
         farmMode = API.farmMode,
         chestDelay = API.chestDelay,
         stageDelay = API.stageDelay,
+        chestStage = API.chestStage,
         autoBuyActive = API.autoBuyActive,
         buyAmount = API.buyAmount,
         targetItem = UI.itemInputBox and UI.itemInputBox.Text or "",
@@ -1168,6 +1177,10 @@ function API.loadConfig()
                 if data.stageDelay then
                     API.stageDelay = tonumber(data.stageDelay) or 1.5
                     if UI.stageDelayBox then UI.stageDelayBox.Text = tostring(API.stageDelay) end
+                end
+                if data.chestStage then
+                    API.chestStage = math.clamp(math.floor(tonumber(data.chestStage) or 2), 1, 10)
+                    if UI.chestStageBox then UI.chestStageBox.Text = tostring(API.chestStage) end
                 end
                 if data.buyAmount then
                     API.buyAmount = tonumber(data.buyAmount) or 1
@@ -1243,7 +1256,7 @@ function API.loadConfig()
                     if UI.smoothnessBtn then UI.smoothnessBtn.Text = "🚀 Плавность: " .. API.smoothnessNames[API.smoothnessMode] end
                 end
                 if data.soundEffectsActive ~= nil then
-                    API.soundEffectsActive = data.soundEffectsActive
+                    soundEffectsActive = data.soundEffectsActive
                     if UI.soundToggleBtn then
                         UI.soundToggleBtn.BackgroundColor3 = API.soundEffectsActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
                         UI.soundToggleBtn.TextColor3 = API.soundEffectsActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
@@ -1259,7 +1272,7 @@ function API.loadConfig()
                     end
                 end
 
-                -- Восстановление координат и размера окна
+                -- Восстановление геометрии окна
                 if data.windowPosX and data.windowPosY and UI.mainFrame then
                     API.windowPosX = data.windowPosX
                     API.windowPosY = data.windowPosY
@@ -1426,8 +1439,8 @@ API.tgPollingThread = task.spawn(function()
                                         UI.antiLagBtn.Text = API.antiLagActive and "⚡ Анти-лаг очистка: ВКЛ" or "⚡ Анти-лаг очистка: ВЫКЛ"
                                     end
                                     if API.antiLagActive then API.applyAntiLag(true) end
-                                    API.saveConfig()
-                                    API.sendTelegramMessage("⚡ <b>Анти-лаг очистка:</b> " .. (antiLagActive and "ВКЛЮЧЕНА" or "ВЫКЛЮЧЕНА"))
+                                    saveConfig()
+                                    sendTelegramMessage("⚡ <b>Анти-лаг очистка:</b> " .. (API.antiLagActive and "ВКЛЮЧЕНА" or "ВЫКЛЮЧЕНА"))
                                 elseif cmd == "/buy" then
                                     local itemArg = parts[2]
                                     local amountArg = tonumber(parts[3]) or 1
@@ -1453,7 +1466,7 @@ API.tgPollingThread = task.spawn(function()
                                     API.saveConfig()
                                     API.sendTelegramMessage("🛡 <b>Защита от воды/урона:</b> " .. (API.antiHazardActive and "ВКЛ" or "ВЫКЛ"))
                                 elseif cmd == "/kill" or cmd == "/shutdown" then
-                                    saveConfig(false)
+                                    API.saveConfig(false)
                                     API.sendTelegramMessage("💀 <b>Скрипт полностью остановлен и деактивирован!</b>\nАвто-старт и авто-перезаход отключены.")
                                     API.fullCleanup()
                                 elseif cmd == "/status" then
@@ -1476,7 +1489,7 @@ API.tgPollingThread = task.spawn(function()
                                     local report = string.format(
                                         "📊 <b>Статистика BABFT:</b>\n\n• Состояние: <b>%s</b>\n• Режим: <b>%s</b>\n• Среднее: <b>%.1f Gold/мин</b>\n• Прогноз: <b>~%d Gold/час</b>%s\n• Анти-темнота: <b>%s</b>\n• Анти-вода/урон: <b>%s</b>\n• Анти-лаг: <b>%s</b>\n• Ночной экран: <b>%s</b>\n• Время сессии: <b>%s</b>\n• Баланс: <b>%d Gold</b>\n• Заработано: <b>+%d Gold</b>",
                                         API.farming and "🟢 Работает" or "🔴 Остановлен",
-                                        API.farmMode == "Chest" and "Сундук" or "Золото",
+                                        API.farmMode == "Chest" and ("Сундук (Этап " .. tostring(API.chestStage) .. ")") or "Золото",
                                         API.averageGoldPerMinute,
                                         API.estimatedGoldPerHour,
                                         etaReportLine,
@@ -1490,7 +1503,7 @@ API.tgPollingThread = task.spawn(function()
                                     )
                                     API.sendTelegramMessage(report)
                                 elseif cmd == "/rejoin" then
-                                    API.executeRejoin()
+                                    executeRejoin()
                                 end
                             end
                         end
