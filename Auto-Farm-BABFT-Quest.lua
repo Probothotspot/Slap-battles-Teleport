@@ -8,7 +8,8 @@ if not API or not API.screenGui then
 end
 
 local player = API.player
-local Workspace = API.Workspace
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = API.TweenService
 local screenGui = API.screenGui
 
@@ -56,48 +57,53 @@ end
 -- =====================================================================
 -- 1. КВЕСТ: МАСЛО (FIND ME)
 -- =====================================================================
-local function isButterPart(v)
-    if not (v:IsA("MeshPart") or v:IsA("BasePart")) then return false end
-    if v.Name ~= "PPart" then return false end
-    if not v.Parent or v.Parent.Name ~= "Butter" then return false end
-    return true
-end
 
-local function findUniqueButter(visitedList)
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if isButterPart(obj) then
-            local alreadyClicked = false
-            for _, pos in ipairs(visitedList) do
-                if (obj.Position - pos).Magnitude < 5 then
-                    alreadyClicked = true
-                    break
-                end
-            end
-            if not alreadyClicked then return obj end
+-- Быстрый поиск активного масла без лагов (без полного обхода Workspace)
+local function getActiveButterPart()
+    local butterModel = Workspace:FindFirstChild("Butter", true)
+    if butterModel then
+        local ppart = butterModel:FindFirstChild("PPart") 
+            or butterModel:FindFirstChildWhichIsA("MeshPart") 
+            or butterModel:FindFirstChildWhichIsA("BasePart")
+        if ppart then
+            return ppart, butterModel
         end
     end
-    return nil
+
+    -- Резервный поиск по зонам команд
+    for _, zone in ipairs(Workspace:GetChildren()) do
+        if zone.Name:find("Zone") or zone.Name == "Quest" then
+            local b = zone:FindFirstChild("Butter", true)
+            if b then
+                local p = b:FindFirstChild("PPart") or b:FindFirstChildWhichIsA("MeshPart") or b:FindFirstChildWhichIsA("BasePart")
+                if p then return p, b end
+            end
+        end
+    end
+    return nil, nil
 end
 
-local function clickButter(part)
-    if not part then return end
+-- Клик по маслу (ClickDetector + Touch)
+local function clickButterPart(ppart, butterModel)
+    if not ppart then return end
 
-    local cd = part:FindFirstChildOfClass("ClickDetector") 
-        or (part.Parent and part.Parent:FindFirstChildOfClass("ClickDetector"))
-        or part:FindFirstChildWhichIsA("ClickDetector", true)
-        or (part.Parent and part.Parent:FindFirstChildWhichIsA("ClickDetector", true))
+    local cd = ppart:FindFirstChildOfClass("ClickDetector")
+        or (butterModel and butterModel:FindFirstChildOfClass("ClickDetector"))
+        or ppart:FindFirstChildWhichIsA("ClickDetector", true)
+        or (butterModel and butterModel:FindFirstChildWhichIsA("ClickDetector", true))
 
     if cd and fireclickdetector then
         pcall(function() fireclickdetector(cd) end)
         pcall(function() fireclickdetector(cd, 1) end)
+        pcall(function() fireclickdetector(cd, 0) end)
     end
 
     local hrp = API.getCurrentHRP()
     if hrp and firetouchinterest then
         pcall(function()
-            firetouchinterest(hrp, part, 0)
-            task.wait(0.05)
-            firetouchinterest(hrp, part, 1)
+            firetouchinterest(hrp, ppart, 0)
+            task.wait(0.02)
+            firetouchinterest(hrp, ppart, 1)
         end)
     end
 end
@@ -109,48 +115,70 @@ function Q.doButterQuest(skipReturn)
     local startHrp = API.getCurrentHRP()
     local originalCF = startHrp and startHrp.CFrame
 
-    -- Твой скрипт запуска квеста с маслом
     Q.setStatus("Запуск квеста: Масло...", 0.1)
-    local args = {[1] = 4}
-    game:GetService("ReplicatedStorage").QuestMakerEvent:FireServer(unpack(args))
+
+    -- Точный запуск через RemoteEvent
+    pcall(function()
+        local args = {[1] = 4}
+        ReplicatedStorage.QuestMakerEvent:FireServer(unpack(args))
+    end)
     task.wait(1.5)
 
-    local visited = {}
     local count = 0
+    local lastPos = nil
 
-    while count < 5 do
+    while count < 5 and Q.running do
         Q.setStatus(string.format("Поиск масла [%d/5]...", count + 1), count / 5)
-        local target = nil
-        local waitTimeout = 0
 
-        while not target and waitTimeout < 20 do
-            target = findUniqueButter(visited)
-            if not target then
-                task.wait(0.4)
-                waitTimeout = waitTimeout + 0.4
+        local ppart, butterModel = nil, nil
+        local waitTime = 0
+
+        -- Ожидание появления нового блока масла
+        while not ppart and waitTime < 25 and Q.running do
+            local foundPart, foundModel = getActiveButterPart()
+            if foundPart and foundPart.Parent then
+                -- Убеждаемся, что координаты отличаются от уже собранного масла
+                if not lastPos or (foundPart.Position - lastPos).Magnitude > 4 then
+                    ppart = foundPart
+                    butterModel = foundModel
+                    break
+                end
             end
+            task.wait(0.3)
+            waitTime = waitTime + 0.3
         end
 
-        if not target then
-            Q.setStatus(string.format("Таймаут: найдено только %d/5 масел", count), count / 5)
+        if not ppart then
+            Q.setStatus(string.format("Таймаут: найдено %d/5 масел", count), count / 5)
             break
         end
 
+        local currentPos = ppart.Position
         local hrp = API.getCurrentHRP()
-        if not hrp then task.wait(0.5) hrp = API.getCurrentHRP() end
+        if not hrp then task.wait(0.4) hrp = API.getCurrentHRP() end
 
-        if hrp and target and target.Parent then
+        if hrp and ppart and ppart.Parent then
+            -- Телепорт вплотную к маслу
             hrp.AssemblyLinearVelocity = Vector3.zero
-            hrp.CFrame = CFrame.new(target.Position + Vector3.new(0, 1.5, 0), target.Position)
-            task.wait(0.3)
+            hrp.CFrame = CFrame.new(currentPos + Vector3.new(0, 1.0, 0))
+            task.wait(0.2)
 
-            clickButter(target)
-            table.insert(visited, target.Position)
+            -- Кликаем несколько раз с паузами, пока блок не исчезнет или не изменит координаты
+            local attempts = 0
+            while ppart and ppart.Parent and ppart:IsDescendantOf(Workspace) and attempts < 10 and Q.running do
+                clickButterPart(ppart, butterModel)
+                task.wait(0.2)
+                attempts = attempts + 1
+                if (ppart.Position - currentPos).Magnitude > 4 then
+                    break
+                end
+            end
+
+            lastPos = currentPos
             count = count + 1
-
             API.playSfx(API.coinSfx)
-            Q.setStatus(string.format("Масло #%d нажато! Ждем следующее...", count), count / 5)
-            task.wait(1.4)
+            Q.setStatus(string.format("Масло #%d собрано! Ждем следующее...", count), count / 5)
+            task.wait(1.0)
         end
     end
 
@@ -158,7 +186,7 @@ function Q.doButterQuest(skipReturn)
         Q.completed.Butter = true
         Q.setStatus("Квест с маслом выполнен! ✓", 1.0)
         API.showAchievementToast("КВЕСТ ВЫПОЛНЕН", "Масло собрано (5/5)!")
-        if API.sendTelegramMessage then API.sendTelegramMessage("🧈 <b>Квест с маслом завершен!</b>") end
+        if API.sendTelegramMessage then API.sendTelegramMessage("🧈 <b>Квест с маслом успешно завершен!</b>") end
 
         if Q.buttons.Butter then
             Q.buttons.Butter.Text = "✓ 🧈 Квест: Найди масло (Выполнено)"
@@ -166,7 +194,7 @@ function Q.doButterQuest(skipReturn)
         end
     end
 
-    -- Возврат на место, где стоял игрок до начала квеста
+    -- Возврат на место, где стоял персонаж до начала квеста
     if not skipReturn and originalCF then
         local finalHrp = API.getCurrentHRP()
         if finalHrp then
@@ -182,11 +210,11 @@ end
 -- =====================================================================
 -- 2. КВЕСТ: ОБЛАКО (CLOUD)
 -- =====================================================================
-local function findCloudPart()
-    for _, v in ipairs(Workspace:GetDescendants()) do
-        if v:IsA("BasePart") and v.Name == "Part2" and v.Parent and v.Parent.Name == "Cloud" then
-            return v
-        end
+local function getCloudPart()
+    local cloudModel = Workspace:FindFirstChild("Cloud", true)
+    if cloudModel then
+        local p2 = cloudModel:FindFirstChild("Part2") or cloudModel:FindFirstChildWhichIsA("BasePart")
+        if p2 then return p2 end
     end
     return nil
 end
@@ -198,18 +226,20 @@ function Q.doCloudQuest(skipReturn)
     local startHrp = API.getCurrentHRP()
     local originalCF = startHrp and startHrp.CFrame
 
-    -- Твой скрипт запуска квеста с облаком
     Q.setStatus("Запуск квеста: Облако...", 0.1)
-    local args = {[1] = 1}
-    game:GetService("ReplicatedStorage").QuestMakerEvent:FireServer(unpack(args))
+
+    -- Точный запуск через RemoteEvent
+    pcall(function()
+        local args = {[1] = 1}
+        ReplicatedStorage.QuestMakerEvent:FireServer(unpack(args))
+    end)
     task.wait(1.5)
 
-    -- 1. Сначала ждем появления облака на карте
     Q.setStatus("Ожидание появления облака...", 0.2)
     local cloud = nil
     local waitSpawn = 0
-    while not cloud and waitSpawn < 12 do
-        cloud = findCloudPart()
+    while not cloud and waitSpawn < 15 and Q.running do
+        cloud = getCloudPart()
         if not cloud then
             task.wait(0.4)
             waitSpawn = waitSpawn + 0.4
@@ -217,22 +247,20 @@ function Q.doCloudQuest(skipReturn)
     end
 
     if not cloud then
-        Q.setStatus("Ошибка: облако не появилось на сервере!", 0)
+        Q.setStatus("Ошибка: облако не появилось!", 0)
         Q.running = false
         return false
     end
 
-    -- 2. Если облако найдено — летим к нему, пока оно не исчезнет
     local timeout = 0
     local maxTimeout = 50
 
-    while timeout < maxTimeout do
+    while timeout < maxTimeout and Q.running do
         local hrp = API.getCurrentHRP()
-        cloud = findCloudPart()
+        cloud = getCloudPart()
 
         if not cloud then
-            -- Облако исчезло (собрано) -> квест засчитан!
-            break
+            break -- Облако исчезло -> квест засчитан
         end
 
         if hrp and cloud then
@@ -241,7 +269,7 @@ function Q.doCloudQuest(skipReturn)
             if firetouchinterest then
                 pcall(function()
                     firetouchinterest(hrp, cloud, 0)
-                    task.wait(0.05)
+                    task.wait(0.04)
                     firetouchinterest(hrp, cloud, 1)
                 end)
             end
@@ -249,7 +277,7 @@ function Q.doCloudQuest(skipReturn)
 
         task.wait(0.35)
         timeout = timeout + 0.35
-        Q.setStatus(string.format("Внутри облака (сек: %.1f)...", timeout), 0.7)
+        Q.setStatus(string.format("Касание облака (сек: %.1f)...", timeout), 0.7)
     end
 
     Q.completed.Cloud = true
@@ -262,7 +290,6 @@ function Q.doCloudQuest(skipReturn)
         Q.buttons.Cloud.BackgroundColor3 = Color3.fromRGB(35, 90, 50)
     end
 
-    -- Возврат на место, где стоял игрок до начала квеста
     if not skipReturn and originalCF then
         local finalHrp = API.getCurrentHRP()
         if finalHrp then
@@ -276,7 +303,7 @@ function Q.doCloudQuest(skipReturn)
 end
 
 -- =====================================================================
--- КАРКАСЫ ОСТАЛЬНЫХ КВЕСТОВ
+-- КАРКАСЫ ДЛЯ ОСТАЛЬНЫХ КВЕСТОВ
 -- =====================================================================
 function Q.doTargetQuest(skipReturn)
     local startHrp = API.getCurrentHRP()
@@ -335,7 +362,6 @@ function Q.doSoccerQuest(skipReturn)
     end
 end
 
--- Очередь прохождения
 function Q.runAllQuests()
     if Q.running then return end
 
@@ -430,7 +456,7 @@ qCloseBtn.ZIndex = 72
 qCloseBtn.Parent = qTopBar
 createCorner(qCloseBtn, 6)
 
--- Перетаскивание
+-- Перетаскивание окна
 local qDragging, qDragStart, qStartPos
 qTopBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -496,7 +522,7 @@ qProgFill.Parent = qProgBg
 createCorner(qProgFill, 10)
 Q.progressBar = qProgFill
 
--- Кнопка "Пройти ВСЕ квесты"
+-- Кнопка запуска всех квестов
 local runAllBtn = Instance.new("TextButton")
 runAllBtn.Size = UDim2.new(1, -20, 0, 30)
 runAllBtn.Position = UDim2.new(0, 10, 0, 88)
@@ -574,4 +600,4 @@ function API.closeQuests()
     qWindow.Visible = false
 end
 
-print("[BABFT-Quest] Обновлённый модуль квестов подключен!")
+print("[BABFT-Quest] Оптимизированный модуль квестов готов!")
