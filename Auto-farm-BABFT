@@ -1,69 +1,73 @@
-repeat task.wait(0.2) until game:IsLoaded()
+repeat task.wait(0.1) until game:IsLoaded()
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+
 local player = Players.LocalPlayer
 while not player do
-    task.wait(0.2)
+    task.wait(0.1)
     player = Players.LocalPlayer
 end
 
--- 1. Безопасное создание ScreenGui для загрузчика
-local function getSafeGuiParent()
+-- 1. Безопасный родитель (Гарантирует, что GUI никогда не упадет с ошибкой доступа)
+local function getSafeParent()
     if typeof(gethui) == "function" then
         local ok, res = pcall(gethui)
         if ok and res then return res end
     end
-    local coreOk, coreGui = pcall(function() return game:GetService("CoreGui") end)
-    if coreOk and coreGui then
-        local canAccess = pcall(function()
-            local testObj = Instance.new("Folder")
-            testObj.Parent = coreGui
-            testObj:Destroy()
-        end)
-        if canAccess then return coreGui end
-    end
     return player:WaitForChild("PlayerGui", 10)
 end
+
+local parentGui = getSafeParent()
+
+-- Удаляем старый лоадер, если висел
+pcall(function()
+    local old = parentGui:FindFirstChild("BabftLoaderNotification")
+    if old then old:Destroy() end
+    local pGuiOld = player.PlayerGui:FindFirstChild("BabftLoaderNotification")
+    if pGuiOld then pGuiOld:Destroy() end
+end)
 
 local loaderGui = Instance.new("ScreenGui")
 loaderGui.Name = "BabftLoaderNotification"
 loaderGui.ResetOnSpawn = false
 loaderGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-loaderGui.Parent = getSafeGuiParent()
+pcall(function() loaderGui.Parent = parentGui end)
 
--- 2. Дизайн выплывающей неоновой карточки
+-- 2. Создание красивой выплывающей неоновой карточки
 local card = Instance.new("Frame")
-card.Size = UDim2.new(0, 270, 0, 72)
-card.Position = UDim2.new(0.5, -135, -0.15, 0) -- Начало за пределами экрана
+card.Size = UDim2.new(0, 280, 0, 75)
+card.Position = UDim2.new(0.5, -140, 0, 15) -- Сразу на экране сверху
 card.BackgroundColor3 = Color3.fromRGB(12, 9, 20)
+card.BackgroundTransparency = 1 -- Начало из прозрачности
 card.BorderSizePixel = 0
 card.ClipsDescendants = true
-card.ZIndex = 200
+card.ZIndex = 500
 card.Parent = loaderGui
 
 local cardCorner = Instance.new("UICorner")
-cardCorner.CornerRadius = UDim.new(0, 10)
+cardCorner.CornerRadius = UDim.new(0, 12)
 cardCorner.Parent = card
 
 local cardStroke = Instance.new("UIStroke")
-cardStroke.Thickness = 1.6
-cardStroke.Color = Color3.fromRGB(160, 70, 255)
+cardStroke.Thickness = 1.8
+cardStroke.Color = Color3.fromRGB(180, 90, 255)
+cardStroke.Transparency = 1
 cardStroke.Parent = card
 
-local cardGrad = Instance.new("UIGradient")
-cardGrad.Color = ColorSequence.new({
+local strokeGrad = Instance.new("UIGradient")
+strokeGrad.Color = ColorSequence.new({
     ColorSequenceKeypoint.new(0.0, Color3.fromRGB(138, 43, 226)),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(218, 112, 214)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(230, 120, 255)),
     ColorSequenceKeypoint.new(1.0, Color3.fromRGB(75, 0, 130))
 })
-cardGrad.Parent = cardStroke
+strokeGrad.Parent = cardStroke
 
--- Поворот градиента обводки
+-- Вращение градиента рамки
 local rotConn = RunService.RenderStepped:Connect(function(dt)
-    if cardGrad and cardGrad.Parent then
-        cardGrad.Rotation = (cardGrad.Rotation + dt * 60) % 360
+    if strokeGrad and strokeGrad.Parent then
+        strokeGrad.Rotation = (strokeGrad.Rotation + dt * 60) % 360
     end
 end)
 
@@ -72,44 +76,45 @@ local icon = Instance.new("TextLabel")
 icon.Size = UDim2.new(0, 36, 0, 36)
 icon.Position = UDim2.new(0, 10, 0, 8)
 icon.BackgroundTransparency = 1
-icon.Text = "🌌"
+icon.Text = "🚀"
 icon.TextSize = 22
-icon.ZIndex = 201
+icon.ZIndex = 501
 icon.Parent = card
 
 -- Заголовок
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, -56, 0, 16)
-titleLabel.Position = UDim2.new(0, 48, 0, 8)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "BABFT AUTO FARM"
-titleLabel.TextColor3 = Color3.fromRGB(230, 210, 255)
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextSize = 11
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.ZIndex = 201
-titleLabel.Parent = card
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -56, 0, 16)
+title.Position = UDim2.new(0, 50, 0, 8)
+title.BackgroundTransparency = 1
+title.Text = "BABFT AUTO FARM"
+title.TextColor3 = Color3.fromRGB(235, 215, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 12
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.ZIndex = 501
+title.Parent = card
 
--- Текст статуса (что именно грузится)
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, -56, 0, 14)
-statusLabel.Position = UDim2.new(0, 48, 0, 24)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Инициализация модулей..."
-statusLabel.TextColor3 = Color3.fromRGB(255, 220, 120)
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextSize = 10
-statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-statusLabel.ZIndex = 201
-statusLabel.Parent = card
+-- Статус загрузки
+local statusText = Instance.new("TextLabel")
+statusText.Size = UDim2.new(1, -56, 0, 14)
+statusText.Position = UDim2.new(0, 50, 0, 26)
+statusText.BackgroundTransparency = 1
+statusText.Text = "Подготовка окружения..."
+statusText.TextColor3 = Color3.fromRGB(255, 215, 110)
+statusText.Font = Enum.Font.Gotham
+statusText.TextSize = 10
+statusText.TextXAlignment = Enum.TextXAlignment.Left
+statusText.ZIndex = 501
+statusText.Parent = card
 
 -- Прогресс-бар
 local barBg = Instance.new("Frame")
 barBg.Size = UDim2.new(1, -20, 0, 6)
-barBg.Position = UDim2.new(0, 10, 0, 52)
-barBg.BackgroundColor3 = Color3.fromRGB(24, 18, 38)
+barBg.Position = UDim2.new(0, 10, 0, 54)
+barBg.BackgroundColor3 = Color3.fromRGB(25, 18, 38)
+barBg.BackgroundTransparency = 1
 barBg.BorderSizePixel = 0
-barBg.ZIndex = 201
+barBg.ZIndex = 501
 barBg.Parent = card
 
 local barCorner = Instance.new("UICorner")
@@ -120,7 +125,7 @@ local barFill = Instance.new("Frame")
 barFill.Size = UDim2.new(0, 0, 1, 0)
 barFill.BackgroundColor3 = Color3.fromRGB(160, 60, 255)
 barFill.BorderSizePixel = 0
-barFill.ZIndex = 202
+barFill.ZIndex = 502
 barFill.Parent = barBg
 
 local fillCorner = Instance.new("UICorner")
@@ -131,87 +136,97 @@ local fillGrad = Instance.new("UIGradient")
 fillGrad.Color = ColorSequence.new(Color3.fromRGB(138, 43, 226), Color3.fromRGB(80, 240, 140))
 fillGrad.Parent = barFill
 
--- Анимация выезда плашки на экран
-TweenService:Create(card, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-    Position = UDim2.new(0.5, -135, 0.04, 0)
+-- Плавное появление плашки
+TweenService:Create(card, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    BackgroundTransparency = 0.05
+}):Play()
+TweenService:Create(cardStroke, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    Transparency = 0
+}):Play()
+TweenService:Create(barBg, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    BackgroundTransparency = 0
 }):Play()
 
--- Функция обновления статуса карточки
-local function setProgress(text, progressRatio)
-    statusLabel.Text = text
-    TweenService:Create(barFill, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+-- Функция обновления шкалы и текста
+local function setStatus(msg, progressRatio, isError)
+    statusText.Text = msg
+    if isError then
+        statusText.TextColor3 = Color3.fromRGB(255, 80, 90)
+        icon.Text = "⚠"
+    end
+    TweenService:Create(barFill, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
         Size = UDim2.new(math.clamp(progressRatio, 0, 1), 0, 1, 0)
     }):Play()
 end
 
--- 3. Функция скачивания и выполнения модулей
-local function executeScript(url, logName)
-    local fetchSuccess, code = pcall(function()
+-- 3. Безопасный загрузчик файлов
+local function fetchAndRun(url, logName)
+    local fetchOk, code = pcall(function()
         return game:HttpGet(url .. "?t=" .. tostring(os.time()))
     end)
 
-    if not fetchSuccess or not code or #code == 0 then
-        warn(string.format("[BABFT Loader] Ошибка скачивания [%s]: %s", logName, tostring(code)))
+    if not fetchOk or not code or #code == 0 then
+        setStatus("Ошибка сети: " .. logName, 0.5, true)
+        warn(string.format("[BABFT Loader] Не удалось загрузить %s: %s", logName, tostring(code)))
         return false
     end
 
-    local loadSuccess, runError = pcall(function()
-        local func, compileErr = loadstring(code)
-        if not func then error("Ошибка компиляции: " .. tostring(compileErr)) end
-        func()
+    if string.find(code, "404: Not Found") then
+        setStatus("404 Файл не найден: " .. logName, 0.5, true)
+        warn("[BABFT Loader] 404: Файл отсутствует на GitHub: " .. url)
+        return false
+    end
+
+    local compileOk, runErr = pcall(function()
+        local fn, err = loadstring(code)
+        if not fn then error(err) end
+        fn()
     end)
 
-    if not loadSuccess then
-        warn(string.format("[BABFT Loader] Ошибка выполнения [%s]: %s", logName, tostring(runError)))
+    if not compileOk then
+        setStatus("Ошибка в коде: " .. logName, 0.5, true)
+        warn(string.format("[BABFT Loader] Сбой выполнения %s: %s", logName, tostring(runErr)))
         return false
     end
 
     return true
 end
 
--- 4. Загрузка компонентов с анимацией
+-- 4. Загрузка модулей
 local BASE = "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/"
 
-setProgress("Загрузка: Ядро (Main)...", 0.15)
-if executeScript(BASE .. "Auto-farm-BABFT-Main.lua", "Main Logic") then
-    task.wait(0.12)
+task.spawn(function()
+    task.wait(0.15)
     
-    setProgress("Загрузка: Сеть и База (Data)...", 0.35)
-    if executeScript(BASE .. "Auto-farm-BABFT-Data.lua", "Data & Network") then
-        task.wait(0.12)
-        
-        setProgress("Загрузка: Интерфейс (GUI)...", 0.58)
-        if executeScript(BASE .. "Auto-Farm-BABFT-GUI.lua", "GUI Interface") then
-            task.wait(0.12)
-            
-            setProgress("Загрузка: Космо-фон (Space)...", 0.78)
-            executeScript(BASE .. "Auto-Farm-BABFT-Space.lua", "Space FX")
-            task.wait(0.12)
-            
-            setProgress("Загрузка: Корзина (Cart)...", 0.92)
-            executeScript(BASE .. "Auto-Farm-BABFT-Cart.lua", "Shopping Cart")
-            task.wait(0.1)
+    -- Шаг 1: Главная логика
+    setStatus("Загрузка: Ядро (Main)...", 0.25)
+    if not fetchAndRun(BASE .. "Auto-farm-BABFT-Main.lua", "Main Logic") then return end
+    task.wait(0.15)
 
-            -- Завершение загрузки
-            setProgress("Готово! Приятного фарма :)", 1.0)
-            statusLabel.TextColor3 = Color3.fromRGB(80, 240, 140)
-            icon.Text = "✔"
+    -- Шаг 2: Интерфейс
+    setStatus("Загрузка: Интерфейс (GUI)...", 0.65)
+    if not fetchAndRun(BASE .. "Auto-Farm-BABFT-GUI.lua", "GUI Interface") then return end
+    task.wait(0.15)
 
-            -- Пауза и плавный уезд вверх
-            task.delay(1.2, function()
-                local closeTween = TweenService:Create(card, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
-                    Position = UDim2.new(0.5, -135, -0.18, 0)
-                })
-                closeTween:Play()
-                closeTween.Completed:Connect(function()
-                    if rotConn then rotConn:Disconnect() end
-                    if loaderGui then loaderGui:Destroy() end
-                end)
-            end)
-        end
-    end
-else
-    setProgress("Ошибка загрузки ядра!", 0.2)
-    statusLabel.TextColor3 = Color3.fromRGB(255, 80, 90)
-    icon.Text = "⚠"
-end
+    -- Шаг 3: Корзина покупок
+    setStatus("Загрузка: Корзина (Cart)...", 0.9)
+    fetchAndRun(BASE .. "Auto-Farm-BABFT-Cart.lua", "Shopping Cart")
+    task.wait(0.1)
+
+    -- Финал
+    setStatus("Готово! Приятного фарма :)", 1.0)
+    statusText.TextColor3 = Color3.fromRGB(80, 240, 140)
+    icon.Text = "✔"
+
+    task.delay(1.5, function()
+        local closeTween = TweenService:Create(card, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Position = UDim2.new(0.5, -140, 0, -85),
+            BackgroundTransparency = 1
+        })
+        closeTween:Play()
+        closeTween.Completed:Connect(function()
+            if rotConn then rotConn:Disconnect() end
+            if loaderGui then loaderGui:Destroy() end
+        end)
+    end)
+end)
