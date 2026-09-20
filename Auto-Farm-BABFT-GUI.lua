@@ -112,7 +112,7 @@ function API.showAchievementToast(title, text)
     tTitle.Font = Enum.Font.GothamBold
     tTitle.TextSize = 11
     tTitle.TextXAlignment = Enum.TextXAlignment.Left
-    tTitle.ZIndex = 101
+    tIndex = 101
     tTitle.Parent = toast
 
     local tDesc = Instance.new("TextLabel")
@@ -149,7 +149,7 @@ UI.blackScreenFrame = blackScreenFrame
 
 local bsTitle = Instance.new("TextLabel")
 bsTitle.Size = UDim2.new(1, 0, 0, 30)
-bsTitle.Position = UDim2.new(0, 0, 0, 0.33, 0)
+bsTitle.Position = UDim2.new(0, 0, 0.33, 0)
 bsTitle.BackgroundTransparency = 1
 bsTitle.Text = "🔋 РЕЖИМ ЭНЕРГОСБЕРЕЖЕНИЯ"
 bsTitle.TextColor3 = Color3.fromRGB(138, 43, 226)
@@ -160,7 +160,7 @@ bsTitle.Parent = blackScreenFrame
 
 local bsStats = Instance.new("TextLabel")
 bsStats.Size = UDim2.new(1, 0, 0, 85)
-bsStats.Position = UDim2.new(0, 0, 0, 0.39, 0)
+bsStats.Position = UDim2.new(0, 0, 0.39, 0)
 bsStats.BackgroundTransparency = 1
 bsStats.Text = "Заработано: +0 Gold\nСкорость: сбор данных...\nВремя: 00:00:00"
 bsStats.TextColor3 = Color3.fromRGB(200, 190, 225)
@@ -578,7 +578,7 @@ scrollFrame.Position = UDim2.new(0, 0, 0, 34)
 scrollFrame.BackgroundTransparency = 1
 scrollFrame.ScrollBarThickness = 3
 scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(138, 43, 226)
-scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 610)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 635)
 scrollFrame.ZIndex = 20
 scrollFrame.Parent = mainFrame
 UI.scrollFrame = scrollFrame
@@ -688,9 +688,44 @@ stageDelayBox.Parent = stageDelayContainer
 createCorner(stageDelayBox, 5)
 UI.stageDelayBox = stageDelayBox
 
+-- Настраиваемый этап сундука (1-10)
+local chestStageContainer = Instance.new("Frame")
+chestStageContainer.Size = UDim2.new(1, -24, 0, 18)
+chestStageContainer.Position = UDim2.new(0, 12, 0, 72)
+chestStageContainer.BackgroundTransparency = 1
+chestStageContainer.ZIndex = 21
+chestStageContainer.Parent = scrollFrame
+
+local chestStageLabel = Instance.new("TextLabel")
+chestStageLabel.Size = UDim2.new(1, -50, 1, 0)
+chestStageLabel.Position = UDim2.new(0, 0, 0, 0)
+chestStageLabel.BackgroundTransparency = 1
+chestStageLabel.Text = "Этап сундука (1-10):"
+chestStageLabel.TextColor3 = Color3.fromRGB(200, 190, 225)
+chestStageLabel.Font = Enum.Font.Gotham
+chestStageLabel.TextSize = 11
+chestStageLabel.TextXAlignment = Enum.TextXAlignment.Left
+chestStageLabel.ZIndex = 22
+chestStageLabel.Parent = chestStageContainer
+
+local chestStageBox = Instance.new("TextBox")
+chestStageBox.Size = UDim2.new(0, 45, 1, 0)
+chestStageBox.Position = UDim2.new(1, -45, 0, 0)
+chestStageBox.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
+chestStageBox.Text = tostring(API.chestStage or 2)
+chestStageBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+chestStageBox.Font = Enum.Font.GothamBold
+chestStageBox.TextSize = 11
+chestStageBox.BorderSizePixel = 0
+chestStageBox.ClearTextOnFocus = false
+chestStageBox.ZIndex = 22
+chestStageBox.Parent = chestStageContainer
+createCorner(chestStageBox, 5)
+UI.chestStageBox = chestStageBox
+
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Size = UDim2.new(1, -24, 0, 14)
-statusLabel.Position = UDim2.new(0, 12, 0, 73)
+statusLabel.Position = UDim2.new(0, 12, 0, 94)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Text = "Статус: Оффлайн"
 statusLabel.TextColor3 = Color3.fromRGB(180, 165, 205)
@@ -702,7 +737,7 @@ UI.statusLabel = statusLabel
 
 local startAndCurrentGoldLabel = Instance.new("TextLabel")
 startAndCurrentGoldLabel.Size = UDim2.new(1, -24, 0, 14)
-startAndCurrentGoldLabel.Position = UDim2.new(0, 12, 0, 88)
+startAndCurrentGoldLabel.Position = UDim2.new(0, 12, 0, 109)
 startAndCurrentGoldLabel.BackgroundTransparency = 1
 startAndCurrentGoldLabel.Text = "Старт: 0  |  Сейчас: " .. tostring(API.getCurrentGold())
 startAndCurrentGoldLabel.TextColor3 = Color3.fromRGB(200, 190, 225)
@@ -714,7 +749,7 @@ UI.startAndCurrentGoldLabel = startAndCurrentGoldLabel
 
 local goldTrackerLabel = Instance.new("TextLabel")
 goldTrackerLabel.Size = UDim2.new(1, -24, 0, 14)
-goldTrackerLabel.Position = UDim2.new(0, 12, 0, 103)
+goldTrackerLabel.Position = UDim2.new(0, 12, 0, 124)
 goldTrackerLabel.BackgroundTransparency = 1
 goldTrackerLabel.Text = "Заработано: +0 Gold"
 goldTrackerLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
@@ -726,7 +761,7 @@ UI.goldTrackerLabel = goldTrackerLabel
 
 local goldSpeedLabel = Instance.new("TextLabel")
 goldSpeedLabel.Size = UDim2.new(1, -24, 0, 14)
-goldSpeedLabel.Position = UDim2.new(0, 12, 0, 118)
+goldSpeedLabel.Position = UDim2.new(0, 12, 0, 139)
 goldSpeedLabel.BackgroundTransparency = 1
 goldSpeedLabel.Text = "Скорость: ~0 G/ч (0.0 G/мин)"
 goldSpeedLabel.TextColor3 = Color3.fromRGB(130, 240, 175)
@@ -738,7 +773,7 @@ UI.goldSpeedLabel = goldSpeedLabel
 
 local minuteStatsLabel = Instance.new("TextLabel")
 minuteStatsLabel.Size = UDim2.new(1, -24, 0, 14)
-minuteStatsLabel.Position = UDim2.new(0, 12, 0, 133)
+minuteStatsLabel.Position = UDim2.new(0, 12, 0, 154)
 minuteStatsLabel.BackgroundTransparency = 1
 minuteStatsLabel.Text = "Мин. статистика: нет данных"
 minuteStatsLabel.TextColor3 = Color3.fromRGB(215, 185, 255)
@@ -750,7 +785,7 @@ UI.minuteStatsLabel = minuteStatsLabel
 
 local etaLabel = Instance.new("TextLabel")
 etaLabel.Size = UDim2.new(1, -24, 0, 14)
-etaLabel.Position = UDim2.new(0, 12, 0, 148)
+etaLabel.Position = UDim2.new(0, 12, 0, 169)
 etaLabel.BackgroundTransparency = 1
 etaLabel.Text = "До покупки: Выкл"
 etaLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
@@ -762,7 +797,7 @@ UI.etaLabel = etaLabel
 
 local timeTrackerLabel = Instance.new("TextLabel")
 timeTrackerLabel.Size = UDim2.new(1, -24, 0, 14)
-timeTrackerLabel.Position = UDim2.new(0, 12, 0, 163)
+timeTrackerLabel.Position = UDim2.new(0, 12, 0, 184)
 timeTrackerLabel.BackgroundTransparency = 1
 timeTrackerLabel.Text = "Время фарма: 00:00:00"
 timeTrackerLabel.TextColor3 = Color3.fromRGB(165, 195, 255)
@@ -775,7 +810,7 @@ UI.timeTrackerLabel = timeTrackerLabel
 -- Авто-закупка (одиночная)
 local autoBuyRow = Instance.new("Frame")
 autoBuyRow.Size = UDim2.new(1, -24, 0, 22)
-autoBuyRow.Position = UDim2.new(0, 12, 0, 181)
+autoBuyRow.Position = UDim2.new(0, 12, 0, 202)
 autoBuyRow.BackgroundTransparency = 1
 autoBuyRow.ZIndex = 21
 autoBuyRow.Parent = scrollFrame
@@ -822,7 +857,7 @@ UI.amountBox = amountBox
 
 local itemInputBox = Instance.new("TextBox")
 itemInputBox.Size = UDim2.new(1, -24, 0, 20)
-itemInputBox.Position = UDim2.new(0, 12, 0, 207)
+itemInputBox.Position = UDim2.new(0, 12, 0, 228)
 itemInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 itemInputBox.PlaceholderText = "Введите блок (напр. Лего)..."
 itemInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -839,7 +874,7 @@ UI.itemInputBox = itemInputBox
 
 local itemStatusLabel = Instance.new("TextLabel")
 itemStatusLabel.Size = UDim2.new(1, -24, 0, 15)
-itemStatusLabel.Position = UDim2.new(0, 12, 0, 230)
+itemStatusLabel.Position = UDim2.new(0, 12, 0, 251)
 itemStatusLabel.BackgroundTransparency = 1
 itemStatusLabel.Text = "Введите название для поиска"
 itemStatusLabel.TextColor3 = Color3.fromRGB(140, 130, 160)
@@ -852,7 +887,7 @@ UI.itemStatusLabel = itemStatusLabel
 -- Тумблеры
 local antiDarkBtn = Instance.new("TextButton")
 antiDarkBtn.Size = UDim2.new(1, -24, 0, 20)
-antiDarkBtn.Position = UDim2.new(0, 12, 0, 248)
+antiDarkBtn.Position = UDim2.new(0, 12, 0, 269)
 antiDarkBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 antiDarkBtn.Text = "Анти-темнота: ВКЛ"
 antiDarkBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -866,7 +901,7 @@ UI.antiDarkBtn = antiDarkBtn
 
 local antiHazardBtn = Instance.new("TextButton")
 antiHazardBtn.Size = UDim2.new(1, -24, 0, 20)
-antiHazardBtn.Position = UDim2.new(0, 12, 0, 271)
+antiHazardBtn.Position = UDim2.new(0, 12, 0, 292)
 antiHazardBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВКЛ"
 antiHazardBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -880,7 +915,7 @@ UI.antiHazardBtn = antiHazardBtn
 
 local batterySaverBtn = Instance.new("TextButton")
 batterySaverBtn.Size = UDim2.new(1, -24, 0, 20)
-batterySaverBtn.Position = UDim2.new(0, 12, 0, 294)
+batterySaverBtn.Position = UDim2.new(0, 12, 0, 315)
 batterySaverBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
 batterySaverBtn.Text = "🔋 Ночной режим (Экран): ВЫКЛ"
 batterySaverBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
@@ -894,7 +929,7 @@ UI.batterySaverBtn = batterySaverBtn
 
 local antiLagBtn = Instance.new("TextButton")
 antiLagBtn.Size = UDim2.new(1, -24, 0, 20)
-antiLagBtn.Position = UDim2.new(0, 12, 0, 317)
+antiLagBtn.Position = UDim2.new(0, 12, 0, 338)
 antiLagBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
 antiLagBtn.Text = "⚡ Анти-лаг очистка: ВЫКЛ"
 antiLagBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
@@ -908,7 +943,7 @@ UI.antiLagBtn = antiLagBtn
 
 local smoothnessBtn = Instance.new("TextButton")
 smoothnessBtn.Size = UDim2.new(1, -24, 0, 20)
-smoothnessBtn.Position = UDim2.new(0, 12, 0, 340)
+smoothnessBtn.Position = UDim2.new(0, 12, 0, 361)
 smoothnessBtn.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
 smoothnessBtn.Text = "🚀 Плавность: " .. API.smoothnessNames[API.smoothnessMode]
 smoothnessBtn.TextColor3 = Color3.fromRGB(225, 210, 255)
@@ -922,7 +957,7 @@ UI.smoothnessBtn = smoothnessBtn
 
 local spaceBgBtn = Instance.new("TextButton")
 spaceBgBtn.Size = UDim2.new(1, -24, 0, 20)
-spaceBgBtn.Position = UDim2.new(0, 12, 0, 363)
+spaceBgBtn.Position = UDim2.new(0, 12, 0, 384)
 spaceBgBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 spaceBgBtn.Text = "🌌 Космо-фон: ВКЛ"
 spaceBgBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -936,7 +971,7 @@ UI.spaceBgBtn = spaceBgBtn
 
 local soundToggleBtn = Instance.new("TextButton")
 soundToggleBtn.Size = UDim2.new(1, -24, 0, 20)
-soundToggleBtn.Position = UDim2.new(0, 12, 0, 386)
+soundToggleBtn.Position = UDim2.new(0, 12, 0, 407)
 soundToggleBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 soundToggleBtn.Text = "🔊 Звуковые эффекты: ВКЛ"
 soundToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -951,7 +986,7 @@ UI.soundToggleBtn = soundToggleBtn
 -- Тумблер кастомных звуков шагов
 local customSoundsBtn = Instance.new("TextButton")
 customSoundsBtn.Size = UDim2.new(1, -24, 0, 20)
-customSoundsBtn.Position = UDim2.new(0, 12, 0, 409)
+customSoundsBtn.Position = UDim2.new(0, 12, 0, 430)
 customSoundsBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 customSoundsBtn.Text = "🐾 Кастомные звуки (Шаги): ВКЛ"
 customSoundsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -966,7 +1001,7 @@ UI.customSoundsBtn = customSoundsBtn
 -- Кнопка открытия Корзины
 local cartOpenBtn = Instance.new("TextButton")
 cartOpenBtn.Size = UDim2.new(1, -24, 0, 22)
-cartOpenBtn.Position = UDim2.new(0, 12, 0, 432)
+cartOpenBtn.Position = UDim2.new(0, 12, 0, 453)
 cartOpenBtn.BackgroundColor3 = Color3.fromRGB(110, 30, 180)
 cartOpenBtn.Text = "🛒 КОРЗИНА ПОКУПОК"
 cartOpenBtn.TextColor3 = Color3.fromRGB(255, 230, 130)
@@ -981,7 +1016,7 @@ createStroke(cartOpenBtn, Color3.fromRGB(218, 112, 214), 1)
 -- Поля Telegram
 local tgTokenInputBox = Instance.new("TextBox")
 tgTokenInputBox.Size = UDim2.new(1, -24, 0, 20)
-tgTokenInputBox.Position = UDim2.new(0, 12, 0, 458)
+tgTokenInputBox.Position = UDim2.new(0, 12, 0, 479)
 tgTokenInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 tgTokenInputBox.PlaceholderText = "Telegram Bot Token..."
 tgTokenInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -998,7 +1033,7 @@ UI.tgTokenInputBox = tgTokenInputBox
 
 local tgChatIdInputBox = Instance.new("TextBox")
 tgChatIdInputBox.Size = UDim2.new(1, -24, 0, 20)
-tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 481)
+tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 502)
 tgChatIdInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 tgChatIdInputBox.PlaceholderText = "Telegram Chat ID (число)..."
 tgChatIdInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -1016,7 +1051,7 @@ UI.tgChatIdInputBox = tgChatIdInputBox
 -- Сохранить и Старт
 local saveBtn = Instance.new("TextButton")
 saveBtn.Size = UDim2.new(1, -24, 0, 24)
-saveBtn.Position = UDim2.new(0, 12, 0, 505)
+saveBtn.Position = UDim2.new(0, 12, 0, 526)
 saveBtn.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
 saveBtn.Text = "💾 СОХРАНИТЬ НАСТРОЙКИ"
 saveBtn.TextColor3 = Color3.fromRGB(215, 195, 255)
@@ -1031,7 +1066,7 @@ UI.saveBtn = saveBtn
 
 local toggleButton = Instance.new("TextButton")
 toggleButton.Size = UDim2.new(1, -24, 0, 32)
-toggleButton.Position = UDim2.new(0, 12, 0, 533)
+toggleButton.Position = UDim2.new(0, 12, 0, 554)
 toggleButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 toggleButton.Text = "START AUTO FARM"
 toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -1045,7 +1080,7 @@ UI.toggleButton = toggleButton
 
 local creditsLabel = Instance.new("TextLabel")
 creditsLabel.Size = UDim2.new(1, 0, 0, 16)
-creditsLabel.Position = UDim2.new(0, 0, 0, 571)
+creditsLabel.Position = UDim2.new(0, 0, 0, 592)
 creditsLabel.BackgroundTransparency = 1
 creditsLabel.Text = "By: Probothotspot"
 creditsLabel.TextColor3 = Color3.fromRGB(175, 150, 220)
@@ -1193,6 +1228,17 @@ stageDelayBox.FocusLost:Connect(function()
     API.saveConfig()
 end)
 
+chestStageBox.FocusLost:Connect(function()
+    local val = tonumber(chestStageBox.Text)
+    if val then
+        API.chestStage = math.clamp(math.floor(val), 1, 10)
+    else
+        API.chestStage = 2
+    end
+    chestStageBox.Text = tostring(API.chestStage)
+    API.saveConfig()
+end)
+
 amountBox.FocusLost:Connect(function()
     local val = tonumber(amountBox.Text)
     if val and val > 0 then buyAmount = math.floor(val) else amountBox.Text = tostring(API.buyAmount) end
@@ -1225,13 +1271,13 @@ itemInputBox:GetPropertyChangedSignal("Text"):Connect(function()
     local realName, price = API.searchItemInGame(text)
     if realName and price > 0 then
         API.targetItemRealName = realName
-        API.targetItemPrice = price
+        targetItemPrice = price
         itemStatusLabel.Text = "Блок найден: " .. realName .. " (" .. tostring(price) .. " Gold)"
         itemStatusLabel.TextColor3 = Color3.fromRGB(80, 240, 130)
         checkAndAutoBuy()
     else
-        API.targetItemRealName = ""
-        API.targetItemPrice = 0
+        targetItemRealName = ""
+        targetItemPrice = 0
         itemStatusLabel.Text = "Блок не найден"
         itemStatusLabel.TextColor3 = Color3.fromRGB(255, 80, 90)
     end
@@ -1261,7 +1307,7 @@ customSoundsBtn.MouseButton1Click:Connect(function()
     customSoundsBtn.Text = API.customSoundsActive and "🐾 Кастомные звуки (Шаги): ВКЛ" or "🐾 Кастомные звуки (Шаги): ВЫКЛ"
     
     if API.customSoundsActive then
-        API.playStepSound() -- Одиночный проверочный шаг при включении
+        API.playStepSound()
     end
     
     if player.Character then
@@ -1271,7 +1317,7 @@ customSoundsBtn.MouseButton1Click:Connect(function()
 end)
 
 spaceBgBtn.MouseButton1Click:Connect(function()
-    API.playSfx(API.clickSfx)
+    playSfx(clickSfx)
     API.spaceBgActive = not API.spaceBgActive
     spaceBg.Visible = API.spaceBgActive
     spaceBgBtn.BackgroundColor3 = API.spaceBgActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
