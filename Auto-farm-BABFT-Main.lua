@@ -221,7 +221,10 @@ API.STAGE_COORDINATES = {
 API.CHEST_POSITION = Vector3.new(-55, -356, 9489)
 API.SPAWN_Z_MAX = 1200
 
--- Звуки
+-- Публичный официальный звук шагов Roblox (100% не блокируется приватностью)
+API.stepSoundId = "rbxassetid://9069609204"
+
+-- Базовые звуки UI
 pcall(function()
     local function createSound(id, vol)
         local s = Instance.new("Sound")
@@ -230,10 +233,9 @@ pcall(function()
         pcall(function() s.Parent = SoundService end)
         return s
     end
-    API.clickSfx = createSound(6895079853, 0.4)
-    API.coinSfx = createSound(5153734608, 0.5)
-    API.achievementSfx = createSound(5153724623, 0.7)
-    API.stepSfx = createSound(9114223170, 0.35)
+    API.clickSfx = createSound(6895079853, 0.5)
+    API.coinSfx = createSound(5153734608, 0.6)
+    API.achievementSfx = createSound(5153724623, 0.8)
 end)
 
 function API.playSfx(sfx)
@@ -242,7 +244,62 @@ function API.playSfx(sfx)
     end
 end
 
--- Обработка кастомных шагов
+-- Функция воспроизведения кастомного звука шага прямо из HRP
+function API.playStepSound()
+    if not API.customSoundsActive or not API.soundEffectsActive then return end
+    local char = player.Character
+    if char then
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            task.spawn(function()
+                local s = Instance.new("Sound")
+                s.Name = "CustomStepSFX"
+                s.SoundId = API.stepSoundId
+                s.Volume = 1.4
+                s.RollOffMaxDistance = 50
+                s.Parent = hrp
+                s:Play()
+                s.Ended:Connect(function()
+                    s:Destroy()
+                end)
+                task.delay(0.8, function()
+                    if s and s.Parent then s:Destroy() end
+                end)
+            end)
+        end
+    end
+end
+
+-- Применение кастомных звуков к персонажу (замена стандартного Running)
+function API.applyFootstepSounds(char)
+    if not char then return end
+    task.spawn(function()
+        local hrp = char:WaitForChild("HumanoidRootPart", 5)
+        if hrp then
+            local running = hrp:WaitForChild("Running", 5)
+            if running and running:IsA("Sound") then
+                if API.customSoundsActive and API.soundEffectsActive then
+                    running.SoundId = API.stepSoundId
+                    running.Volume = 1.2
+                else
+                    running.SoundId = "rbxasset://sounds/action_footsteps_plastic.mp3"
+                    running.Volume = 0.5
+                end
+            end
+        end
+    end)
+end
+
+player.CharacterAdded:Connect(function(newChar)
+    task.wait(0.5)
+    API.applyFootstepSounds(newChar)
+end)
+
+if player.Character then
+    API.applyFootstepSounds(player.Character)
+end
+
+-- Цикл отслеживания шагов в движении
 local lastStepTime = 0
 API.stepConn = RunService.Heartbeat:Connect(function()
     if not API.customSoundsActive or not API.soundEffectsActive then return end
@@ -251,11 +308,17 @@ API.stepConn = RunService.Heartbeat:Connect(function()
         local hum = char:FindFirstChildOfClass("Humanoid")
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if hum and hrp and hum.Health > 0 then
+            -- Глушим стандартный звук, если он пытается играть параллельно
+            local defaultRunning = hrp:FindFirstChild("Running")
+            if defaultRunning and defaultRunning.SoundId ~= API.stepSoundId then
+                defaultRunning.Volume = 0
+            end
+
             if hum.MoveDirection.Magnitude > 0.1 and hum.FloorMaterial ~= Enum.Material.Air then
-                local interval = (hum.WalkSpeed > 18 and 0.28 or 0.38)
+                local interval = (hum.WalkSpeed > 18 and 0.26 or 0.35)
                 if os.clock() - lastStepTime > interval then
                     lastStepTime = os.clock()
-                    API.playSfx(API.stepSfx)
+                    API.playStepSound()
                 end
             end
         end
@@ -612,7 +675,7 @@ function API.checkAndAutoBuy()
     end
 end
 
--- Точный расчет скорости и ETA
+-- Поминутная статистика и ETA
 function API.updateSpeedAndEtaMetrics()
     local UI = API.UI
     if not API.farming then
@@ -633,7 +696,7 @@ function API.updateSpeedAndEtaMetrics()
             if API.lastFinalizedMinute == completedMinutes then
                 API.minuteSamples[API.lastFinalizedMinute] = API.currentMinuteGold
                 API.minuteSampleSum = API.minuteSampleSum + API.currentMinuteGold
-                API.currentMinuteGold = 0
+                currentMinuteGold = 0
             else
                 API.minuteSamples[API.lastFinalizedMinute] = 0
             end
@@ -720,7 +783,7 @@ function API.updateGoldStats()
             API.playSfx(API.coinSfx)
 
             for _, m in ipairs(API.MILESTONES) do
-                if totalEarned >= m and not API.reachedMilestones[m] then
+                if API.totalEarned >= m and not API.reachedMilestones[m] then
                     API.reachedMilestones[m] = true
                     API.showAchievementToast("НОВОЕ ДОСТИЖЕНИЕ!", "Заработано +" .. tostring(m) .. " Gold!")
                     API.sendTelegramMessage(string.format("🏆 <b>ДОСТИЖЕНИЕ РАЗБЛОКИРОВАНО!</b>\nСессия принесла уже более <b>+%d Gold</b>!", m))
@@ -860,7 +923,7 @@ function API.startFarmingLoop()
                 if UI.statusLabel then UI.statusLabel.Text = "10 этап: ожидание спавна..." end
                 while API.farming do
                     task.wait(0.1)
-                    local curHrp = API.getCurrentHRP()
+                    local curHrp = getCurrentHRP()
                     if curHrp and curHrp.Position.Z < API.SPAWN_Z_MAX then break end
                 end
 
@@ -928,7 +991,7 @@ function API.startFarming()
 
     API.startGold = API.getCurrentGold()
     API.previousGold = API.startGold
-    totalEarned = 0
+    API.totalEarned = 0
     table.clear(API.reachedMilestones)
 
     API.statsStartTime = time()
@@ -995,7 +1058,7 @@ function API.fullCleanup()
     API.farming = false
     API.autoBuyActive = false
     API.autoStartOnJoin = false
-    API.disableClearVision()
+    disableClearVision()
     API.toggleAntiHazard(false)
     if API.toggleBlackScreen then API.toggleBlackScreen(false) end
 
@@ -1155,7 +1218,7 @@ function API.loadConfig()
                     end
                     API.toggleAntiHazard(API.antiHazardActive)
                 else
-                    API.toggleAntiHazard(true)
+                    toggleAntiHazard(true)
                 end
                 if data.antiLagActive ~= nil then
                     API.antiLagActive = data.antiLagActive
@@ -1167,7 +1230,7 @@ function API.loadConfig()
                     if API.antiLagActive then API.applyAntiLag(true) end
                 end
                 if data.spaceBgActive ~= nil then
-                    API.spaceBgActive = data.spaceBgActive
+                    spaceBgActive = data.spaceBgActive
                     if UI.spaceBg then UI.spaceBg.Visible = API.spaceBgActive end
                     if UI.spaceBgBtn then
                         UI.spaceBgBtn.BackgroundColor3 = API.spaceBgActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
@@ -1196,7 +1259,7 @@ function API.loadConfig()
                     end
                 end
 
-                -- Восстановление сохраненной геометрии окна
+                -- Восстановление координат и размера окна
                 if data.windowPosX and data.windowPosY and UI.mainFrame then
                     API.windowPosX = data.windowPosX
                     API.windowPosY = data.windowPosY
@@ -1303,7 +1366,7 @@ API.tgPollingThread = task.spawn(function()
         if API.httpRequest and API.tgToken ~= "" and API.tgChatId ~= "" and not API.isRejoining then
             pcall(function()
                 local pollUrl = "https://api.telegram.org/bot" .. API.tgToken .. "/getUpdates?offset=" .. tostring(API.lastUpdateId + 1) .. "&limit=5"
-                local res = API.httpRequest({ Url = pollUrl, Method = "GET" })
+                local res = httpRequest({ Url = pollUrl, Method = "GET" })
 
                 if res and res.Body then
                     local data = HttpService:JSONDecode(res.Body)
@@ -1321,14 +1384,14 @@ API.tgPollingThread = task.spawn(function()
                                         API.stopFarming()
                                         API.sendTelegramMessage("🛑 <b>Фарм остановлен дистанционно!</b>")
                                     else
-                                        API.sendTelegramMessage("⚠️ Фарм уже выключен.")
+                                        sendTelegramMessage("⚠️ Фарм уже выключен.")
                                     end
                                 elseif cmd == "/start" then
                                     if not API.farming then
                                         API.startFarming()
                                         API.sendTelegramMessage("🚀 <b>Фарм запущен дистанционно!</b>")
                                     else
-                                        API.sendTelegramMessage("⚠️ Фарм уже работает.")
+                                        sendTelegramMessage("⚠️ Фарм уже работает.")
                                     end
                                 elseif cmd == "/mode" then
                                     API.farmMode = (API.farmMode == "Chest" and "Gold" or "Chest")
@@ -1364,7 +1427,7 @@ API.tgPollingThread = task.spawn(function()
                                     end
                                     if API.antiLagActive then API.applyAntiLag(true) end
                                     API.saveConfig()
-                                    API.sendTelegramMessage("⚡ <b>Анти-лаг очистка:</b> " .. (API.antiLagActive and "ВКЛЮЧЕНА" or "ВЫКЛЮЧЕНА"))
+                                    API.sendTelegramMessage("⚡ <b>Анти-лаг очистка:</b> " .. (antiLagActive and "ВКЛЮЧЕНА" or "ВЫКЛЮЧЕНА"))
                                 elseif cmd == "/buy" then
                                     local itemArg = parts[2]
                                     local amountArg = tonumber(parts[3]) or 1
@@ -1374,7 +1437,7 @@ API.tgPollingThread = task.spawn(function()
                                         local success, resultMsg = API.executeBuy(itemArg, amountArg)
                                         if success then
                                             API.sendTelegramMessage("🛍 <b>" .. resultMsg .. "</b>")
-                                            API.showAchievementToast("ПОКУПКА ИЗ TELEGRAM", resultMsg)
+                                            showAchievementToast("ПОКУПКА ИЗ TELEGRAM", resultMsg)
                                         else
                                             API.sendTelegramMessage("❌ <b>Ошибка:</b> " .. resultMsg)
                                         end
@@ -1390,14 +1453,14 @@ API.tgPollingThread = task.spawn(function()
                                     API.saveConfig()
                                     API.sendTelegramMessage("🛡 <b>Защита от воды/урона:</b> " .. (API.antiHazardActive and "ВКЛ" or "ВЫКЛ"))
                                 elseif cmd == "/kill" or cmd == "/shutdown" then
-                                    API.saveConfig(false)
+                                    saveConfig(false)
                                     API.sendTelegramMessage("💀 <b>Скрипт полностью остановлен и деактивирован!</b>\nАвто-старт и авто-перезаход отключены.")
                                     API.fullCleanup()
                                 elseif cmd == "/status" then
                                     local currentG = API.getCurrentGold()
                                     local elapsed = API.farming and math.max(os.time() - API.startTime, 1) or 0
                                     local etaReportLine = ""
-                                    if API.autoBuyActive and API.targetItemPrice > 0 and API.buyAmount > 0 then
+                                    if API.autoBuyActive and API.targetItemPrice > 0 and buyAmount > 0 then
                                         local targetTotal = API.targetItemPrice * API.buyAmount
                                         local needed = targetTotal - currentG
                                         if needed <= 0 then
@@ -1423,7 +1486,7 @@ API.tgPollingThread = task.spawn(function()
                                         isBlackScreen and "ВКЛ" or "ВЫКЛ",
                                         formatTime(elapsed),
                                         currentG,
-                                        API.totalEarned
+                                        totalEarned
                                     )
                                     API.sendTelegramMessage(report)
                                 elseif cmd == "/rejoin" then
