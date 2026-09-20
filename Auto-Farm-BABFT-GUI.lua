@@ -149,7 +149,7 @@ UI.blackScreenFrame = blackScreenFrame
 
 local bsTitle = Instance.new("TextLabel")
 bsTitle.Size = UDim2.new(1, 0, 0, 30)
-bsTitle.Position = UDim2.new(0, 0, 0.33, 0)
+bsTitle.Position = UDim2.new(0, 0, 0, 0.33, 0)
 bsTitle.BackgroundTransparency = 1
 bsTitle.Text = "🔋 РЕЖИМ ЭНЕРГОСБЕРЕЖЕНИЯ"
 bsTitle.TextColor3 = Color3.fromRGB(138, 43, 226)
@@ -160,7 +160,7 @@ bsTitle.Parent = blackScreenFrame
 
 local bsStats = Instance.new("TextLabel")
 bsStats.Size = UDim2.new(1, 0, 0, 85)
-bsStats.Position = UDim2.new(0, 0, 0.39, 0)
+bsStats.Position = UDim2.new(0, 0, 0, 0.39, 0)
 bsStats.BackgroundTransparency = 1
 bsStats.Text = "Заработано: +0 Gold\nСкорость: сбор данных...\nВремя: 00:00:00"
 bsStats.TextColor3 = Color3.fromRGB(200, 190, 225)
@@ -490,7 +490,7 @@ API.cometThread = task.spawn(function()
     end
 end)
 
--- УЛЬТРА-ПЛАВНЫЙ МАСТЕР-РЕНДЕР (120+ FPS Delta-time)
+-- Ультра-плавный рендер (120+ FPS Delta-time)
 local simTime = 0
 local frameAccumulator = 0
 
@@ -653,7 +653,7 @@ delayBox.Parent = delayContainer
 createCorner(delayBox, 5)
 UI.delayBox = delayBox
 
--- Новая строка: Задержка телепортации по этапам
+-- Задержка телепортации
 local stageDelayContainer = Instance.new("Frame")
 stageDelayContainer.Size = UDim2.new(1, -24, 0, 18)
 stageDelayContainer.Position = UDim2.new(0, 12, 0, 52)
@@ -948,7 +948,7 @@ soundToggleBtn.Parent = scrollFrame
 createCorner(soundToggleBtn, 5)
 UI.soundToggleBtn = soundToggleBtn
 
--- Новая кнопка: Тумблер кастомных звуков шагов
+-- Тумблер кастомных звуков шагов
 local customSoundsBtn = Instance.new("TextButton")
 customSoundsBtn.Size = UDim2.new(1, -24, 0, 20)
 customSoundsBtn.Position = UDim2.new(0, 12, 0, 409)
@@ -1096,7 +1096,7 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- Перетаскивание с сохранением позиции
+-- Перетаскивание
 local dragging, dragStart, startPos
 topBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -1195,7 +1195,7 @@ end)
 
 amountBox.FocusLost:Connect(function()
     local val = tonumber(amountBox.Text)
-    if val and val > 0 then API.buyAmount = math.floor(val) else amountBox.Text = tostring(API.buyAmount) end
+    if val and val > 0 then buyAmount = math.floor(val) else amountBox.Text = tostring(API.buyAmount) end
     API.saveConfig()
     API.updateSpeedAndEtaMetrics()
 end)
@@ -1228,7 +1228,7 @@ itemInputBox:GetPropertyChangedSignal("Text"):Connect(function()
         API.targetItemPrice = price
         itemStatusLabel.Text = "Блок найден: " .. realName .. " (" .. tostring(price) .. " Gold)"
         itemStatusLabel.TextColor3 = Color3.fromRGB(80, 240, 130)
-        API.checkAndAutoBuy()
+        checkAndAutoBuy()
     else
         API.targetItemRealName = ""
         API.targetItemPrice = 0
@@ -1259,7 +1259,14 @@ customSoundsBtn.MouseButton1Click:Connect(function()
     customSoundsBtn.BackgroundColor3 = API.customSoundsActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     customSoundsBtn.TextColor3 = API.customSoundsActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
     customSoundsBtn.Text = API.customSoundsActive and "🐾 Кастомные звуки (Шаги): ВКЛ" or "🐾 Кастомные звуки (Шаги): ВЫКЛ"
-    API.playSfx(API.clickSfx)
+    
+    if API.customSoundsActive then
+        API.playStepSound() -- Одиночный проверочный шаг при включении
+    end
+    
+    if player.Character then
+        API.applyFootstepSounds(player.Character)
+    end
     API.saveConfig()
 end)
 
@@ -1274,7 +1281,7 @@ spaceBgBtn.MouseButton1Click:Connect(function()
 end)
 
 batterySaverBtn.MouseButton1Click:Connect(function()
-    API.playSfx(clickSfx)
+    playSfx(clickSfx)
     API.toggleBlackScreen(not API.isBlackScreen)
     batterySaverBtn.BackgroundColor3 = API.isBlackScreen and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     batterySaverBtn.TextColor3 = API.isBlackScreen and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
@@ -1282,17 +1289,17 @@ batterySaverBtn.MouseButton1Click:Connect(function()
 end)
 
 antiLagBtn.MouseButton1Click:Connect(function()
-    API.playSfx(API.clickSfx)
+    playSfx(clickSfx)
     API.antiLagActive = not API.antiLagActive
     antiLagBtn.BackgroundColor3 = API.antiLagActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     antiLagBtn.TextColor3 = API.antiLagActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
     antiLagBtn.Text = API.antiLagActive and "⚡ Анти-лаг очистка: ВКЛ" or "⚡ Анти-лаг очистка: ВЫКЛ"
     if API.antiLagActive then API.applyAntiLag(true) end
-    API.saveConfig()
+    saveConfig()
 end)
 
 antiHazardBtn.MouseButton1Click:Connect(function()
-    API.playSfx(API.clickSfx)
+    playSfx(clickSfx)
     API.toggleAntiHazard(not API.antiHazardActive)
     antiHazardBtn.BackgroundColor3 = API.antiHazardActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     antiHazardBtn.TextColor3 = API.antiHazardActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
@@ -1301,7 +1308,7 @@ antiHazardBtn.MouseButton1Click:Connect(function()
 end)
 
 antiDarkBtn.MouseButton1Click:Connect(function()
-    API.playSfx(API.clickSfx)
+    playSfx(clickSfx)
     API.antiDarknessActive = not API.antiDarknessActive
     antiDarkBtn.BackgroundColor3 = API.antiDarknessActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     antiDarkBtn.TextColor3 = API.antiDarknessActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
