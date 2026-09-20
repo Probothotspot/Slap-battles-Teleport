@@ -197,10 +197,10 @@ bsUnlockBtn.MouseButton1Click:Connect(function()
 end)
 
 -- Главное окно
-local savedWindowSize = UDim2.new(0, 260, 0, 320)
+local savedWindowSize = UDim2.new(0, API.windowSizeX or 260, 0, API.windowSizeY or 320)
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = savedWindowSize
-mainFrame.Position = UDim2.new(0.5, -130, 0.28, 0)
+mainFrame.Position = UDim2.new(API.windowScaleX or 0.5, API.windowPosX or -130, API.windowScaleY or 0.28, API.windowPosY or 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(10, 8, 16)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -319,15 +319,6 @@ saturnBands.Color = ColorSequence.new({
 saturnBands.Rotation = 66
 saturnBands.Parent = saturnGlobe
 
-local saturnShadow = Instance.new("Frame")
-saturnShadow.Size = UDim2.new(1.2, 0, 1.2, 0)
-saturnShadow.Position = UDim2.new(-0.25, 0, -0.1, 0)
-saturnShadow.BackgroundColor3 = Color3.fromRGB(8, 6, 14)
-saturnShadow.BorderSizePixel = 0
-saturnShadow.ZIndex = 2
-saturnShadow.Parent = saturnGlobe
-createCorner(saturnShadow, 100)
-
 local ssGrad = Instance.new("UIGradient")
 ssGrad.Transparency = NumberSequence.new({
     NumberSequenceKeypoint.new(0, 1),
@@ -336,7 +327,17 @@ ssGrad.Transparency = NumberSequence.new({
     NumberSequenceKeypoint.new(1, 0)
 })
 ssGrad.Rotation = 45
-ssGrad.Parent = saturnShadow
+
+local saturnShadow = Instance.new("Frame")
+saturnShadow.Size = UDim2.new(1.2, 0, 1.2, 0)
+saturnShadow.Position = UDim2.new(-0.25, 0, -0.1, 0)
+saturnShadow.BackgroundColor3 = Color3.fromRGB(8, 6, 14)
+saturnShadow.BorderSizePixel = 0
+saturnShadow.ZIndex = 2
+saturnShadow.Parent = saturnGlobe
+createCorner(saturnShadow, 100)
+local ssGradClone = ssGrad:Clone()
+ssGradClone.Parent = saturnShadow
 
 local frontRingContainer = Instance.new("Frame")
 frontRingContainer.Size = UDim2.new(1, 0, 0.52, 0)
@@ -489,17 +490,15 @@ API.cometThread = task.spawn(function()
     end
 end)
 
--- Мастер-рендер планет
+-- УЛЬТРА-ПЛАВНЫЙ МАСТЕР-РЕНДЕР (120+ FPS Delta-time)
 local simTime = 0
 local frameAccumulator = 0
-local gradStepCounter = 0
 
 API.masterRenderConn = RunService.RenderStepped:Connect(function(dt)
     if API.isMinimized or API.isBlackScreen then return end
 
-    gradStepCounter = gradStepCounter + 1
-    if gradStepCounter % 2 == 0 and strokeGradient and strokeGradient.Parent then
-        strokeGradient.Rotation = (strokeGradient.Rotation + 1.6) % 360
+    if strokeGradient and strokeGradient.Parent then
+        strokeGradient.Rotation = (strokeGradient.Rotation + dt * 45) % 360
     end
 
     if not API.spaceBgActive or not spaceBg.Visible then return end
@@ -513,16 +512,16 @@ API.masterRenderConn = RunService.RenderStepped:Connect(function(dt)
         simTime = simTime + frameAccumulator
         frameAccumulator = 0
 
-        local saturnX = -10 + math.sin(simTime * 0.48) * 14
-        local saturnY = math.cos(simTime * 0.48) * 8
+        local saturnX = -10 + math.sin(simTime * 0.45) * 12
+        local saturnY = math.cos(simTime * 0.45) * 7
         saturnContainer.Position = UDim2.new(0.68, saturnX, 0.15, saturnY)
 
-        local earthX = math.sin(simTime * 0.62) * 10
-        local earthY = -math.cos(simTime * 0.62) * 7
+        local earthX = math.sin(simTime * 0.55) * 8
+        local earthY = -math.cos(simTime * 0.55) * 6
         earthContainer.Position = UDim2.new(0.1, earthX, 0.62, earthY)
 
-        local marsX = math.cos(simTime * 0.55) * 8
-        local marsY = math.sin(simTime * 0.55) * 6
+        local marsX = math.cos(simTime * 0.5) * 6
+        local marsY = math.sin(simTime * 0.5) * 5
         mars.Position = UDim2.new(0.68, marsX, 0.78, marsY)
     end
 end)
@@ -579,7 +578,7 @@ scrollFrame.Position = UDim2.new(0, 0, 0, 34)
 scrollFrame.BackgroundTransparency = 1
 scrollFrame.ScrollBarThickness = 3
 scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(138, 43, 226)
-scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 565)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 610)
 scrollFrame.ZIndex = 20
 scrollFrame.Parent = mainFrame
 UI.scrollFrame = scrollFrame
@@ -619,6 +618,7 @@ goldModeBtn.Parent = modeContainer
 createCorner(goldModeBtn, 6)
 UI.goldModeBtn = goldModeBtn
 
+-- Задержка сундука
 local delayContainer = Instance.new("Frame")
 delayContainer.Size = UDim2.new(1, -24, 0, 18)
 delayContainer.Position = UDim2.new(0, 12, 0, 32)
@@ -628,6 +628,7 @@ delayContainer.Parent = scrollFrame
 
 local delayLabel = Instance.new("TextLabel")
 delayLabel.Size = UDim2.new(1, -50, 1, 0)
+delayLabel.Position = UDim2.new(0, 0, 0, 0)
 delayLabel.BackgroundTransparency = 1
 delayLabel.Text = "Задержка сундука (сек):"
 delayLabel.TextColor3 = Color3.fromRGB(200, 190, 225)
@@ -652,9 +653,44 @@ delayBox.Parent = delayContainer
 createCorner(delayBox, 5)
 UI.delayBox = delayBox
 
+-- Новая строка: Задержка телепортации по этапам
+local stageDelayContainer = Instance.new("Frame")
+stageDelayContainer.Size = UDim2.new(1, -24, 0, 18)
+stageDelayContainer.Position = UDim2.new(0, 12, 0, 52)
+stageDelayContainer.BackgroundTransparency = 1
+stageDelayContainer.ZIndex = 21
+stageDelayContainer.Parent = scrollFrame
+
+local stageDelayLabel = Instance.new("TextLabel")
+stageDelayLabel.Size = UDim2.new(1, -50, 1, 0)
+stageDelayLabel.Position = UDim2.new(0, 0, 0, 0)
+stageDelayLabel.BackgroundTransparency = 1
+stageDelayLabel.Text = "Задержка ТП (сек):"
+stageDelayLabel.TextColor3 = Color3.fromRGB(200, 190, 225)
+stageDelayLabel.Font = Enum.Font.Gotham
+stageDelayLabel.TextSize = 11
+stageDelayLabel.TextXAlignment = Enum.TextXAlignment.Left
+stageDelayLabel.ZIndex = 22
+stageDelayLabel.Parent = stageDelayContainer
+
+local stageDelayBox = Instance.new("TextBox")
+stageDelayBox.Size = UDim2.new(0, 45, 1, 0)
+stageDelayBox.Position = UDim2.new(1, -45, 0, 0)
+stageDelayBox.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
+stageDelayBox.Text = tostring(API.stageDelay)
+stageDelayBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+stageDelayBox.Font = Enum.Font.GothamBold
+stageDelayBox.TextSize = 11
+stageDelayBox.BorderSizePixel = 0
+stageDelayBox.ClearTextOnFocus = false
+stageDelayBox.ZIndex = 22
+stageDelayBox.Parent = stageDelayContainer
+createCorner(stageDelayBox, 5)
+UI.stageDelayBox = stageDelayBox
+
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Size = UDim2.new(1, -24, 0, 14)
-statusLabel.Position = UDim2.new(0, 12, 0, 53)
+statusLabel.Position = UDim2.new(0, 12, 0, 73)
 statusLabel.BackgroundTransparency = 1
 statusLabel.Text = "Статус: Оффлайн"
 statusLabel.TextColor3 = Color3.fromRGB(180, 165, 205)
@@ -666,7 +702,7 @@ UI.statusLabel = statusLabel
 
 local startAndCurrentGoldLabel = Instance.new("TextLabel")
 startAndCurrentGoldLabel.Size = UDim2.new(1, -24, 0, 14)
-startAndCurrentGoldLabel.Position = UDim2.new(0, 12, 0, 68)
+startAndCurrentGoldLabel.Position = UDim2.new(0, 12, 0, 88)
 startAndCurrentGoldLabel.BackgroundTransparency = 1
 startAndCurrentGoldLabel.Text = "Старт: 0  |  Сейчас: " .. tostring(API.getCurrentGold())
 startAndCurrentGoldLabel.TextColor3 = Color3.fromRGB(200, 190, 225)
@@ -678,7 +714,7 @@ UI.startAndCurrentGoldLabel = startAndCurrentGoldLabel
 
 local goldTrackerLabel = Instance.new("TextLabel")
 goldTrackerLabel.Size = UDim2.new(1, -24, 0, 14)
-goldTrackerLabel.Position = UDim2.new(0, 12, 0, 83)
+goldTrackerLabel.Position = UDim2.new(0, 12, 0, 103)
 goldTrackerLabel.BackgroundTransparency = 1
 goldTrackerLabel.Text = "Заработано: +0 Gold"
 goldTrackerLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
@@ -690,7 +726,7 @@ UI.goldTrackerLabel = goldTrackerLabel
 
 local goldSpeedLabel = Instance.new("TextLabel")
 goldSpeedLabel.Size = UDim2.new(1, -24, 0, 14)
-goldSpeedLabel.Position = UDim2.new(0, 12, 0, 98)
+goldSpeedLabel.Position = UDim2.new(0, 12, 0, 118)
 goldSpeedLabel.BackgroundTransparency = 1
 goldSpeedLabel.Text = "Скорость: ~0 G/ч (0.0 G/мин)"
 goldSpeedLabel.TextColor3 = Color3.fromRGB(130, 240, 175)
@@ -702,7 +738,7 @@ UI.goldSpeedLabel = goldSpeedLabel
 
 local minuteStatsLabel = Instance.new("TextLabel")
 minuteStatsLabel.Size = UDim2.new(1, -24, 0, 14)
-minuteStatsLabel.Position = UDim2.new(0, 12, 0, 113)
+minuteStatsLabel.Position = UDim2.new(0, 12, 0, 133)
 minuteStatsLabel.BackgroundTransparency = 1
 minuteStatsLabel.Text = "Мин. статистика: нет данных"
 minuteStatsLabel.TextColor3 = Color3.fromRGB(215, 185, 255)
@@ -714,7 +750,7 @@ UI.minuteStatsLabel = minuteStatsLabel
 
 local etaLabel = Instance.new("TextLabel")
 etaLabel.Size = UDim2.new(1, -24, 0, 14)
-etaLabel.Position = UDim2.new(0, 12, 0, 128)
+etaLabel.Position = UDim2.new(0, 12, 0, 148)
 etaLabel.BackgroundTransparency = 1
 etaLabel.Text = "До покупки: Выкл"
 etaLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
@@ -726,7 +762,7 @@ UI.etaLabel = etaLabel
 
 local timeTrackerLabel = Instance.new("TextLabel")
 timeTrackerLabel.Size = UDim2.new(1, -24, 0, 14)
-timeTrackerLabel.Position = UDim2.new(0, 12, 0, 143)
+timeTrackerLabel.Position = UDim2.new(0, 12, 0, 163)
 timeTrackerLabel.BackgroundTransparency = 1
 timeTrackerLabel.Text = "Время фарма: 00:00:00"
 timeTrackerLabel.TextColor3 = Color3.fromRGB(165, 195, 255)
@@ -739,7 +775,7 @@ UI.timeTrackerLabel = timeTrackerLabel
 -- Авто-закупка (одиночная)
 local autoBuyRow = Instance.new("Frame")
 autoBuyRow.Size = UDim2.new(1, -24, 0, 22)
-autoBuyRow.Position = UDim2.new(0, 12, 0, 161)
+autoBuyRow.Position = UDim2.new(0, 12, 0, 181)
 autoBuyRow.BackgroundTransparency = 1
 autoBuyRow.ZIndex = 21
 autoBuyRow.Parent = scrollFrame
@@ -786,7 +822,7 @@ UI.amountBox = amountBox
 
 local itemInputBox = Instance.new("TextBox")
 itemInputBox.Size = UDim2.new(1, -24, 0, 20)
-itemInputBox.Position = UDim2.new(0, 12, 0, 187)
+itemInputBox.Position = UDim2.new(0, 12, 0, 207)
 itemInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 itemInputBox.PlaceholderText = "Введите блок (напр. Лего)..."
 itemInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -803,7 +839,7 @@ UI.itemInputBox = itemInputBox
 
 local itemStatusLabel = Instance.new("TextLabel")
 itemStatusLabel.Size = UDim2.new(1, -24, 0, 15)
-itemStatusLabel.Position = UDim2.new(0, 12, 0, 210)
+itemStatusLabel.Position = UDim2.new(0, 12, 0, 230)
 itemStatusLabel.BackgroundTransparency = 1
 itemStatusLabel.Text = "Введите название для поиска"
 itemStatusLabel.TextColor3 = Color3.fromRGB(140, 130, 160)
@@ -816,7 +852,7 @@ UI.itemStatusLabel = itemStatusLabel
 -- Тумблеры
 local antiDarkBtn = Instance.new("TextButton")
 antiDarkBtn.Size = UDim2.new(1, -24, 0, 20)
-antiDarkBtn.Position = UDim2.new(0, 12, 0, 228)
+antiDarkBtn.Position = UDim2.new(0, 12, 0, 248)
 antiDarkBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 antiDarkBtn.Text = "Анти-темнота: ВКЛ"
 antiDarkBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -830,7 +866,7 @@ UI.antiDarkBtn = antiDarkBtn
 
 local antiHazardBtn = Instance.new("TextButton")
 antiHazardBtn.Size = UDim2.new(1, -24, 0, 20)
-antiHazardBtn.Position = UDim2.new(0, 12, 0, 251)
+antiHazardBtn.Position = UDim2.new(0, 12, 0, 271)
 antiHazardBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 antiHazardBtn.Text = "🛡 Анти-урон / Вода: ВКЛ"
 antiHazardBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -844,7 +880,7 @@ UI.antiHazardBtn = antiHazardBtn
 
 local batterySaverBtn = Instance.new("TextButton")
 batterySaverBtn.Size = UDim2.new(1, -24, 0, 20)
-batterySaverBtn.Position = UDim2.new(0, 12, 0, 274)
+batterySaverBtn.Position = UDim2.new(0, 12, 0, 294)
 batterySaverBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
 batterySaverBtn.Text = "🔋 Ночной режим (Экран): ВЫКЛ"
 batterySaverBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
@@ -858,7 +894,7 @@ UI.batterySaverBtn = batterySaverBtn
 
 local antiLagBtn = Instance.new("TextButton")
 antiLagBtn.Size = UDim2.new(1, -24, 0, 20)
-antiLagBtn.Position = UDim2.new(0, 12, 0, 297)
+antiLagBtn.Position = UDim2.new(0, 12, 0, 317)
 antiLagBtn.BackgroundColor3 = Color3.fromRGB(35, 28, 45)
 antiLagBtn.Text = "⚡ Анти-лаг очистка: ВЫКЛ"
 antiLagBtn.TextColor3 = Color3.fromRGB(175, 160, 205)
@@ -872,7 +908,7 @@ UI.antiLagBtn = antiLagBtn
 
 local smoothnessBtn = Instance.new("TextButton")
 smoothnessBtn.Size = UDim2.new(1, -24, 0, 20)
-smoothnessBtn.Position = UDim2.new(0, 12, 0, 320)
+smoothnessBtn.Position = UDim2.new(0, 12, 0, 340)
 smoothnessBtn.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
 smoothnessBtn.Text = "🚀 Плавность: " .. API.smoothnessNames[API.smoothnessMode]
 smoothnessBtn.TextColor3 = Color3.fromRGB(225, 210, 255)
@@ -886,7 +922,7 @@ UI.smoothnessBtn = smoothnessBtn
 
 local spaceBgBtn = Instance.new("TextButton")
 spaceBgBtn.Size = UDim2.new(1, -24, 0, 20)
-spaceBgBtn.Position = UDim2.new(0, 12, 0, 343)
+spaceBgBtn.Position = UDim2.new(0, 12, 0, 363)
 spaceBgBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 spaceBgBtn.Text = "🌌 Космо-фон: ВКЛ"
 spaceBgBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -900,7 +936,7 @@ UI.spaceBgBtn = spaceBgBtn
 
 local soundToggleBtn = Instance.new("TextButton")
 soundToggleBtn.Size = UDim2.new(1, -24, 0, 20)
-soundToggleBtn.Position = UDim2.new(0, 12, 0, 366)
+soundToggleBtn.Position = UDim2.new(0, 12, 0, 386)
 soundToggleBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 soundToggleBtn.Text = "🔊 Звуковые эффекты: ВКЛ"
 soundToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -912,10 +948,25 @@ soundToggleBtn.Parent = scrollFrame
 createCorner(soundToggleBtn, 5)
 UI.soundToggleBtn = soundToggleBtn
 
+-- Новая кнопка: Тумблер кастомных звуков шагов
+local customSoundsBtn = Instance.new("TextButton")
+customSoundsBtn.Size = UDim2.new(1, -24, 0, 20)
+customSoundsBtn.Position = UDim2.new(0, 12, 0, 409)
+customSoundsBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+customSoundsBtn.Text = "🐾 Кастомные звуки (Шаги): ВКЛ"
+customSoundsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+customSoundsBtn.Font = Enum.Font.GothamBold
+customSoundsBtn.TextSize = 10
+customSoundsBtn.BorderSizePixel = 0
+customSoundsBtn.ZIndex = 22
+customSoundsBtn.Parent = scrollFrame
+createCorner(customSoundsBtn, 5)
+UI.customSoundsBtn = customSoundsBtn
+
 -- Кнопка открытия Корзины
 local cartOpenBtn = Instance.new("TextButton")
 cartOpenBtn.Size = UDim2.new(1, -24, 0, 22)
-cartOpenBtn.Position = UDim2.new(0, 12, 0, 389)
+cartOpenBtn.Position = UDim2.new(0, 12, 0, 432)
 cartOpenBtn.BackgroundColor3 = Color3.fromRGB(110, 30, 180)
 cartOpenBtn.Text = "🛒 КОРЗИНА ПОКУПОК"
 cartOpenBtn.TextColor3 = Color3.fromRGB(255, 230, 130)
@@ -930,7 +981,7 @@ createStroke(cartOpenBtn, Color3.fromRGB(218, 112, 214), 1)
 -- Поля Telegram
 local tgTokenInputBox = Instance.new("TextBox")
 tgTokenInputBox.Size = UDim2.new(1, -24, 0, 20)
-tgTokenInputBox.Position = UDim2.new(0, 12, 0, 415)
+tgTokenInputBox.Position = UDim2.new(0, 12, 0, 458)
 tgTokenInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 tgTokenInputBox.PlaceholderText = "Telegram Bot Token..."
 tgTokenInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -947,7 +998,7 @@ UI.tgTokenInputBox = tgTokenInputBox
 
 local tgChatIdInputBox = Instance.new("TextBox")
 tgChatIdInputBox.Size = UDim2.new(1, -24, 0, 20)
-tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 438)
+tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 481)
 tgChatIdInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 tgChatIdInputBox.PlaceholderText = "Telegram Chat ID (число)..."
 tgChatIdInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -965,7 +1016,7 @@ UI.tgChatIdInputBox = tgChatIdInputBox
 -- Сохранить и Старт
 local saveBtn = Instance.new("TextButton")
 saveBtn.Size = UDim2.new(1, -24, 0, 24)
-saveBtn.Position = UDim2.new(0, 12, 0, 462)
+saveBtn.Position = UDim2.new(0, 12, 0, 505)
 saveBtn.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
 saveBtn.Text = "💾 СОХРАНИТЬ НАСТРОЙКИ"
 saveBtn.TextColor3 = Color3.fromRGB(215, 195, 255)
@@ -980,7 +1031,7 @@ UI.saveBtn = saveBtn
 
 local toggleButton = Instance.new("TextButton")
 toggleButton.Size = UDim2.new(1, -24, 0, 32)
-toggleButton.Position = UDim2.new(0, 12, 0, 490)
+toggleButton.Position = UDim2.new(0, 12, 0, 533)
 toggleButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 toggleButton.Text = "START AUTO FARM"
 toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -994,7 +1045,7 @@ UI.toggleButton = toggleButton
 
 local creditsLabel = Instance.new("TextLabel")
 creditsLabel.Size = UDim2.new(1, 0, 0, 16)
-creditsLabel.Position = UDim2.new(0, 0, 0, 528)
+creditsLabel.Position = UDim2.new(0, 0, 0, 571)
 creditsLabel.BackgroundTransparency = 1
 creditsLabel.Text = "By: Probothotspot"
 creditsLabel.TextColor3 = Color3.fromRGB(175, 150, 220)
@@ -1027,7 +1078,10 @@ resizeGrip.InputBegan:Connect(function(input)
         input.Changed:Connect(function()
             if input.UserInputState == Enum.UserInputState.End then
                 resizing = false
-                if not API.isMinimized then savedWindowSize = mainFrame.Size end
+                if not API.isMinimized then
+                    savedWindowSize = mainFrame.Size
+                    API.saveConfig()
+                end
             end
         end)
     end
@@ -1042,7 +1096,7 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- Перетаскивание
+-- Перетаскивание с сохранением позиции
 local dragging, dragStart, startPos
 topBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -1050,7 +1104,10 @@ topBar.InputBegan:Connect(function(input)
         dragStart = input.Position
         startPos = mainFrame.Position
         input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+                API.saveConfig()
+            end
         end)
     end
 end)
@@ -1130,6 +1187,12 @@ delayBox.FocusLost:Connect(function()
     API.saveConfig()
 end)
 
+stageDelayBox.FocusLost:Connect(function()
+    local val = tonumber(stageDelayBox.Text)
+    if val and val > 0 then API.stageDelay = val else stageDelayBox.Text = tostring(API.stageDelay) end
+    API.saveConfig()
+end)
+
 amountBox.FocusLost:Connect(function()
     local val = tonumber(amountBox.Text)
     if val and val > 0 then API.buyAmount = math.floor(val) else amountBox.Text = tostring(API.buyAmount) end
@@ -1162,13 +1225,13 @@ itemInputBox:GetPropertyChangedSignal("Text"):Connect(function()
     local realName, price = API.searchItemInGame(text)
     if realName and price > 0 then
         API.targetItemRealName = realName
-        targetItemPrice = price
+        API.targetItemPrice = price
         itemStatusLabel.Text = "Блок найден: " .. realName .. " (" .. tostring(price) .. " Gold)"
         itemStatusLabel.TextColor3 = Color3.fromRGB(80, 240, 130)
         API.checkAndAutoBuy()
     else
         API.targetItemRealName = ""
-        targetItemPrice = 0
+        API.targetItemPrice = 0
         itemStatusLabel.Text = "Блок не найден"
         itemStatusLabel.TextColor3 = Color3.fromRGB(255, 80, 90)
     end
@@ -1187,12 +1250,21 @@ soundToggleBtn.MouseButton1Click:Connect(function()
     soundToggleBtn.BackgroundColor3 = API.soundEffectsActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     soundToggleBtn.TextColor3 = API.soundEffectsActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
     soundToggleBtn.Text = API.soundEffectsActive and "🔊 Звуковые эффекты: ВКЛ" or "🔊 Звуковые эффекты: ВЫКЛ"
-    playSfx(clickSfx)
+    API.playSfx(API.clickSfx)
+    API.saveConfig()
+end)
+
+customSoundsBtn.MouseButton1Click:Connect(function()
+    API.customSoundsActive = not API.customSoundsActive
+    customSoundsBtn.BackgroundColor3 = API.customSoundsActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+    customSoundsBtn.TextColor3 = API.customSoundsActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
+    customSoundsBtn.Text = API.customSoundsActive and "🐾 Кастомные звуки (Шаги): ВКЛ" or "🐾 Кастомные звуки (Шаги): ВЫКЛ"
+    API.playSfx(API.clickSfx)
     API.saveConfig()
 end)
 
 spaceBgBtn.MouseButton1Click:Connect(function()
-    API.playSfx(clickSfx)
+    API.playSfx(API.clickSfx)
     API.spaceBgActive = not API.spaceBgActive
     spaceBg.Visible = API.spaceBgActive
     spaceBgBtn.BackgroundColor3 = API.spaceBgActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
@@ -1210,7 +1282,7 @@ batterySaverBtn.MouseButton1Click:Connect(function()
 end)
 
 antiLagBtn.MouseButton1Click:Connect(function()
-    playSfx(clickSfx)
+    API.playSfx(API.clickSfx)
     API.antiLagActive = not API.antiLagActive
     antiLagBtn.BackgroundColor3 = API.antiLagActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     antiLagBtn.TextColor3 = API.antiLagActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
@@ -1220,7 +1292,7 @@ antiLagBtn.MouseButton1Click:Connect(function()
 end)
 
 antiHazardBtn.MouseButton1Click:Connect(function()
-    API.playSfx(clickSfx)
+    API.playSfx(API.clickSfx)
     API.toggleAntiHazard(not API.antiHazardActive)
     antiHazardBtn.BackgroundColor3 = API.antiHazardActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     antiHazardBtn.TextColor3 = API.antiHazardActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
@@ -1229,7 +1301,7 @@ antiHazardBtn.MouseButton1Click:Connect(function()
 end)
 
 antiDarkBtn.MouseButton1Click:Connect(function()
-    playSfx(clickSfx)
+    API.playSfx(API.clickSfx)
     API.antiDarknessActive = not API.antiDarknessActive
     antiDarkBtn.BackgroundColor3 = API.antiDarknessActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     antiDarkBtn.TextColor3 = API.antiDarknessActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
@@ -1239,7 +1311,7 @@ antiDarkBtn.MouseButton1Click:Connect(function()
 end)
 
 saveBtn.MouseButton1Click:Connect(function()
-    API.playSfx(clickSfx)
+    API.playSfx(API.clickSfx)
     API.saveConfig()
     saveBtn.Text = "✔ НАСТРОЙКИ СОХРАНЕНЫ!"
     saveBtn.BackgroundColor3 = Color3.fromRGB(35, 90, 50)
@@ -1254,7 +1326,7 @@ saveBtn.MouseButton1Click:Connect(function()
 end)
 
 toggleButton.MouseButton1Click:Connect(function()
-    API.playSfx(clickSfx)
+    API.playSfx(API.clickSfx)
     if not API.farming then API.startFarming() else API.stopFarming() end
 end)
 
@@ -1268,7 +1340,7 @@ tgChatIdInputBox.FocusLost:Connect(function()
     API.saveConfig()
 end)
 
--- Подключение кнопки корзины к подгрузке Файла 3
+-- Подключение кнопки корзины
 cartOpenBtn.MouseButton1Click:Connect(function()
     API.playSfx(API.clickSfx)
     if API.openCart then
@@ -1290,5 +1362,5 @@ end)
 
 print("[BABFT-GUI] Интерфейс полностью собран!")
 
--- Загрузка конфига
+-- Загрузка сохраненного конфига
 API.loadConfig()
