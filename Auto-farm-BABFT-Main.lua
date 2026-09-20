@@ -59,6 +59,7 @@ API.isMinimized = false
 API.isClosing = false
 API.spaceBgActive = true
 API.soundEffectsActive = true
+API.customSoundsActive = true
 
 API.smoothnessMode = 1
 API.smoothnessNames = {
@@ -69,6 +70,7 @@ API.smoothnessNames = {
 
 API.farmMode = "Chest"
 API.chestDelay = 2
+API.stageDelay = 1.5
 API.autoBuyActive = false
 API.buyAmount = 1
 API.targetItemRealName = ""
@@ -79,6 +81,14 @@ API.antiDarknessActive = true
 API.antiHazardActive = true
 API.antiLagActive = false
 API.staffDetectorActive = true
+
+-- Сохранение позиции и размера GUI
+API.windowPosX = nil
+API.windowPosY = nil
+API.windowScaleX = 0.5
+API.windowScaleY = 0.28
+API.windowSizeX = 260
+API.windowSizeY = 320
 
 API.tgToken = ""
 API.tgChatId = ""
@@ -115,6 +125,7 @@ API.rotConn = nil
 API.hazardConnection = nil
 API.idledConn = nil
 API.playerAddedConn = nil
+API.stepConn = nil
 
 API.httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
 API.queue_on_teleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
@@ -222,6 +233,7 @@ pcall(function()
     API.clickSfx = createSound(6895079853, 0.4)
     API.coinSfx = createSound(5153734608, 0.5)
     API.achievementSfx = createSound(5153724623, 0.7)
+    API.stepSfx = createSound(9114223170, 0.35)
 end)
 
 function API.playSfx(sfx)
@@ -229,6 +241,26 @@ function API.playSfx(sfx)
         pcall(function() sfx:Play() end)
     end
 end
+
+-- Обработка кастомных шагов
+local lastStepTime = 0
+API.stepConn = RunService.Heartbeat:Connect(function()
+    if not API.customSoundsActive or not API.soundEffectsActive then return end
+    local char = player.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hum and hrp and hum.Health > 0 then
+            if hum.MoveDirection.Magnitude > 0.1 and hum.FloorMaterial ~= Enum.Material.Air then
+                local interval = (hum.WalkSpeed > 18 and 0.28 or 0.38)
+                if os.clock() - lastStepTime > interval then
+                    lastStepTime = os.clock()
+                    API.playSfx(API.stepSfx)
+                end
+            end
+        end
+    end
+end)
 
 -- Платформа
 API.platform = Instance.new("Part")
@@ -580,7 +612,7 @@ function API.checkAndAutoBuy()
     end
 end
 
--- Поминутная статистика и ETA
+-- Точный расчет скорости и ETA
 function API.updateSpeedAndEtaMetrics()
     local UI = API.UI
     if not API.farming then
@@ -601,7 +633,7 @@ function API.updateSpeedAndEtaMetrics()
             if API.lastFinalizedMinute == completedMinutes then
                 API.minuteSamples[API.lastFinalizedMinute] = API.currentMinuteGold
                 API.minuteSampleSum = API.minuteSampleSum + API.currentMinuteGold
-                currentMinuteGold = 0
+                API.currentMinuteGold = 0
             else
                 API.minuteSamples[API.lastFinalizedMinute] = 0
             end
@@ -688,7 +720,7 @@ function API.updateGoldStats()
             API.playSfx(API.coinSfx)
 
             for _, m in ipairs(API.MILESTONES) do
-                if API.totalEarned >= m and not API.reachedMilestones[m] then
+                if totalEarned >= m and not API.reachedMilestones[m] then
                     API.reachedMilestones[m] = true
                     API.showAchievementToast("НОВОЕ ДОСТИЖЕНИЕ!", "Заработано +" .. tostring(m) .. " Gold!")
                     API.sendTelegramMessage(string.format("🏆 <b>ДОСТИЖЕНИЕ РАЗБЛОКИРОВАНО!</b>\nСессия принесла уже более <b>+%d Gold</b>!", m))
@@ -742,7 +774,7 @@ function API.startFarmingLoop()
                     API.placeOnPlatform(API.STAGE_COORDINATES[index], hrp)
 
                     local stageStart = tick()
-                    while tick() - stageStart < 1.5 do
+                    while tick() - stageStart < API.stageDelay do
                         task.wait(0.05)
                         if not API.farming then break end
                         local curHrp = API.getCurrentHRP()
@@ -793,7 +825,7 @@ function API.startFarmingLoop()
                     API.disableClearVision()
                     API.setNoclip(char)
                     API.placeOnPlatform(API.STAGE_COORDINATES[2], hrp)
-                    task.wait(1.5)
+                    task.wait(API.stageDelay)
                 end
 
                 for index = 3, 10 do
@@ -806,7 +838,7 @@ function API.startFarmingLoop()
                     API.placeOnPlatform(API.STAGE_COORDINATES[index], hrp)
 
                     local stageStart = tick()
-                    while tick() - stageStart < 1.5 do
+                    while tick() - stageStart < API.stageDelay do
                         task.wait(0.05)
                         if not API.farming then break end
                         local curHrp = API.getCurrentHRP()
@@ -849,7 +881,7 @@ function API.startFarmingLoop()
                     API.placeOnPlatform(coord, hrp)
 
                     local stageStart = tick()
-                    while tick() - stageStart < 1.5 do
+                    while tick() - stageStart < API.stageDelay do
                         task.wait(0.05)
                         if not API.farming then break end
                         local curHrp = API.getCurrentHRP()
@@ -896,7 +928,7 @@ function API.startFarming()
 
     API.startGold = API.getCurrentGold()
     API.previousGold = API.startGold
-    API.totalEarned = 0
+    totalEarned = 0
     table.clear(API.reachedMilestones)
 
     API.statsStartTime = time()
@@ -969,6 +1001,7 @@ function API.fullCleanup()
 
     if API.idledConn then API.idledConn:Disconnect() end
     if API.playerAddedConn then API.playerAddedConn:Disconnect() end
+    if API.stepConn then API.stepConn:Disconnect() end
     if API.masterRenderConn then API.masterRenderConn:Disconnect() end
     if API.rotConn then API.rotConn:Disconnect() end
     if API.hazardConnection then API.hazardConnection:Disconnect() end
@@ -995,9 +1028,22 @@ function API.saveConfig(customAutoStart)
         local valDelay = tonumber(UI.delayBox.Text)
         if valDelay and valDelay > 0 then API.chestDelay = valDelay end
     end
+    if UI.stageDelayBox then
+        local valStage = tonumber(UI.stageDelayBox.Text)
+        if valStage and valStage > 0 then API.stageDelay = valStage end
+    end
     if UI.amountBox then
         local valAmt = tonumber(UI.amountBox.Text)
         if valAmt and valAmt > 0 then API.buyAmount = math.floor(valAmt) end
+    end
+
+    if UI.mainFrame then
+        API.windowPosX = UI.mainFrame.Position.X.Offset
+        API.windowPosY = UI.mainFrame.Position.Y.Offset
+        API.windowScaleX = UI.mainFrame.Position.X.Scale
+        API.windowScaleY = UI.mainFrame.Position.Y.Scale
+        API.windowSizeX = UI.mainFrame.Size.X.Offset
+        API.windowSizeY = UI.mainFrame.Size.Y.Offset
     end
 
     local shouldAutoStart = API.autoStartOnJoin
@@ -1006,6 +1052,7 @@ function API.saveConfig(customAutoStart)
     local data = {
         farmMode = API.farmMode,
         chestDelay = API.chestDelay,
+        stageDelay = API.stageDelay,
         autoBuyActive = API.autoBuyActive,
         buyAmount = API.buyAmount,
         targetItem = UI.itemInputBox and UI.itemInputBox.Text or "",
@@ -1018,7 +1065,14 @@ function API.saveConfig(customAutoStart)
         staffDetectorActive = API.staffDetectorActive,
         spaceBgActive = API.spaceBgActive,
         smoothnessMode = API.smoothnessMode,
-        soundEffectsActive = API.soundEffectsActive
+        soundEffectsActive = API.soundEffectsActive,
+        customSoundsActive = API.customSoundsActive,
+        windowPosX = API.windowPosX,
+        windowPosY = API.windowPosY,
+        windowScaleX = API.windowScaleX,
+        windowScaleY = API.windowScaleY,
+        windowSizeX = API.windowSizeX,
+        windowSizeY = API.windowSizeY
     }
 
     if writefile then
@@ -1047,6 +1101,10 @@ function API.loadConfig()
                 if data.chestDelay then
                     API.chestDelay = tonumber(data.chestDelay) or 2
                     if UI.delayBox then UI.delayBox.Text = tostring(API.chestDelay) end
+                end
+                if data.stageDelay then
+                    API.stageDelay = tonumber(data.stageDelay) or 1.5
+                    if UI.stageDelayBox then UI.stageDelayBox.Text = tostring(API.stageDelay) end
                 end
                 if data.buyAmount then
                     API.buyAmount = tonumber(data.buyAmount) or 1
@@ -1097,7 +1155,7 @@ function API.loadConfig()
                     end
                     API.toggleAntiHazard(API.antiHazardActive)
                 else
-                    toggleAntiHazard(true)
+                    API.toggleAntiHazard(true)
                 end
                 if data.antiLagActive ~= nil then
                     API.antiLagActive = data.antiLagActive
@@ -1109,7 +1167,7 @@ function API.loadConfig()
                     if API.antiLagActive then API.applyAntiLag(true) end
                 end
                 if data.spaceBgActive ~= nil then
-                    spaceBgActive = data.spaceBgActive
+                    API.spaceBgActive = data.spaceBgActive
                     if UI.spaceBg then UI.spaceBg.Visible = API.spaceBgActive end
                     if UI.spaceBgBtn then
                         UI.spaceBgBtn.BackgroundColor3 = API.spaceBgActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
@@ -1128,6 +1186,28 @@ function API.loadConfig()
                         UI.soundToggleBtn.TextColor3 = API.soundEffectsActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
                         UI.soundToggleBtn.Text = API.soundEffectsActive and "🔊 Звуковые эффекты: ВКЛ" or "🔊 Звуковые эффекты: ВЫКЛ"
                     end
+                end
+                if data.customSoundsActive ~= nil then
+                    API.customSoundsActive = data.customSoundsActive
+                    if UI.customSoundsBtn then
+                        UI.customSoundsBtn.BackgroundColor3 = API.customSoundsActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
+                        UI.customSoundsBtn.TextColor3 = API.customSoundsActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
+                        UI.customSoundsBtn.Text = API.customSoundsActive and "🐾 Кастомные звуки (Шаги): ВКЛ" or "🐾 Кастомные звуки (Шаги): ВЫКЛ"
+                    end
+                end
+
+                -- Восстановление сохраненной геометрии окна
+                if data.windowPosX and data.windowPosY and UI.mainFrame then
+                    API.windowPosX = data.windowPosX
+                    API.windowPosY = data.windowPosY
+                    API.windowScaleX = data.windowScaleX or 0.5
+                    API.windowScaleY = data.windowScaleY or 0.28
+                    UI.mainFrame.Position = UDim2.new(API.windowScaleX, API.windowPosX, API.windowScaleY, API.windowPosY)
+                end
+                if data.windowSizeX and data.windowSizeY and UI.mainFrame then
+                    API.windowSizeX = data.windowSizeX
+                    API.windowSizeY = data.windowSizeY
+                    UI.mainFrame.Size = UDim2.new(0, API.windowSizeX, 0, API.windowSizeY)
                 end
 
                 print("[BABFT] Конфигурация успешно загружена!")
@@ -1149,7 +1229,7 @@ function API.loadConfig()
                         while not gObj and t < 15 do
                             task.wait(0.5)
                             t = t + 0.5
-                            gObj = API.getGoldObject()
+                            gObj = getGoldObject()
                         end
 
                         task.wait(2)
@@ -1340,8 +1420,8 @@ API.tgPollingThread = task.spawn(function()
                                         API.antiDarknessActive and "ВКЛ" or "ВЫКЛ",
                                         API.antiHazardActive and "ВКЛ" or "ВЫКЛ",
                                         API.antiLagActive and "ВКЛ" or "ВЫКЛ",
-                                        API.isBlackScreen and "ВКЛ" or "ВЫКЛ",
-                                        API.formatTime(elapsed),
+                                        isBlackScreen and "ВКЛ" or "ВЫКЛ",
+                                        formatTime(elapsed),
                                         currentG,
                                         API.totalEarned
                                     )
