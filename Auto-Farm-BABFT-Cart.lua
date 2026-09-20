@@ -23,7 +23,7 @@ local function createStroke(parent, color, thickness)
     return s
 end
 
--- Единая таблица модуля
+-- Единая таблица модуля корзины
 local cart = {
     items = {},
     autoBuyActive = false,
@@ -32,7 +32,7 @@ local cart = {
     dropdownOpen = false
 }
 
--- Выборка предметов
+-- Выборка доступных предметов
 cart.getAvailableItems = function()
     local unique = {}
     local seen = {}
@@ -176,7 +176,7 @@ addBtn.ZIndex = 73
 addBtn.Parent = addSection
 createCorner(addBtn, 5)
 
--- Dropdown
+-- Dropdown ScrollingFrame
 local dropList = Instance.new("ScrollingFrame")
 dropList.Size = UDim2.new(0.65, 0, 0, 130)
 dropList.Position = UDim2.new(0, 10, 0, 66)
@@ -348,7 +348,7 @@ sStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 sStatusLabel.ZIndex = 73
 sStatusLabel.Parent = summaryFrame
 
--- Кнопки
+-- Кнопки действий
 local btnRow1 = Instance.new("Frame")
 btnRow1.Size = UDim2.new(1, -20, 0, 20)
 btnRow1.Position = UDim2.new(0, 10, 0, 320)
@@ -486,7 +486,7 @@ cart.updateSummary = function()
     end
 end
 
--- Перерисовка списка
+-- Перерисовка позиций
 cart.refreshList = function()
     for _, child in ipairs(listFrame:GetChildren()) do
         if child:IsA("Frame") then child:Destroy() end
@@ -551,7 +551,7 @@ cart.refreshList = function()
     end
 end
 
--- Добавление
+-- Добавление позиции
 addBtn.MouseButton1Click:Connect(function()
     API.playSfx(API.clickSfx)
     if not cart.selectedItem then return end
@@ -621,7 +621,7 @@ clearCartBtn.MouseButton1Click:Connect(function()
     cart.updateSummary()
 end)
 
--- Авто-закупка
+-- Авто-закупка очереди
 cart.startAutoBuy = function()
     if cart.autoBuyActive then return end
     cart.autoBuyActive = true
@@ -683,7 +683,7 @@ autoBuyCartToggle.MouseButton1Click:Connect(function()
     end
 end)
 
--- Публичные методы для GUI
+-- Публичные функции для GUI
 function API.openCart()
     cartWindow.Visible = true
     cart.refreshList()
