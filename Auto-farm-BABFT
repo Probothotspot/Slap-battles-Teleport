@@ -4,7 +4,6 @@ local function executeScript(url, name)
     print(string.format("[BABFT Loader] Загрузка: %s...", name))
     
     local fetchSuccess, code = pcall(function()
-        -- Добавляем метку времени (?t=), чтобы GitHub не отдавал старый закэшированный код
         return game:HttpGet(url .. "?t=" .. tostring(os.time()))
     end)
 
@@ -15,9 +14,7 @@ local function executeScript(url, name)
 
     local loadSuccess, runError = pcall(function()
         local func, compileErr = loadstring(code)
-        if not func then
-            error("Ошибка компиляции: " .. tostring(compileErr))
-        end
+        if not func then error("Ошибка компиляции: " .. tostring(compileErr)) end
         func()
     end)
 
@@ -26,25 +23,27 @@ local function executeScript(url, name)
         return false
     end
 
-    print(string.format("[BABFT Loader] Модуль [%s] успешно активирован!", name))
+    print(string.format("[BABFT Loader] [%s] успешно активирован!", name))
     return true
 end
 
--- Ссылки на модули
-local BASE_URL = "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/"
-local mainUrl = BASE_URL .. "Auto-farm-BABFT-Main.lua"
-local guiUrl  = BASE_URL .. "Auto-Farm-BABFT-GUI.lua"
-local cartUrl = BASE_URL .. "Auto-Farm-BABFT-Cart.lua"
+local BASE = "https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/"
 
--- 1. Запуск логического ядра (Main)
-if executeScript(mainUrl, "1. Main Logic") then
+-- Строгая последовательность сборки
+if executeScript(BASE .. "Auto-farm-BABFT-Main.lua", "1. Main Logic") then
     task.wait(0.1)
-
-    -- 2. Запуск основного интерфейса (GUI)
-    if executeScript(guiUrl, "2. GUI Interface") then
+    if executeScript(BASE .. "Auto-farm-BABFT-Data.lua", "2. Data & Network") then
         task.wait(0.1)
-
-        -- 3. Запуск модуля корзины (Cart)
-        executeScript(cartUrl, "3. Shopping Cart")
+        if executeScript(BASE .. "Auto-Farm-BABFT-GUI.lua", "3. GUI Interface") then
+            task.wait(0.1)
+            executeScript(BASE .. "Auto-Farm-BABFT-Space.lua", "4. Space FX")
+            task.wait(0.1)
+            executeScript(BASE .. "Auto-Farm-BABFT-Cart.lua", "5. Shopping Cart")
+            
+            -- Финальная загрузка сохраненного конфига
+            if _G.BABFT and _G.BABFT.loadConfig then
+                _G.BABFT.loadConfig()
+            end
+        end
     end
 end
