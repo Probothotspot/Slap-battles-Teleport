@@ -1,9 +1,6 @@
--- =====================================================================
--- ФАЙЛ 2: BABFT AUTO FARM GUI
--- =====================================================================
 local API = _G.BABFT
 if not API then
-    warn("[BABFT-GUI] Ошибка: Ядро API не найдено! Запустите главный скрипт.")
+    warn("[BABFT-GUI] Ошибка: Ядро API не найдено! Сначала запустите Auto-farm-BABFT-Main.lua")
     return
 end
 
@@ -13,7 +10,6 @@ local TweenService = API.TweenService
 local UserInputService = API.UserInputService
 local UI = API.UI
 
--- Вспомогательные функции для экономии слотов local
 local function createCorner(parent, radius)
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(0, radius)
@@ -29,8 +25,7 @@ local function createStroke(parent, color, thickness)
     return s
 end
 
--- 1. Безопасное получение родителя для GUI
-print("[BABFT-GUI] Создание ScreenGui...")
+-- Безопасный родитель GUI
 local function getSafeGuiParent()
     if typeof(gethui) == "function" then
         local ok, res = pcall(gethui)
@@ -86,7 +81,7 @@ end
 
 API.screenGui = screenGui
 
--- 2. Реализация тостов достижений
+-- Всплывающее достижение
 function API.showAchievementToast(title, text)
     API.playSfx(API.achievementSfx)
     local toast = Instance.new("Frame")
@@ -142,7 +137,7 @@ function API.showAchievementToast(title, text)
     end)
 end
 
--- 3. Black Screen Панель
+-- Black Screen Панель
 local blackScreenFrame = Instance.new("Frame")
 blackScreenFrame.Size = UDim2.new(1, 0, 1, 0)
 blackScreenFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
@@ -154,7 +149,7 @@ UI.blackScreenFrame = blackScreenFrame
 
 local bsTitle = Instance.new("TextLabel")
 bsTitle.Size = UDim2.new(1, 0, 0, 30)
-bsTitle.Position = UDim2.new(0, 0, 0.33, 0) -- Исправлено на 4 аргумента
+bsTitle.Position = UDim2.new(0, 0, 0.33, 0)
 bsTitle.BackgroundTransparency = 1
 bsTitle.Text = "🔋 РЕЖИМ ЭНЕРГОСБЕРЕЖЕНИЯ"
 bsTitle.TextColor3 = Color3.fromRGB(138, 43, 226)
@@ -201,7 +196,7 @@ bsUnlockBtn.MouseButton1Click:Connect(function()
     API.toggleBlackScreen(false)
 end)
 
--- 4. Основное окно
+-- Главное окно
 local savedWindowSize = UDim2.new(0, 260, 0, 320)
 local mainFrame = Instance.new("Frame")
 mainFrame.Size = savedWindowSize
@@ -227,7 +222,7 @@ strokeGradient.Color = ColorSequence.new({
 })
 strokeGradient.Parent = frameStroke
 
--- 5. Космо-фон (ZIndex = 1..3)
+-- Космо-фон
 local spaceBg = Instance.new("Frame")
 spaceBg.Size = UDim2.new(1, 0, 1, 0)
 spaceBg.BackgroundTransparency = 1
@@ -494,7 +489,7 @@ API.cometThread = task.spawn(function()
     end
 end)
 
--- Единый мастер-рендер планет
+-- Мастер-рендер планет
 local simTime = 0
 local frameAccumulator = 0
 local gradStepCounter = 0
@@ -532,7 +527,7 @@ API.masterRenderConn = RunService.RenderStepped:Connect(function(dt)
     end
 end)
 
--- 6. Верхняя панель (TopBar)
+-- TopBar
 local topBar = Instance.new("Frame")
 topBar.Size = UDim2.new(1, 0, 0, 34)
 topBar.BackgroundTransparency = 1
@@ -577,19 +572,18 @@ closeBtn.ZIndex = 51
 closeBtn.Parent = topBar
 createCorner(closeBtn, 6)
 
--- 7. ScrollingFrame и элементы управления
+-- ScrollingFrame
 local scrollFrame = Instance.new("ScrollingFrame")
 scrollFrame.Size = UDim2.new(1, 0, 1, -34)
 scrollFrame.Position = UDim2.new(0, 0, 0, 34)
 scrollFrame.BackgroundTransparency = 1
 scrollFrame.ScrollBarThickness = 3
 scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(138, 43, 226)
-scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 535)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 565)
 scrollFrame.ZIndex = 20
 scrollFrame.Parent = mainFrame
 UI.scrollFrame = scrollFrame
 
--- Выбор режима
 local modeContainer = Instance.new("Frame")
 modeContainer.Size = UDim2.new(1, -24, 0, 24)
 modeContainer.Position = UDim2.new(0, 12, 0, 4)
@@ -625,7 +619,6 @@ goldModeBtn.Parent = modeContainer
 createCorner(goldModeBtn, 6)
 UI.goldModeBtn = goldModeBtn
 
--- Задержка сундука
 local delayContainer = Instance.new("Frame")
 delayContainer.Size = UDim2.new(1, -24, 0, 18)
 delayContainer.Position = UDim2.new(0, 12, 0, 32)
@@ -659,7 +652,6 @@ delayBox.Parent = delayContainer
 createCorner(delayBox, 5)
 UI.delayBox = delayBox
 
--- Метки статуса и баланса
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Size = UDim2.new(1, -24, 0, 14)
 statusLabel.Position = UDim2.new(0, 12, 0, 53)
@@ -744,7 +736,7 @@ timeTrackerLabel.ZIndex = 22
 timeTrackerLabel.Parent = scrollFrame
 UI.timeTrackerLabel = timeTrackerLabel
 
--- Авто-закупка
+-- Авто-закупка (одиночная)
 local autoBuyRow = Instance.new("Frame")
 autoBuyRow.Size = UDim2.new(1, -24, 0, 22)
 autoBuyRow.Position = UDim2.new(0, 12, 0, 161)
@@ -821,7 +813,7 @@ itemStatusLabel.ZIndex = 22
 itemStatusLabel.Parent = scrollFrame
 UI.itemStatusLabel = itemStatusLabel
 
--- Кнопки-тумблеры
+-- Тумблеры
 local antiDarkBtn = Instance.new("TextButton")
 antiDarkBtn.Size = UDim2.new(1, -24, 0, 20)
 antiDarkBtn.Position = UDim2.new(0, 12, 0, 228)
@@ -920,10 +912,25 @@ soundToggleBtn.Parent = scrollFrame
 createCorner(soundToggleBtn, 5)
 UI.soundToggleBtn = soundToggleBtn
 
--- Поля ввода Telegram
+-- Кнопка открытия Корзины
+local cartOpenBtn = Instance.new("TextButton")
+cartOpenBtn.Size = UDim2.new(1, -24, 0, 22)
+cartOpenBtn.Position = UDim2.new(0, 12, 0, 389)
+cartOpenBtn.BackgroundColor3 = Color3.fromRGB(110, 30, 180)
+cartOpenBtn.Text = "🛒 КОРЗИНА ПОКУПОК"
+cartOpenBtn.TextColor3 = Color3.fromRGB(255, 230, 130)
+cartOpenBtn.Font = Enum.Font.GothamBold
+cartOpenBtn.TextSize = 10
+cartOpenBtn.BorderSizePixel = 0
+cartOpenBtn.ZIndex = 22
+cartOpenBtn.Parent = scrollFrame
+createCorner(cartOpenBtn, 5)
+createStroke(cartOpenBtn, Color3.fromRGB(218, 112, 214), 1)
+
+-- Поля Telegram
 local tgTokenInputBox = Instance.new("TextBox")
 tgTokenInputBox.Size = UDim2.new(1, -24, 0, 20)
-tgTokenInputBox.Position = UDim2.new(0, 12, 0, 389)
+tgTokenInputBox.Position = UDim2.new(0, 12, 0, 415)
 tgTokenInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 tgTokenInputBox.PlaceholderText = "Telegram Bot Token..."
 tgTokenInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -940,7 +947,7 @@ UI.tgTokenInputBox = tgTokenInputBox
 
 local tgChatIdInputBox = Instance.new("TextBox")
 tgChatIdInputBox.Size = UDim2.new(1, -24, 0, 20)
-tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 412)
+tgChatIdInputBox.Position = UDim2.new(0, 12, 0, 438)
 tgChatIdInputBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
 tgChatIdInputBox.PlaceholderText = "Telegram Chat ID (число)..."
 tgChatIdInputBox.PlaceholderColor3 = Color3.fromRGB(120, 105, 145)
@@ -958,7 +965,7 @@ UI.tgChatIdInputBox = tgChatIdInputBox
 -- Сохранить и Старт
 local saveBtn = Instance.new("TextButton")
 saveBtn.Size = UDim2.new(1, -24, 0, 24)
-saveBtn.Position = UDim2.new(0, 12, 0, 436)
+saveBtn.Position = UDim2.new(0, 12, 0, 462)
 saveBtn.BackgroundColor3 = Color3.fromRGB(45, 35, 65)
 saveBtn.Text = "💾 СОХРАНИТЬ НАСТРОЙКИ"
 saveBtn.TextColor3 = Color3.fromRGB(215, 195, 255)
@@ -973,7 +980,7 @@ UI.saveBtn = saveBtn
 
 local toggleButton = Instance.new("TextButton")
 toggleButton.Size = UDim2.new(1, -24, 0, 32)
-toggleButton.Position = UDim2.new(0, 12, 0, 464)
+toggleButton.Position = UDim2.new(0, 12, 0, 490)
 toggleButton.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 toggleButton.Text = "START AUTO FARM"
 toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -987,7 +994,7 @@ UI.toggleButton = toggleButton
 
 local creditsLabel = Instance.new("TextLabel")
 creditsLabel.Size = UDim2.new(1, 0, 0, 16)
-creditsLabel.Position = UDim2.new(0, 0, 0, 502)
+creditsLabel.Position = UDim2.new(0, 0, 0, 528)
 creditsLabel.BackgroundTransparency = 1
 creditsLabel.Text = "By: Probothotspot"
 creditsLabel.TextColor3 = Color3.fromRGB(175, 150, 220)
@@ -1097,7 +1104,6 @@ closeBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- 8. Привязка действий кнопок к API ядра
 chestModeBtn.MouseButton1Click:Connect(function()
     API.playSfx(API.clickSfx)
     API.farmMode = "Chest"
@@ -1156,13 +1162,13 @@ itemInputBox:GetPropertyChangedSignal("Text"):Connect(function()
     local realName, price = API.searchItemInGame(text)
     if realName and price > 0 then
         API.targetItemRealName = realName
-        API.targetItemPrice = price
+        targetItemPrice = price
         itemStatusLabel.Text = "Блок найден: " .. realName .. " (" .. tostring(price) .. " Gold)"
         itemStatusLabel.TextColor3 = Color3.fromRGB(80, 240, 130)
         API.checkAndAutoBuy()
     else
         API.targetItemRealName = ""
-        API.targetItemPrice = 0
+        targetItemPrice = 0
         itemStatusLabel.Text = "Блок не найден"
         itemStatusLabel.TextColor3 = Color3.fromRGB(255, 80, 90)
     end
@@ -1181,12 +1187,12 @@ soundToggleBtn.MouseButton1Click:Connect(function()
     soundToggleBtn.BackgroundColor3 = API.soundEffectsActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     soundToggleBtn.TextColor3 = API.soundEffectsActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
     soundToggleBtn.Text = API.soundEffectsActive and "🔊 Звуковые эффекты: ВКЛ" or "🔊 Звуковые эффекты: ВЫКЛ"
-    API.playSfx(API.clickSfx)
+    playSfx(clickSfx)
     API.saveConfig()
 end)
 
 spaceBgBtn.MouseButton1Click:Connect(function()
-    API.playSfx(API.clickSfx)
+    API.playSfx(clickSfx)
     API.spaceBgActive = not API.spaceBgActive
     spaceBg.Visible = API.spaceBgActive
     spaceBgBtn.BackgroundColor3 = API.spaceBgActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
@@ -1196,7 +1202,7 @@ spaceBgBtn.MouseButton1Click:Connect(function()
 end)
 
 batterySaverBtn.MouseButton1Click:Connect(function()
-    API.playSfx(API.clickSfx)
+    API.playSfx(clickSfx)
     API.toggleBlackScreen(not API.isBlackScreen)
     batterySaverBtn.BackgroundColor3 = API.isBlackScreen and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     batterySaverBtn.TextColor3 = API.isBlackScreen and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
@@ -1204,7 +1210,7 @@ batterySaverBtn.MouseButton1Click:Connect(function()
 end)
 
 antiLagBtn.MouseButton1Click:Connect(function()
-    API.playSfx(API.clickSfx)
+    playSfx(clickSfx)
     API.antiLagActive = not API.antiLagActive
     antiLagBtn.BackgroundColor3 = API.antiLagActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     antiLagBtn.TextColor3 = API.antiLagActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
@@ -1214,7 +1220,7 @@ antiLagBtn.MouseButton1Click:Connect(function()
 end)
 
 antiHazardBtn.MouseButton1Click:Connect(function()
-    API.playSfx(API.clickSfx)
+    API.playSfx(clickSfx)
     API.toggleAntiHazard(not API.antiHazardActive)
     antiHazardBtn.BackgroundColor3 = API.antiHazardActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     antiHazardBtn.TextColor3 = API.antiHazardActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
@@ -1223,7 +1229,7 @@ antiHazardBtn.MouseButton1Click:Connect(function()
 end)
 
 antiDarkBtn.MouseButton1Click:Connect(function()
-    API.playSfx(API.clickSfx)
+    playSfx(clickSfx)
     API.antiDarknessActive = not API.antiDarknessActive
     antiDarkBtn.BackgroundColor3 = API.antiDarknessActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     antiDarkBtn.TextColor3 = API.antiDarknessActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
@@ -1233,7 +1239,7 @@ antiDarkBtn.MouseButton1Click:Connect(function()
 end)
 
 saveBtn.MouseButton1Click:Connect(function()
-    API.playSfx(API.clickSfx)
+    API.playSfx(clickSfx)
     API.saveConfig()
     saveBtn.Text = "✔ НАСТРОЙКИ СОХРАНЕНЫ!"
     saveBtn.BackgroundColor3 = Color3.fromRGB(35, 90, 50)
@@ -1248,7 +1254,7 @@ saveBtn.MouseButton1Click:Connect(function()
 end)
 
 toggleButton.MouseButton1Click:Connect(function()
-    API.playSfx(API.clickSfx)
+    API.playSfx(clickSfx)
     if not API.farming then API.startFarming() else API.stopFarming() end
 end)
 
@@ -1262,7 +1268,27 @@ tgChatIdInputBox.FocusLost:Connect(function()
     API.saveConfig()
 end)
 
-print("[BABFT-GUI] Интерфейс полностью собран и готов к работе!")
+-- Подключение кнопки корзины к подгрузке Файла 3
+cartOpenBtn.MouseButton1Click:Connect(function()
+    API.playSfx(API.clickSfx)
+    if API.openCart then
+        API.openCart()
+    else
+        print("[BABFT-GUI] Подгрузка модуля Корзины...")
+        task.spawn(function()
+            local ok, err = pcall(function()
+                loadstring(game:HttpGet(API.CART_URL .. "?t=" .. tostring(os.time())))()
+            end)
+            if ok and API.openCart then
+                API.openCart()
+            else
+                warn("[BABFT-GUI] Ошибка загрузки Корзины: " .. tostring(err))
+            end
+        end)
+    end
+end)
 
--- Загрузка сохранённого конфига после полной сборки UI
+print("[BABFT-GUI] Интерфейс полностью собран!")
+
+-- Загрузка конфига
 API.loadConfig()
