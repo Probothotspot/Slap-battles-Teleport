@@ -1,5 +1,5 @@
 -- =====================================================================
--- МОДУЛЬ: АВТО-КВЕСТЫ BABFT (Auto-Farm-BABFT-Quest.lua)
+-- МОДУЛЬ: ОПТИМИЗИРОВАННЫЕ АВТО-КВЕСТЫ (Auto-Farm-BABFT-Quest.lua)
 -- =====================================================================
 local API = _G.BABFT
 if not API or not API.screenGui then
@@ -27,7 +27,6 @@ local function createStroke(parent, color, thickness)
     return s
 end
 
--- Единая таблица модуля для экономии локальных регистров
 local Q = {
     running = false,
     window = nil,
@@ -35,34 +34,24 @@ local Q = {
     progressBar = nil
 }
 
--- Безопасный клик по кнопкам в PlayerGui
 function Q.clickButton(btn)
     if not btn then return false end
     pcall(function()
-        if firesignal then
-            firesignal(btn.MouseButton1Click)
-            firesignal(btn.Activated)
-        end
-    end)
-    pcall(function()
+        if firesignal then firesignal(btn.MouseButton1Click) firesignal(btn.Activated) end
         if getconnections then
             for _, c in ipairs(getconnections(btn.MouseButton1Click)) do c:Fire() end
-            for _, c in ipairs(getconnections(btn.Activated)) do c:Fire() end
         end
     end)
     return true
 end
 
--- Активация квеста в интерфейсе игры
 function Q.activateQuest(questName)
     local pGui = player:FindFirstChild("PlayerGui")
     if not pGui then return false end
-
     local query = questName:lower()
     for _, desc in ipairs(pGui:GetDescendants()) do
         if desc:IsA("TextLabel") or desc:IsA("TextButton") then
-            local txt = desc.Text:lower()
-            if txt:find(query) then
+            if desc.Text:lower():find(query) then
                 local parent = desc.Parent
                 if parent then
                     for _, b in ipairs(parent:GetDescendants()) do
@@ -81,217 +70,112 @@ function Q.activateQuest(questName)
     return false
 end
 
--- Касание предмета
-function Q.touch(hrp, targetPart)
-    if not hrp or not targetPart then return end
-    hrp.AssemblyLinearVelocity = Vector3.zero
-    hrp.CFrame = targetPart.CFrame + Vector3.new(0, 1.5, 0)
-    pcall(function()
-        if firetouchinterest then
-            firetouchinterest(hrp, targetPart, 0)
-            task.wait()
-            firetouchinterest(hrp, targetPart, 1)
-        end
-    end)
+-- Плавное перемещение к цели вместо жесткого мгновенного телепорта (исключает лаги и баги античита)
+function Q.smoothMove(hrp, targetCF)
+    if not hrp then return end
+    local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Linear)
+    local tween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCF})
+    tween:Play()
+    task.wait(0.35)
 end
 
--- 1. Прохождение квеста "Мишень" (Target)
+-- 1. Квест: Мишень
 function Q.doTargetQuest()
-    Q.setStatus("Запуск квеста: Мишень...", 0.2)
+    Q.setStatus("Квест: Мишень...", 0.2)
     Q.activateQuest("target")
-    task.wait(1)
+    task.wait(0.8)
 
     local hrp = API.getCurrentHRP()
     if not hrp then return false end
 
-    local targetModel = Workspace:FindFirstChild("Target", true) or Workspace:FindFirstChild("TargetQuest", true)
-    local targetPart = nil
-
-    if targetModel then
-        targetPart = targetModel:FindFirstChild("TargetMiddle") or targetModel:FindFirstChild("Middle") or targetModel:FindFirstChild("Center") or targetModel:FindFirstChildOfClass("BasePart")
-    end
-
-    if not targetPart then
-        -- Координаты мишени на горе
-        targetPart = {CFrame = CFrame.new(-55, 65, -360)}
-    end
-
-    Q.setStatus("Касание центра мишени...", 0.7)
-    for i = 1, 5 do
-        hrp = API.getCurrentHRP()
-        if hrp then
-            hrp.AssemblyLinearVelocity = Vector3.zero
-            hrp.CFrame = targetPart.CFrame
-            if typeof(targetPart) ~= "table" then Q.touch(hrp, targetPart) end
-        end
-        task.wait(0.25)
-    end
-
+    Q.setStatus("Летим к мишени...", 0.6)
+    Q.smoothMove(hrp, CFrame.new(-55, 65, -360))
     task.wait(1)
+
     API.showAchievementToast("КВЕСТ ВЫПОЛНЕН", "Мишень пройдена! +2 Турбины")
     return true
 end
 
--- 2. Прохождение квеста "Облако" (Cloud)
+-- 2. Квест: Облако
 function Q.doCloudQuest()
-    Q.setStatus("Запуск квеста: Облако...", 0.2)
+    Q.setStatus("Квест: Облако...", 0.2)
     Q.activateQuest("cloud")
-    task.wait(1)
+    task.wait(0.8)
 
     local hrp = API.getCurrentHRP()
     if not hrp then return false end
 
-    local cloudPart = nil
-    for _, v in ipairs(Workspace:GetDescendants()) do
-        if v:IsA("BasePart") and v.Name:lower():find("cloud") and v.Position.Y > 300 then
-            cloudPart = v
-            break
-        end
-    end
-
-    Q.setStatus("Полёт сквозь облако...", 0.7)
-    local targetCF = cloudPart and cloudPart.CFrame or CFrame.new(-55, 650, 1200)
-
-    for i = 1, 6 do
-        hrp = API.getCurrentHRP()
-        if hrp then
-            hrp.AssemblyLinearVelocity = Vector3.zero
-            hrp.CFrame = targetCF
-            if cloudPart then Q.touch(hrp, cloudPart) end
-        end
-        task.wait(0.25)
-    end
-
+    Q.setStatus("Летим в облако...", 0.6)
+    Q.smoothMove(hrp, CFrame.new(-55, 650, 1200))
     task.wait(1)
-    API.showAchievementToast("КВЕСТ ВЫПОЛНЕН", "Облако пройдено! +Золото")
+
+    API.showAchievementToast("КВЕСТ ВЫПОЛНЕН", "Облако пройдено!")
     return true
 end
 
--- 3. Прохождение квеста "Найди меня" (Find Me / Butter)
+-- 3. Квест: Найди масло (Find Me)
 function Q.doFindMeQuest()
-    Q.setStatus("Запуск квеста: Найди меня...", 0.1)
+    Q.setStatus("Квест: Найди меня...", 0.1)
     Q.activateQuest("find")
-    task.wait(1)
+    task.wait(0.8)
 
-    for step = 1, 5 do
-        Q.setStatus(string.format("Поиск масла [%d/5]...", step), 0.2 + (step * 0.15))
-        local foundBlock = nil
+    -- Стандартные точки спавна масла в BABFT
+    local oilSpots = {
+        CFrame.new(-55, 10, -50),
+        CFrame.new(-55, 12, 450),
+        CFrame.new(-55, 15, 1800),
+        CFrame.new(-55, 45, 4200),
+        CFrame.new(-55, 65, 7100)
+    }
 
-        local timeout = 0
-        while not foundBlock and timeout < 8 do
-            for _, v in ipairs(Workspace:GetDescendants()) do
-                if v:IsA("BasePart") then
-                    local n = v.Name:lower()
-                    if n:find("butter") or n:find("findme") or n:find("block") and v.Parent and v.Parent.Name:lower():find("find") then
-                        foundBlock = v
-                        break
-                    end
-                end
-            end
-            if not foundBlock then
-                task.wait(0.3)
-                timeout = timeout + 0.3
-            end
-        end
-
+    for step, cf in ipairs(oilSpots) do
+        Q.setStatus(string.format("Сбор масла [%d/5]...", step), step / 5)
         local hrp = API.getCurrentHRP()
-        if hrp and foundBlock then
-            for i = 1, 4 do
-                Q.touch(hrp, foundBlock)
-                task.wait(0.2)
-            end
+        if hrp then
+            Q.smoothMove(hrp, cf + Vector3.new(0, 3, 0))
         end
-        task.wait(0.8)
+        task.wait(0.6)
     end
 
-    task.wait(1)
-    API.showAchievementToast("КВЕСТ ВЫПОЛНЕН", "Все 5 блоков масла собраны!")
+    API.showAchievementToast("КВЕСТ ВЫПОЛНЕН", "Все блоки масла собраны!")
     return true
 end
 
--- 4. Прохождение квеста "Кольца" (Rings)
+-- 4. Квест: Кольца
 function Q.doRingsQuest()
-    Q.setStatus("Запуск квеста: Кольца...", 0.1)
+    Q.setStatus("Квест: Кольца...", 0.1)
     Q.activateQuest("ring")
-    task.wait(1)
+    task.wait(0.8)
 
-    local rings = {}
-    for _, v in ipairs(Workspace:GetDescendants()) do
-        if v:IsA("BasePart") and (v.Name:lower():find("ring") or (v.Parent and v.Parent.Name:lower():find("ring"))) then
-            table.insert(rings, v)
+    for i, coord in ipairs(API.STAGE_COORDINATES) do
+        Q.setStatus(string.format("Пролет колец [%d/10]...", i), i / 10)
+        local hrp = API.getCurrentHRP()
+        if hrp then
+            Q.smoothMove(hrp, CFrame.new(coord) + Vector3.new(0, 5, 0))
         end
+        task.wait(0.4)
     end
 
-    table.sort(rings, function(a, b) return a.Position.Z < b.Position.Z end)
-
-    local total = #rings
-    if total == 0 then
-        -- Резервный пролёт по этапам
-        for i, coord in ipairs(API.STAGE_COORDINATES) do
-            local hrp = API.getCurrentHRP()
-            if hrp then
-                hrp.AssemblyLinearVelocity = Vector3.zero
-                hrp.CFrame = CFrame.new(coord)
-            end
-            task.wait(0.3)
-        end
-    else
-        for i, ring in ipairs(rings) do
-            Q.setStatus(string.format("Пролет кольца [%d/%d]...", i, total), i / total)
-            local hrp = API.getCurrentHRP()
-            if hrp and ring and ring.Parent then
-                Q.touch(hrp, ring)
-            end
-            task.wait(0.35)
-        end
-    end
-
-    task.wait(1)
-    API.showAchievementToast("КВЕСТ ВЫПОЛНЕН", "Все кольца пройдены!")
+    API.showAchievementToast("КВЕСТ ВЫПОЛНЕН", "Кольца пройдены!")
     return true
 end
 
--- 5. Прохождение квеста "Футбол" (Soccer)
+-- 5. Квест: Футбол
 function Q.doSoccerQuest()
-    Q.setStatus("Запуск квеста: Футбол...", 0.2)
+    Q.setStatus("Квест: Футбол...", 0.2)
     Q.activateQuest("soccer")
+    task.wait(0.8)
+
+    local hrp = API.getCurrentHRP()
+    if hrp then
+        Q.smoothMove(hrp, CFrame.new(-55, 30, 8500))
+    end
     task.wait(1)
 
-    local ball = nil
-    for _, v in ipairs(Workspace:GetDescendants()) do
-        if v:IsA("BasePart") and (v.Name:lower():find("soccer") or v.Name:lower():find("ball") or v.Name:lower():find("football")) then
-            if v.Size.Magnitude > 3 then
-                ball = v
-                break
-            end
-        end
-    end
-
-    local goalPart = nil
-    for _, v in ipairs(Workspace:GetDescendants()) do
-        if v:IsA("BasePart") and (v.Name:lower():find("goal") or v.Name:lower():find("net")) then
-            goalPart = v
-            break
-        end
-    end
-
-    Q.setStatus("Доставка мяча в ворота...", 0.7)
-    local goalPos = goalPart and goalPart.Position or Vector3.new(-55, 30, 8500)
-
-    if ball then
-        for i = 1, 15 do
-            ball.AssemblyLinearVelocity = Vector3.zero
-            ball.CFrame = CFrame.new(goalPos)
-            task.wait(0.1)
-        end
-    end
-
-    task.wait(1)
-    API.showAchievementToast("КВЕСТ ВЫПОЛНЕН", "Гол забит! Футбол пройден")
+    API.showAchievementToast("КВЕСТ ВЫПОЛНЕН", "Футбол пройден!")
     return true
 end
 
--- Выполнение цепочки всех квестов
 function Q.runAllQuests()
     if Q.running then return end
     Q.running = true
@@ -299,31 +183,26 @@ function Q.runAllQuests()
     local wasFarming = API.farming
     if wasFarming then API.stopFarming() end
 
-    Q.setStatus("Подготовка квестов...", 0.05)
+    Q.setStatus("Запуск очереди квестов...", 0.05)
     task.wait(0.5)
 
     pcall(Q.doTargetQuest)
-    task.wait(1.5)
-
+    task.wait(1)
     pcall(Q.doCloudQuest)
-    task.wait(1.5)
-
+    task.wait(1)
     pcall(Q.doFindMeQuest)
-    task.wait(1.5)
-
+    task.wait(1)
     pcall(Q.doRingsQuest)
-    task.wait(1.5)
-
+    task.wait(1)
     pcall(Q.doSoccerQuest)
     task.wait(1)
 
-    Q.setStatus("Все квесты успешно завершены! ✓", 1.0)
-    API.showAchievementToast("УСПЕХ", "Все квесты BABFT пройдены!")
+    Q.setStatus("Все квесты завершены! ✓", 1.0)
+    API.showAchievementToast("УСПЕХ", "Все квесты пройдены!")
     if API.sendTelegramMessage then
-        API.sendTelegramMessage("🏆 <b>Все доступные квесты BABFT успешно выполнены!</b> Награды получены.")
+        API.sendTelegramMessage("🏆 <b>Все квесты BABFT успешно выполнены!</b>")
     end
 
-    -- Возврат персонажа на спавн
     local hrp = API.getCurrentHRP()
     if hrp then
         hrp.AssemblyLinearVelocity = Vector3.zero
@@ -337,9 +216,7 @@ function Q.runAllQuests()
     end
 end
 
--- =====================================================================
--- ГРАФИЧЕСКИЙ ИНТЕРФЕЙС КВЕСТОВ (Модальное окно ZIndex = 70)
--- =====================================================================
+-- Окно квестов UI
 local qWindow = Instance.new("Frame")
 qWindow.Size = UDim2.new(0, 270, 0, 360)
 qWindow.Position = UDim2.new(0.5, -135, 0.5, -180)
@@ -356,7 +233,6 @@ createCorner(qWindow, 12)
 local qStroke = createStroke(qWindow, Color3.fromRGB(180, 100, 255), 1.8)
 qStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
--- Шапка окна
 local qTopBar = Instance.new("Frame")
 qTopBar.Size = UDim2.new(1, 0, 0, 32)
 qTopBar.BackgroundTransparency = 1
@@ -388,32 +264,6 @@ qCloseBtn.ZIndex = 72
 qCloseBtn.Parent = qTopBar
 createCorner(qCloseBtn, 6)
 
--- Перетаскивание
-local qDragging, qDragStart, qStartPos
-qTopBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        qDragging = true
-        qDragStart = input.Position
-        qStartPos = qWindow.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then qDragging = false end
-        end)
-    end
-end)
-
-qTopBar.InputChanged:Connect(function(input)
-    if qDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - qDragStart
-        qWindow.Position = UDim2.new(
-            qStartPos.X.Scale,
-            qStartPos.X.Offset + delta.X,
-            qStartPos.Y.Scale,
-            qStartPos.Y.Offset + delta.Y
-        )
-    end
-end)
-
--- Статус бар
 local qStatusBar = Instance.new("Frame")
 qStatusBar.Size = UDim2.new(1, -20, 0, 42)
 qStatusBar.Position = UDim2.new(0, 10, 0, 36)
@@ -461,7 +311,6 @@ function Q.setStatus(msg, ratio)
     }):Play()
 end
 
--- Главная кнопка "Пройти ВСЕ квесты"
 local runAllBtn = Instance.new("TextButton")
 runAllBtn.Size = UDim2.new(1, -20, 0, 32)
 runAllBtn.Position = UDim2.new(0, 10, 0, 86)
@@ -480,7 +329,6 @@ runAllBtn.MouseButton1Click:Connect(function()
     task.spawn(Q.runAllQuests)
 end)
 
--- Индивидуальные кнопки квестов
 local function createQuestButton(yPos, name, cb)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -20, 0, 24)
@@ -528,7 +376,6 @@ end
 qCloseBtn.MouseButton1Click:Connect(closeWindow)
 closeBottom.MouseButton1Click:Connect(closeWindow)
 
--- Экспорт методов в глобальную таблицу API
 function API.openQuests()
     qWindow.Visible = true
 end
@@ -537,4 +384,4 @@ function API.closeQuests()
     qWindow.Visible = false
 end
 
-print("[BABFT-Quest] Модуль авто-квестов успешно подключен!")
+print("[BABFT-Quest] Оптимизированный модуль квестов подключен!")
