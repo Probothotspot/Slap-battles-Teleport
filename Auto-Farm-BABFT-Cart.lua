@@ -1,6 +1,9 @@
+-- =====================================================================
+-- МОДУЛЬ: КОРЗИНА ПОКУПОК С УЧЕТОМ БЛОКОВ В ПАЧКЕ (Auto-Farm-BABFT-Cart.lua)
+-- =====================================================================
 local API = _G.BABFT
 if not API or not API.screenGui then
-    warn("[BABFT-Cart] Ошибка: Ядро или ScreenGui не найдены! Сначала запустите Main и GUI.")
+    warn("[BABFT-Cart] Ошибка: Ядро или ScreenGui не найдены!")
     return
 end
 
@@ -23,7 +26,6 @@ local function createStroke(parent, color, thickness)
     return s
 end
 
--- Единая таблица модуля корзины
 local cart = {
     items = {},
     autoBuyActive = false,
@@ -32,7 +34,20 @@ local cart = {
     dropdownOpen = false
 }
 
--- Выборка доступных предметов
+-- Определение количества блоков в 1 пачке магазина BABFT
+local function getItemPackYield(name)
+    if name:find("Block") then
+        if name:find("Titanium") or name:find("Obsidian") or name:find("Marble") or name:find("Coal") or name:find("Bouncy") then
+            return 10
+        end
+        return 25
+    elseif name:find("CarWheels") then
+        return 4
+    end
+    return 1
+end
+
+-- Выборка предметов с учётом количества штук за пачку
 cart.getAvailableItems = function()
     local unique = {}
     local seen = {}
@@ -40,10 +55,12 @@ cart.getAvailableItems = function()
         for key, data in pairs(API.KNOWN_ITEMS) do
             if not seen[data.name] then
                 seen[data.name] = true
+                local packYield = data.yield or getItemPackYield(data.name)
                 table.insert(unique, {
                     name = data.name,
                     display = key:sub(1,1):upper() .. key:sub(2),
-                    price = data.price
+                    price = data.price,
+                    yield = packYield
                 })
             end
         end
@@ -135,12 +152,12 @@ addSection.ZIndex = 72
 addSection.Parent = cartWindow
 
 local available = cart.getAvailableItems()
-cart.selectedItem = available[1] or {name = "ToyBlock", display = "ToyBlock", price = 250}
+cart.selectedItem = available[1] or {name = "ToyBlock", display = "ToyBlock", price = 250, yield = 25}
 
 local dropBtn = Instance.new("TextButton")
 dropBtn.Size = UDim2.new(0.55, -4, 1, 0)
 dropBtn.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
-dropBtn.Text = (cart.selectedItem and cart.selectedItem.display or "Выбрать") .. " ▾"
+dropBtn.Text = (cart.selectedItem and (cart.selectedItem.display .. " (" .. cart.selectedItem.yield .. " шт.)") or "Выбрать") .. " ▾"
 dropBtn.TextColor3 = Color3.fromRGB(240, 230, 255)
 dropBtn.Font = Enum.Font.Gotham
 dropBtn.TextSize = 9
@@ -176,7 +193,7 @@ addBtn.ZIndex = 73
 addBtn.Parent = addSection
 createCorner(addBtn, 5)
 
--- Dropdown ScrollingFrame
+-- Выпадающий список
 local dropList = Instance.new("ScrollingFrame")
 dropList.Size = UDim2.new(0.65, 0, 0, 130)
 dropList.Position = UDim2.new(0, 10, 0, 66)
@@ -196,7 +213,8 @@ for idx, itemData in ipairs(available) do
     itemBtn.Size = UDim2.new(1, -6, 0, 18)
     itemBtn.Position = UDim2.new(0, 3, 0, (idx - 1) * 20 + 2)
     itemBtn.BackgroundColor3 = Color3.fromRGB(28, 22, 38)
-    itemBtn.Text = itemData.display .. " (" .. itemData.price .. " G)"
+    local yieldLabel = itemData.yield > 1 and (" [" .. itemData.yield .. " шт]") or ""
+    itemBtn.Text = itemData.display .. yieldLabel .. " (" .. itemData.price .. " G)"
     itemBtn.TextColor3 = Color3.fromRGB(230, 220, 250)
     itemBtn.Font = Enum.Font.Gotham
     itemBtn.TextSize = 9
@@ -208,7 +226,7 @@ for idx, itemData in ipairs(available) do
     itemBtn.MouseButton1Click:Connect(function()
         API.playSfx(API.clickSfx)
         cart.selectedItem = itemData
-        dropBtn.Text = itemData.display .. " ▾"
+        dropBtn.Text = itemData.display .. (itemData.yield > 1 and (" (" .. itemData.yield .. " шт.)") or "") .. " ▾"
         dropList.Visible = false
         cart.dropdownOpen = false
     end)
@@ -277,10 +295,10 @@ summaryFrame.Parent = cartWindow
 createCorner(summaryFrame, 6)
 
 local sPosLabel = Instance.new("TextLabel")
-sPosLabel.Size = UDim2.new(0.5, -8, 0, 14)
+sPosLabel.Size = UDim2.new(0.58, -8, 0, 14)
 sPosLabel.Position = UDim2.new(0, 8, 0, 4)
 sPosLabel.BackgroundTransparency = 1
-sPosLabel.Text = "Позиций: 0"
+sPosLabel.Text = "Позиций: 0 (0 блоков)"
 sPosLabel.TextColor3 = Color3.fromRGB(180, 170, 200)
 sPosLabel.Font = Enum.Font.Gotham
 sPosLabel.TextSize = 9
@@ -289,8 +307,8 @@ sPosLabel.ZIndex = 73
 sPosLabel.Parent = summaryFrame
 
 local sCostLabel = Instance.new("TextLabel")
-sCostLabel.Size = UDim2.new(0.5, -8, 0, 14)
-sCostLabel.Position = UDim2.new(0.5, 0, 0, 4)
+sCostLabel.Size = UDim2.new(0.42, -8, 0, 14)
+sCostLabel.Position = UDim2.new(0.58, 0, 0, 4)
 sCostLabel.BackgroundTransparency = 1
 sCostLabel.Text = "Стоимость: 0 G"
 sCostLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
@@ -426,10 +444,13 @@ cart.updateSummary = function()
     local totalItems = #cart.items
     local totalCost = 0
     local unboughtCost = 0
+    local totalBlocks = 0
 
     for _, itm in ipairs(cart.items) do
         local lineTotal = itm.price * itm.qty
+        local lineYield = (itm.yield or getItemPackYield(itm.name)) * itm.qty
         totalCost = totalCost + lineTotal
+        totalBlocks = totalBlocks + lineYield
         if not itm.bought then
             unboughtCost = unboughtCost + lineTotal
         end
@@ -438,7 +459,7 @@ cart.updateSummary = function()
     local remainingNeeded = unboughtCost - currentGold
     if remainingNeeded < 0 then remainingNeeded = 0 end
 
-    sPosLabel.Text = "Позиций: " .. totalItems
+    sPosLabel.Text = string.format("Позиций: %d (Всего: %d шт.)", totalItems, totalBlocks)
     sCostLabel.Text = "Осталось: " .. unboughtCost .. " G"
     sBalLabel.Text = "Баланс: " .. currentGold .. " G"
 
@@ -486,7 +507,7 @@ cart.updateSummary = function()
     end
 end
 
--- Перерисовка позиций
+-- Перерисовка списка с отображением общего количества блоков
 cart.refreshList = function()
     for _, child in ipairs(listFrame:GetChildren()) do
         if child:IsA("Frame") then child:Destroy() end
@@ -505,21 +526,31 @@ cart.refreshList = function()
         createCorner(row, 4)
 
         local statusMark = itm.bought and "✓ " or "• "
+        local packYield = itm.yield or getItemPackYield(itm.name)
+        local totalPieces = itm.qty * packYield
+
+        local displayQuantityText = ""
+        if packYield > 1 then
+            displayQuantityText = string.format("%s × %d (%d бл.)", itm.display, itm.qty, totalPieces)
+        else
+            displayQuantityText = string.format("%s × %d", itm.display, itm.qty)
+        end
+
         local nameLbl = Instance.new("TextLabel")
-        nameLbl.Size = UDim2.new(0.62, 0, 1, 0)
+        nameLbl.Size = UDim2.new(0.64, 0, 1, 0)
         nameLbl.Position = UDim2.new(0, 6, 0, 0)
         nameLbl.BackgroundTransparency = 1
-        nameLbl.Text = statusMark .. itm.display .. " × " .. itm.qty
+        nameLbl.Text = statusMark .. displayQuantityText
         nameLbl.TextColor3 = itm.bought and Color3.fromRGB(140, 255, 170) or Color3.fromRGB(235, 225, 250)
         nameLbl.Font = Enum.Font.GothamBold
-        nameLbl.TextSize = 9
+        nameLbl.TextSize = 8.5
         nameLbl.TextXAlignment = Enum.TextXAlignment.Left
         nameLbl.ZIndex = 74
         nameLbl.Parent = row
 
         local priceLbl = Instance.new("TextLabel")
-        priceLbl.Size = UDim2.new(0.24, 0, 1, 0)
-        priceLbl.Position = UDim2.new(0.62, 0, 0, 0)
+        priceLbl.Size = UDim2.new(0.22, 0, 1, 0)
+        priceLbl.Position = UDim2.new(0.64, 0, 0, 0)
         priceLbl.BackgroundTransparency = 1
         priceLbl.Text = (itm.price * itm.qty) .. " G"
         priceLbl.TextColor3 = Color3.fromRGB(255, 215, 0)
@@ -559,11 +590,14 @@ addBtn.MouseButton1Click:Connect(function()
     if not q or q <= 0 then q = 1 end
     q = math.floor(q)
 
+    local itemYield = cart.selectedItem.yield or getItemPackYield(cart.selectedItem.name)
+
     table.insert(cart.items, {
         name = cart.selectedItem.name,
         display = cart.selectedItem.display,
         qty = q,
         price = cart.selectedItem.price,
+        yield = itemYield,
         bought = false
     })
 
@@ -621,7 +655,7 @@ clearCartBtn.MouseButton1Click:Connect(function()
     cart.updateSummary()
 end)
 
--- Авто-закупка очереди
+-- Авто-закупка
 cart.startAutoBuy = function()
     if cart.autoBuyActive then return end
     cart.autoBuyActive = true
@@ -643,8 +677,11 @@ cart.startAutoBuy = function()
                             cart.save()
                             cart.refreshList()
                             cart.updateSummary()
-                            API.showAchievementToast("КУПЛЕНО", item.display .. " × " .. item.qty)
-                            API.sendTelegramMessage("🛒 <b>Куплено из корзины:</b> " .. item.display .. " × " .. item.qty)
+                            local totalP = item.qty * (item.yield or getItemPackYield(item.name))
+                            API.showAchievementToast("КУПЛЕНО", item.display .. " (" .. totalP .. " шт.)")
+                            if API.sendTelegramMessage then
+                                API.sendTelegramMessage("🛒 <b>Куплено:</b> " .. item.display .. " × " .. item.qty .. " пач. (" .. totalP .. " шт.)")
+                            end
                         end
                     end
                     break
@@ -653,7 +690,9 @@ cart.startAutoBuy = function()
 
             if allCompleted and #cart.items > 0 then
                 API.showAchievementToast("КОРЗИНА ГОТОВА", "Все позиции закуплены!")
-                API.sendTelegramMessage("🎉 <b>Корзина BABFT:</b> Все запланированные позиции закуплены!")
+                if API.sendTelegramMessage then
+                    API.sendTelegramMessage("🎉 <b>Корзина BABFT:</b> Все запланированные блоки закуплены!")
+                end
                 cart.stopAutoBuy()
                 break
             end
@@ -683,7 +722,6 @@ autoBuyCartToggle.MouseButton1Click:Connect(function()
     end
 end)
 
--- Публичные функции для GUI
 function API.openCart()
     cartWindow.Visible = true
     cart.refreshList()
@@ -717,4 +755,4 @@ closeCartBottom.MouseButton1Click:Connect(function()
 end)
 
 cart.load()
-print("[BABFT-Cart] Модуль Корзины успешно подключен!")
+print("[BABFT-Cart] Планер покупок с подсчётом блоков обновлён!")
