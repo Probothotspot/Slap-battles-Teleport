@@ -89,6 +89,7 @@ API.totalEarned = 0
 API.startTime = 0
 API.goldValObject = nil
 
+-- Метрики замера
 API.statsStartTime = 0
 API.lastFinalizedMinute = 0
 API.currentMinuteGold = 0
@@ -120,7 +121,7 @@ API.SPAWN_Z_MAX = 1200
 API.httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
 API.queue_on_teleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
 
--- База цен и размеров паков строго из видео
+-- База цен и размеров паков
 API.KNOWN_ITEMS = {
     ["common"] = {name = "Common Chest", price = 5, yield = 1},
     ["common chest"] = {name = "Common Chest", price = 5, yield = 1},
@@ -133,7 +134,6 @@ API.KNOWN_ITEMS = {
     ["legendary"] = {name = "Legendary Chest", price = 405, yield = 1},
     ["legendary chest"] = {name = "Legendary Chest", price = 405, yield = 1},
 
-    -- Блоки (паки по 50 шт. и стекло 25 шт.)
     ["дерево"] = {name = "WoodBlock", price = 250, yield = 50},
     ["wood"] = {name = "WoodBlock", price = 250, yield = 50},
     ["лего"] = {name = "ToyBlock", price = 250, yield = 50},
@@ -167,7 +167,6 @@ API.KNOWN_ITEMS = {
     ["titanium"] = {name = "TitaniumBlock", price = 425, yield = 50},
     ["ржавый металл"] = {name = "RustedMetalBlock", price = 300, yield = 50},
 
-    -- Механизмы и предметы
     ["колеса"] = {name = "CarWheels", price = 750, yield = 4},
     ["старые колеса"] = {name = "LegacyCarWheels", price = 750, yield = 4},
     ["шарики"] = {name = "Balloon", price = 45, yield = 3},
@@ -219,6 +218,11 @@ function API.playSfx(sfx)
     if API.soundEffectsActive and sfx then pcall(function() sfx:Play() end) end
 end
 
+function API.formatNum(n)
+    local left, num, right = string.match(tostring(math.floor(n)), "^([^%d]*%d)(%d*)(.-)$")
+    return left .. (num:reverse():gsub("(%d%d%d)", "%1,"):reverse()) .. right
+end
+
 function API.playStepSound()
     if not API.customSoundsActive or not API.soundEffectsActive then return end
     local char = player.Character
@@ -227,6 +231,7 @@ function API.playStepSound()
         if hrp then
             task.spawn(function()
                 local s = Instance.new("Sound")
+                s.Name = "CustomStepSFX"
                 s.SoundId = API.stepSoundId
                 s.Volume = 1.4
                 s.RollOffMaxDistance = 50
@@ -375,7 +380,7 @@ API.idledConn = player.Idled:Connect(function()
     VirtualUser:ClickButton2(Vector2.new(0, 0))
 end)
 
--- Анти-темнота (Постоянное поддержание без сброса при таймере 0.1с)
+-- Анти-темнота (постоянная работа без отключения)
 local defaultLighting = {
     Ambient = Lighting.Ambient,
     OutdoorAmbient = Lighting.OutdoorAmbient,
@@ -400,9 +405,7 @@ function API.enableClearVision()
             for _, v in ipairs(pGui:GetDescendants()) do
                 if v:IsA("Frame") and v.Visible and v.BackgroundTransparency < 0.4 then
                     local col = v.BackgroundColor3
-                    if (col.R + col.G + col.B) < 0.2 then
-                        v.Visible = false
-                    end
+                    if (col.R + col.G + col.B) < 0.25 then v.Visible = false end
                 end
             end
         end
@@ -420,17 +423,14 @@ function API.disableClearVision()
     end)
 end
 
--- Регулярная поддержка ясного зрения
 task.spawn(function()
     while true do
-        if API.antiDarknessActive then
-            API.enableClearVision()
-        end
+        if API.antiDarknessActive then API.enableClearVision() end
         task.wait(1.5)
     end
 end)
 
--- Поиск предмета с отдачей yield (размера пака)
+-- Поиск предмета в магазине с выдачей размера пака
 function API.searchItemInGame(query)
     query = string.lower(string.gsub(query, "%s+", ""))
     if query == "" then return nil, 0, 1 end
@@ -488,7 +488,145 @@ function API.checkAndAutoBuy()
     end
 end
 
--- Цикл фарма с защитой от зависания на 10 этапе (10 секунд таймаут)
+-- ВОССТАНОВЛЕННАЯ ФУНКЦИЯ ЗАМЕРОВ М1, М2, СКОРОСТИ И ETA
+function API.updateSpeedAndEtaMetrics()
+    local UI = API.UI
+    if not API.farming then
+        if API.lastFinalizedMinute == 0 then
+            if UI.goldSpeedLabel then UI.goldSpeedLabel.Text = "Скорость: ~0 G/ч (0.0 G/мин)" end
+            if UI.minuteStatsLabel then UI.minuteStatsLabel.Text = "Мин. статистика: фарм остановлен" end
+        end
+        if UI.etaLabel then UI.etaLabel.Text = "До покупки: Выкл" end
+        return
+    end
+
+    local elapsed = time() - API.statsStartTime
+    local completedMinutes = math.floor(elapsed / 60)
+
+    if completedMinutes > API.lastFinalizedMinute then
+        while API.lastFinalizedMinute < completedMinutes do
+            API.lastFinalizedMinute = API.lastFinalizedMinute + 1
+            if API.lastFinalizedMinute == completedMinutes then
+                API.minuteSamples[API.lastFinalizedMinute] = API.currentMinuteGold
+                API.minuteSampleSum = API.minuteSampleSum + API.currentMinuteGold
+                API.currentMinuteGold = 0
+            else
+                API.minuteSamples[API.lastFinalizedMinute] = 0
+            end
+        end
+
+        if API.lastFinalizedMinute > 0 then
+            API.averageGoldPerMinute = API.minuteSampleSum / API.lastFinalizedMinute
+            API.estimatedGoldPerHour = math.floor(API.averageGoldPerMinute * 60 + 0.5)
+        end
+    end
+
+    if API.lastFinalizedMinute == 0 then
+        if UI.goldSpeedLabel then UI.goldSpeedLabel.Text = "Скорость: сбор данных до 1-й минуты..." end
+        if UI.minuteStatsLabel then
+            UI.minuteStatsLabel.Text = string.format("Замер минуты 1: +%d G (%dс/60с)", API.currentMinuteGold, math.floor(elapsed % 60))
+        end
+    else
+        if UI.goldSpeedLabel then
+            UI.goldSpeedLabel.Text = string.format("Скорость: ~%s G/ч (%.1f G/мин)", API.formatNum(API.estimatedGoldPerHour), API.averageGoldPerMinute)
+        end
+        if UI.minuteStatsLabel then
+            if API.lastFinalizedMinute == 1 then
+                UI.minuteStatsLabel.Text = string.format("М1: +%d | Ср: %.1f/мин", API.minuteSamples[1] or 0, API.averageGoldPerMinute)
+            else
+                local mPrev = API.lastFinalizedMinute - 1
+                local mCurr = API.lastFinalizedMinute
+                UI.minuteStatsLabel.Text = string.format("М%d:+%d | М%d:+%d | Ср:%.1f/мин", mPrev, API.minuteSamples[mPrev] or 0, mCurr, API.minuteSamples[mCurr] or 0, API.averageGoldPerMinute)
+            end
+        end
+    end
+
+    -- Расчет ETA с учетом формулы (50 x 400 = 20,000 блоков)
+    if API.autoBuyActive and API.targetItemPrice > 0 and API.buyAmount > 0 then
+        local currentG = API.getCurrentGold()
+        local totalCost = API.targetItemPrice * API.buyAmount
+        local remainingGold = totalCost - currentG
+        local packYield = API.targetItemYield or 1
+        local totalBlocks = API.buyAmount * packYield
+
+        local formulaText = ""
+        if packYield > 1 then
+            formulaText = string.format(" (%d × %s = %s бл.)", packYield, API.formatNum(API.buyAmount), API.formatNum(totalBlocks))
+        else
+            formulaText = string.format(" (%s шт.)", API.formatNum(API.buyAmount))
+        end
+
+        if remainingGold <= 0 then
+            API.currentETA = "Покупка: сейчас"
+            if UI.etaLabel then
+                UI.etaLabel.TextColor3 = Color3.fromRGB(120, 255, 150)
+                UI.etaLabel.Text = "Покупка: сейчас!" .. formulaText
+            end
+        elseif API.lastFinalizedMinute == 0 or API.averageGoldPerMinute <= 0 then
+            API.currentETA = "после 1 мин."
+            if UI.etaLabel then
+                UI.etaLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+                UI.etaLabel.Text = string.format("Нужно %s G%s | ETA после 1 мин.", API.formatNum(remainingGold), formulaText)
+            end
+        else
+            local etaSeconds = math.floor((remainingGold / API.averageGoldPerMinute) * 60)
+            API.currentETA = API.formatTime(etaSeconds)
+            if UI.etaLabel then
+                UI.etaLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+                UI.etaLabel.Text = string.format("Нужно %s G%s | ETA: %s", API.formatNum(remainingGold), formulaText, API.currentETA)
+            end
+        end
+    else
+        API.currentETA = "Выкл"
+        if UI.etaLabel then
+            UI.etaLabel.TextColor3 = Color3.fromRGB(160, 150, 180)
+            UI.etaLabel.Text = "До покупки: Выкл"
+        end
+    end
+
+    if API.isBlackScreen and UI.bsStats then
+        if API.lastFinalizedMinute == 0 then
+            UI.bsStats.Text = string.format("Заработано: +%d Gold\nСкорость: сбор данных...\nВремя: %s", API.totalEarned, UI.timeTrackerLabel and UI.timeTrackerLabel.Text:gsub("Время фарма: ", "") or "00:00:00")
+        else
+            UI.bsStats.Text = string.format("Заработано: +%d Gold\nСкорость: ~%s G/ч (%.1f/мин)\nВремя: %s", API.totalEarned, API.formatNum(API.estimatedGoldPerHour), API.averageGoldPerMinute, UI.timeTrackerLabel and UI.timeTrackerLabel.Text:gsub("Время фарма: ", "") or "00:00:00")
+        end
+    end
+end
+
+-- Обработка баланса
+function API.updateGoldStats()
+    local UI = API.UI
+    local current = API.getCurrentGold()
+    if API.farming then
+        local delta = current - API.previousGold
+        if delta > 0 then
+            API.totalEarned = API.totalEarned + delta
+            API.currentMinuteGold = API.currentMinuteGold + delta
+            API.playSfx(API.coinSfx)
+        end
+        API.previousGold = current
+        if UI.startAndCurrentGoldLabel then UI.startAndCurrentGoldLabel.Text = "Старт: " .. tostring(API.startGold) .. "  |  Сейчас: " .. tostring(current) end
+        if UI.goldTrackerLabel then UI.goldTrackerLabel.Text = "Заработано: +" .. tostring(API.totalEarned) .. " Gold" end
+    else
+        API.previousGold = current
+        if UI.startAndCurrentGoldLabel then UI.startAndCurrentGoldLabel.Text = "Старт: 0  |  Сейчас: " .. tostring(current) end
+    end
+    API.checkAndAutoBuy()
+    API.updateSpeedAndEtaMetrics()
+end
+
+task.spawn(function()
+    local obj = API.getGoldObject()
+    while not obj do
+        task.wait(1)
+        obj = API.getGoldObject()
+    end
+    API.previousGold = API.getCurrentGold()
+    API.updateGoldStats()
+    obj.Changed:Connect(API.updateGoldStats)
+end)
+
+-- Фарм цикл с таймаутом 10 секунд на 10 этапе
 function API.startFarmingLoop()
     local UI = API.UI
     API.farmThread = task.spawn(function()
@@ -595,18 +733,15 @@ function API.startFarmingLoop()
                     continue
                 end
 
-                -- Ожидание сброса зоны с жестким лимитом 10 секунд
                 if UI.statusLabel then UI.statusLabel.Text = "10 этап: ожидание спавна..." end
                 local stage10Timer = tick()
 
                 while API.farming do
                     task.wait(0.1)
                     local curHrp, curChar, curHum = API.getCurrentHRP()
-                    if curHrp and curHrp.Position.Z < API.SPAWN_Z_MAX then
-                        break
-                    end
+                    if curHrp and curHrp.Position.Z < API.SPAWN_Z_MAX then break end
 
-                    -- Таймаут 10 секунд -> принудительный ресет
+                    -- Таймаут 10 секунд -> принудительный сброс
                     if tick() - stage10Timer > 10 then
                         if UI.statusLabel then UI.statusLabel.Text = "10с зависание! Экстренный ресет..." end
                         if curHum then curHum.Health = 0 end
@@ -706,7 +841,7 @@ function API.startFarming()
         while API.farming do
             local elapsed = math.floor(time() - API.statsStartTime)
             if UI.timeTrackerLabel then UI.timeTrackerLabel.Text = "Время фарма: " .. API.formatTime(elapsed) end
-            if API.updateSpeedAndEtaMetrics then API.updateSpeedAndEtaMetrics() end
+            API.updateSpeedAndEtaMetrics()
             task.wait(1)
         end
     end)
@@ -739,41 +874,9 @@ function API.stopFarming()
     API.platform.Parent = nil
     if API.farmThread then task.cancel(API.farmThread) API.farmThread = nil end
 
-    if API.updateSpeedAndEtaMetrics then API.updateSpeedAndEtaMetrics() end
+    API.updateSpeedAndEtaMetrics()
     print("[BABFT] Автофарм остановлен.")
 end
-
-function API.updateGoldStats()
-    local UI = API.UI
-    local current = API.getCurrentGold()
-    if API.farming then
-        local delta = current - API.previousGold
-        if delta > 0 then
-            API.totalEarned = API.totalEarned + delta
-            API.currentMinuteGold = API.currentMinuteGold + delta
-            API.playSfx(API.coinSfx)
-        end
-        API.previousGold = current
-        if UI.startAndCurrentGoldLabel then UI.startAndCurrentGoldLabel.Text = "Старт: " .. tostring(API.startGold) .. "  |  Сейчас: " .. tostring(current) end
-        if UI.goldTrackerLabel then UI.goldTrackerLabel.Text = "Заработано: +" .. tostring(API.totalEarned) .. " Gold" end
-    else
-        API.previousGold = current
-        if UI.startAndCurrentGoldLabel then UI.startAndCurrentGoldLabel.Text = "Старт: 0  |  Сейчас: " .. tostring(current) end
-    end
-    API.checkAndAutoBuy()
-    if API.updateSpeedAndEtaMetrics then API.updateSpeedAndEtaMetrics() end
-end
-
-task.spawn(function()
-    local obj = API.getGoldObject()
-    while not obj do
-        task.wait(1)
-        obj = API.getGoldObject()
-    end
-    API.previousGold = API.getCurrentGold()
-    API.updateGoldStats()
-    obj.Changed:Connect(API.updateGoldStats)
-end)
 
 function API.fullCleanup()
     API.farming = false
@@ -796,4 +899,4 @@ function API.fullCleanup()
 end
 
 _G.BabftActiveScript = { Destroy = API.fullCleanup }
-print("[BABFT-Main] Логическое ядро с защитой от 10с таймаута готово!")
+print("[BABFT-Main] Логическое ядро с М1/М2 и ETA готово!")
