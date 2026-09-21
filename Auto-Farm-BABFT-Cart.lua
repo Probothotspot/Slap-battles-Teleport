@@ -1,5 +1,5 @@
 -- =====================================================================
--- МОДУЛЬ: КОРЗИНА ПОКУПОК С ЖИВЫМ КАЛЬКУЛЯТОРОМ БЛОКОВ (Auto-Farm-BABFT-Cart.lua)
+-- МОДУЛЬ: КОРЗИНА С ФОРМУЛОЙ УМНОЖЕНИЯ (Auto-Farm-BABFT-Cart.lua)
 -- =====================================================================
 local API = _G.BABFT
 if not API or not API.screenGui then
@@ -26,7 +26,6 @@ local function createStroke(parent, color, thickness)
     return s
 end
 
--- Красивое форматирование чисел (например: 20000 -> 20,000)
 local function formatNum(n)
     local left, num, right = string.match(tostring(math.floor(n)), "^([^%d]*%d)(%d*)(.-)$")
     return left .. (num:reverse():gsub("(%d%d%d)", "%1,"):reverse()) .. right
@@ -39,7 +38,6 @@ local cart = {
     searchedItem = nil
 }
 
--- Модальное окно (ZIndex = 70)
 local cartWindow = Instance.new("Frame")
 cartWindow.Size = UDim2.new(0, 290, 0, 435)
 cartWindow.Position = UDim2.new(0.5, -145, 0.5, -217)
@@ -56,7 +54,6 @@ createCorner(cartWindow, 12)
 local cartStroke = createStroke(cartWindow, Color3.fromRGB(180, 100, 255), 1.8)
 cartStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
--- Шапка
 local cartTopBar = Instance.new("Frame")
 cartTopBar.Size = UDim2.new(1, 0, 0, 32)
 cartTopBar.BackgroundTransparency = 1
@@ -88,7 +85,6 @@ cartCloseBtn.ZIndex = 72
 cartCloseBtn.Parent = cartTopBar
 createCorner(cartCloseBtn, 6)
 
--- Перетаскивание
 local cartDragging, cartDragStart, cartStartPos
 cartTopBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -113,12 +109,11 @@ cartTopBar.InputChanged:Connect(function(input)
     end
 end)
 
--- Поле ввода блока
 local searchBox = Instance.new("TextBox")
 searchBox.Size = UDim2.new(1, -20, 0, 22)
 searchBox.Position = UDim2.new(0, 10, 0, 34)
 searchBox.BackgroundColor3 = Color3.fromRGB(28, 22, 38)
-searchBox.PlaceholderText = "Введите блок (напр. Лего, Дерево, Пластик)..."
+searchBox.PlaceholderText = "Введите блок (напр. Лего, Дерево)..."
 searchBox.PlaceholderColor3 = Color3.fromRGB(130, 115, 155)
 searchBox.Text = ""
 searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -131,7 +126,6 @@ searchBox.Parent = cartWindow
 createCorner(searchBox, 5)
 createStroke(searchBox, Color3.fromRGB(60, 45, 80), 1)
 
--- Строка ввода пачек + кнопка добавления
 local addRow = Instance.new("Frame")
 addRow.Size = UDim2.new(1, -20, 0, 22)
 addRow.Position = UDim2.new(0, 10, 0, 60)
@@ -166,7 +160,7 @@ addBtn.ZIndex = 73
 addBtn.Parent = addRow
 createCorner(addBtn, 5)
 
--- Плашка живого расчета блоков (Калькулятор)
+-- Плашка точного умножения: [штук в пачке] × [пачек] = [итого блоков]
 local calcPreviewFrame = Instance.new("Frame")
 calcPreviewFrame.Size = UDim2.new(1, -20, 0, 26)
 calcPreviewFrame.Position = UDim2.new(0, 10, 0, 86)
@@ -181,7 +175,7 @@ local calcPreviewLabel = Instance.new("TextLabel")
 calcPreviewLabel.Size = UDim2.new(1, -10, 1, 0)
 calcPreviewLabel.Position = UDim2.new(0, 5, 0, 0)
 calcPreviewLabel.BackgroundTransparency = 1
-calcPreviewLabel.Text = "Введите название блока и число пачек"
+calcPreviewLabel.Text = "Введите блок и число пачек"
 calcPreviewLabel.TextColor3 = Color3.fromRGB(150, 140, 175)
 calcPreviewLabel.Font = Enum.Font.GothamBold
 calcPreviewLabel.TextSize = 8.5
@@ -189,12 +183,11 @@ calcPreviewLabel.TextXAlignment = Enum.TextXAlignment.Left
 calcPreviewLabel.ZIndex = 73
 calcPreviewLabel.Parent = calcPreviewFrame
 
--- Функция мгновенного пересчета умножения: пачки * блоки
 local function updateCalculationPreview()
     local query = searchBox.Text
     if query == "" then
         cart.searchedItem = nil
-        calcPreviewLabel.Text = "Введите название блока и число пачек"
+        calcPreviewLabel.Text = "Введите блок и число пачек"
         calcPreviewLabel.TextColor3 = Color3.fromRGB(150, 140, 175)
         return
     end
@@ -217,9 +210,9 @@ local function updateCalculationPreview()
         }
 
         if packYield > 1 then
-            calcPreviewLabel.Text = string.format("✔ Итого: %s блоков (%s пач. × %d) | %s G", formatNum(totalBlocks), formatNum(packs), packYield, formatNum(totalCost))
+            calcPreviewLabel.Text = string.format("✔ %s: %d × %s = %s блоков! (%s G)", realName, packYield, formatNum(packs), formatNum(totalBlocks), formatNum(totalCost))
         else
-            calcPreviewLabel.Text = string.format("✔ Итого: %s шт. (%s G)", formatNum(packs), formatNum(totalCost))
+            calcPreviewLabel.Text = string.format("✔ %s: %s шт. (%s G)", realName, formatNum(packs), formatNum(totalCost))
         end
         calcPreviewLabel.TextColor3 = Color3.fromRGB(80, 240, 140)
     else
@@ -232,7 +225,6 @@ end
 searchBox:GetPropertyChangedSignal("Text"):Connect(updateCalculationPreview)
 qtyBox:GetPropertyChangedSignal("Text"):Connect(updateCalculationPreview)
 
--- Список добавленных позиций (ScrollingFrame)
 local listFrame = Instance.new("ScrollingFrame")
 listFrame.Size = UDim2.new(1, -20, 0, 120)
 listFrame.Position = UDim2.new(0, 10, 0, 116)
@@ -245,7 +237,6 @@ listFrame.Parent = cartWindow
 createCorner(listFrame, 6)
 createStroke(listFrame, Color3.fromRGB(45, 35, 60), 1)
 
--- Прогресс-бар
 local progressBg = Instance.new("Frame")
 progressBg.Size = UDim2.new(1, -20, 0, 16)
 progressBg.Position = UDim2.new(0, 10, 0, 240)
@@ -277,7 +268,6 @@ progressLabel.TextSize = 9
 progressLabel.ZIndex = 74
 progressLabel.Parent = progressBg
 
--- Итоговая сводка
 local summaryFrame = Instance.new("Frame")
 summaryFrame.Size = UDim2.new(1, -20, 0, 72)
 summaryFrame.Position = UDim2.new(0, 10, 0, 260)
@@ -359,7 +349,6 @@ sStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 sStatusLabel.ZIndex = 73
 sStatusLabel.Parent = summaryFrame
 
--- Кнопки действий
 local btnRow1 = Instance.new("Frame")
 btnRow1.Size = UDim2.new(1, -20, 0, 20)
 btnRow1.Position = UDim2.new(0, 10, 0, 338)
@@ -431,7 +420,6 @@ closeCartBottom.ZIndex = 73
 closeCartBottom.Parent = cartWindow
 createCorner(closeCartBottom, 5)
 
--- Пересчет сводки
 cart.updateSummary = function()
     local currentGold = API.getCurrentGold()
     local totalItems = #cart.items
@@ -500,7 +488,6 @@ cart.updateSummary = function()
     end
 end
 
--- Отрисовка списка строк в корзине
 cart.refreshList = function()
     for _, child in ipairs(listFrame:GetChildren()) do
         if child:IsA("Frame") then child:Destroy() end
@@ -524,13 +511,13 @@ cart.refreshList = function()
 
         local displayText = ""
         if packYield > 1 then
-            displayText = string.format("%s × %s пач. ➔ %s блоков", itm.display, formatNum(itm.qty), formatNum(totalPieces))
+            displayText = string.format("%s: %d × %s = %s бл.", itm.display, packYield, formatNum(itm.qty), formatNum(totalPieces))
         else
             displayText = string.format("%s × %s шт.", itm.display, formatNum(itm.qty))
         end
 
         local nameLbl = Instance.new("TextLabel")
-        nameLbl.Size = UDim2.new(0.66, 0, 1, 0)
+        nameLbl.Size = UDim2.new(0.68, 0, 1, 0)
         nameLbl.Position = UDim2.new(0, 6, 0, 0)
         nameLbl.BackgroundTransparency = 1
         nameLbl.Text = statusMark .. displayText
@@ -543,7 +530,7 @@ cart.refreshList = function()
 
         local priceLbl = Instance.new("TextLabel")
         priceLbl.Size = UDim2.new(0.20, 0, 1, 0)
-        priceLbl.Position = UDim2.new(0.66, 0, 0, 0)
+        priceLbl.Position = UDim2.new(0.68, 0, 0, 0)
         priceLbl.BackgroundTransparency = 1
         priceLbl.Text = formatNum(itm.price * itm.qty) .. " G"
         priceLbl.TextColor3 = Color3.fromRGB(255, 215, 0)
@@ -575,7 +562,6 @@ cart.refreshList = function()
     end
 end
 
--- Добавление найденного блока
 addBtn.MouseButton1Click:Connect(function()
     API.playSfx(API.clickSfx)
     if not cart.searchedItem then
@@ -607,7 +593,6 @@ addBtn.MouseButton1Click:Connect(function()
     cart.updateSummary()
 end)
 
--- Сохранение и загрузка
 cart.save = function()
     if not writefile then return end
     pcall(function()
@@ -657,7 +642,6 @@ clearCartBtn.MouseButton1Click:Connect(function()
     cart.updateSummary()
 end)
 
--- Авто-закупка
 cart.startAutoBuy = function()
     if cart.autoBuyActive then return end
     cart.autoBuyActive = true
@@ -682,7 +666,7 @@ cart.startAutoBuy = function()
                             local totalP = item.qty * (item.yield or 1)
                             API.showAchievementToast("КУПЛЕНО", item.display .. " (" .. formatNum(totalP) .. " шт.)")
                             if API.sendTelegramMessage then
-                                API.sendTelegramMessage("🛒 <b>Куплено:</b> " .. item.display .. " × " .. formatNum(item.qty) .. " пач. (" .. formatNum(totalP) .. " шт.)")
+                                API.sendTelegramMessage(string.format("🛒 <b>Куплено:</b> %s (<b>%d × %s = %s блоков</b>)", item.display, (item.yield or 1), formatNum(item.qty), formatNum(totalP)))
                             end
                         end
                     end
@@ -756,4 +740,4 @@ closeCartBottom.MouseButton1Click:Connect(function()
 end)
 
 cart.load()
-print("[BABFT-Cart] Корзина с живым калькулятором блоков готова!")
+print("[BABFT-Cart] Корзина с формулой умножения готова!")
