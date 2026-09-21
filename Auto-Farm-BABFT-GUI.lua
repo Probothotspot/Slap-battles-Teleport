@@ -568,7 +568,7 @@ itemStatusLabel.ZIndex = 22
 itemStatusLabel.Parent = scrollFrame
 UI.itemStatusLabel = itemStatusLabel
 
--- Подсчет в реальном времени для главного GUI: пачки * блоки
+-- Наглядная формула умножения в одиночной автозакупке
 local function updateGuiItemCalculation()
     local text = itemInputBox.Text
     if text == "" then
@@ -577,6 +577,7 @@ local function updateGuiItemCalculation()
         API.targetItemYield = 1
         itemStatusLabel.Text = "Введите название для поиска"
         itemStatusLabel.TextColor3 = Color3.fromRGB(140, 130, 160)
+        API.updateSpeedAndEtaMetrics()
         return
     end
 
@@ -596,7 +597,7 @@ local function updateGuiItemCalculation()
             API.targetItemYield = packYield
 
             if packYield > 1 then
-                itemStatusLabel.Text = string.format("✔ %s: %s пач. × %d = %s блоков (%s G)", realName, formatNum(packs), packYield, formatNum(totalBlocks), formatNum(totalGold))
+                itemStatusLabel.Text = string.format("✔ %s: %d × %s = %s блоков! (%s G)", realName, packYield, formatNum(packs), formatNum(totalBlocks), formatNum(totalGold))
             else
                 itemStatusLabel.Text = string.format("✔ %s: %s шт. (%s G)", realName, formatNum(packs), formatNum(totalGold))
             end
@@ -609,6 +610,7 @@ local function updateGuiItemCalculation()
             itemStatusLabel.TextColor3 = Color3.fromRGB(255, 80, 90)
         end
     end
+    API.updateSpeedAndEtaMetrics()
 end
 
 itemInputBox:GetPropertyChangedSignal("Text"):Connect(updateGuiItemCalculation)
@@ -978,7 +980,7 @@ end)
 
 amountBox.FocusLost:Connect(function()
     local val = tonumber(amountBox.Text)
-    if val and val > 0 then API.buyAmount = math.floor(val) else amountBox.Text = tostring(API.buyAmount) end
+    if val and val > 0 then buyAmount = math.floor(val) else amountBox.Text = tostring(API.buyAmount) end
     if API.saveConfig then API.saveConfig() end
     updateGuiItemCalculation()
 end)
@@ -991,6 +993,7 @@ autoBuyToggleBtn.MouseButton1Click:Connect(function()
     autoBuyToggleBtn.Text = API.autoBuyActive and "Авто-закупка: ВКЛ" or "Авто-закупка: ВЫКЛ"
     if API.autoBuyActive and API.checkAndAutoBuy then API.checkAndAutoBuy() end
     if API.saveConfig then API.saveConfig() end
+    API.updateSpeedAndEtaMetrics()
 end)
 
 smoothnessBtn.MouseButton1Click:Connect(function()
@@ -1030,7 +1033,7 @@ spaceBgBtn.MouseButton1Click:Connect(function()
 end)
 
 batterySaverBtn.MouseButton1Click:Connect(function()
-    API.playSfx(API.clickSfx)
+    playSfx(API.clickSfx)
     API.toggleBlackScreen(not API.isBlackScreen)
     batterySaverBtn.BackgroundColor3 = API.isBlackScreen and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     batterySaverBtn.TextColor3 = API.isBlackScreen and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
@@ -1038,7 +1041,7 @@ batterySaverBtn.MouseButton1Click:Connect(function()
 end)
 
 antiLagBtn.MouseButton1Click:Connect(function()
-    API.playSfx(API.clickSfx)
+    playSfx(clickSfx)
     API.antiLagActive = not API.antiLagActive
     antiLagBtn.BackgroundColor3 = API.antiLagActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     antiLagBtn.TextColor3 = API.antiLagActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
@@ -1048,7 +1051,7 @@ antiLagBtn.MouseButton1Click:Connect(function()
 end)
 
 antiHazardBtn.MouseButton1Click:Connect(function()
-    API.playSfx(API.clickSfx)
+    playSfx(clickSfx)
     API.toggleAntiHazard(not API.antiHazardActive)
     antiHazardBtn.BackgroundColor3 = API.antiHazardActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     antiHazardBtn.TextColor3 = API.antiHazardActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
@@ -1057,7 +1060,7 @@ antiHazardBtn.MouseButton1Click:Connect(function()
 end)
 
 antiDarkBtn.MouseButton1Click:Connect(function()
-    API.playSfx(API.clickSfx)
+    playSfx(clickSfx)
     API.antiDarknessActive = not API.antiDarknessActive
     antiDarkBtn.BackgroundColor3 = API.antiDarknessActive and Color3.fromRGB(138, 43, 226) or Color3.fromRGB(35, 28, 45)
     antiDarkBtn.TextColor3 = API.antiDarknessActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(175, 160, 205)
