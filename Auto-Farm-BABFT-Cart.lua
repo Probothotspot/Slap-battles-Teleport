@@ -1,5 +1,5 @@
 -- =====================================================================
--- МОДУЛЬ: КОРЗИНА С ФОРМУЛОЙ УМНОЖЕНИЯ (Auto-Farm-BABFT-Cart.lua)
+-- МОДУЛЬ: КОРЗИНА ПОКУПОК С ЖЕСТКИМ РАСЧЕТОМ 50x400 (Auto-Farm-BABFT-Cart.lua)
 -- =====================================================================
 local API = _G.BABFT
 if not API or not API.screenGui then
@@ -26,9 +26,49 @@ local function createStroke(parent, color, thickness)
     return s
 end
 
+-- Красивое разделение тысяч (например: 20000 -> 20,000)
 local function formatNum(n)
     local left, num, right = string.match(tostring(math.floor(n)), "^([^%d]*%d)(%d*)(.-)$")
     return left .. (num:reverse():gsub("(%d%d%d)", "%1,"):reverse()) .. right
+end
+
+-- Безошибочное определение количества блоков в 1 пачке
+local function getPackYield(itemName)
+    if not itemName then return 1 end
+    local n = string.lower(tostring(itemName))
+
+    if n:find("glass") or n:find("стекл") then
+        return 25
+    elseif n:find("wheel") or n:find("колес") then
+        return 4
+    elseif n:find("balloon") or n:find("шарик") 
+        or n:find("turbine") or n:find("турбин") 
+        or n:find("bar") or n:find("прут") or n:find("стержен")
+        or n:find("suspension") or n:find("подвеск") 
+        or n:find("lightbulb") or n:find("ламп") then
+        return 3
+    elseif n:find("note") or n:find("нот") 
+        or n:find("delay") or n:find("задержк") then
+        return 2
+    elseif n:find("block") or n:find("блок")
+        or n:find("wood") or n:find("дерев")
+        or n:find("toy") or n:find("лего")
+        or n:find("stone") or n:find("камен")
+        or n:find("fabric") or n:find("ткан")
+        or n:find("plastic") or n:find("пластик")
+        or n:find("sand") or n:find("песок")
+        or n:find("bouncy") or n:find("прыгуч")
+        or n:find("metal") or n:find("метал")
+        or n:find("ice") or n:find("лед")
+        or n:find("coal") or n:find("угол")
+        or n:find("brick") or n:find("кирпич")
+        or n:find("marble") or n:find("мрамор")
+        or n:find("obsidian") or n:find("обсидиан")
+        or n:find("titanium") or n:find("титан")
+        or n:find("rusted") or n:find("ржав") then
+        return 50
+    end
+    return 1
 end
 
 local cart = {
@@ -38,6 +78,7 @@ local cart = {
     searchedItem = nil
 }
 
+-- Модальное окно (ZIndex = 70)
 local cartWindow = Instance.new("Frame")
 cartWindow.Size = UDim2.new(0, 290, 0, 435)
 cartWindow.Position = UDim2.new(0.5, -145, 0.5, -217)
@@ -54,6 +95,7 @@ createCorner(cartWindow, 12)
 local cartStroke = createStroke(cartWindow, Color3.fromRGB(180, 100, 255), 1.8)
 cartStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
+-- Шапка
 local cartTopBar = Instance.new("Frame")
 cartTopBar.Size = UDim2.new(1, 0, 0, 32)
 cartTopBar.BackgroundTransparency = 1
@@ -85,6 +127,7 @@ cartCloseBtn.ZIndex = 72
 cartCloseBtn.Parent = cartTopBar
 createCorner(cartCloseBtn, 6)
 
+-- Перетаскивание
 local cartDragging, cartDragStart, cartStartPos
 cartTopBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -109,11 +152,12 @@ cartTopBar.InputChanged:Connect(function(input)
     end
 end)
 
+-- Поле поиска блока
 local searchBox = Instance.new("TextBox")
 searchBox.Size = UDim2.new(1, -20, 0, 22)
 searchBox.Position = UDim2.new(0, 10, 0, 34)
 searchBox.BackgroundColor3 = Color3.fromRGB(28, 22, 38)
-searchBox.PlaceholderText = "Введите блок (напр. Лего, Дерево)..."
+searchBox.PlaceholderText = "Введите блок (напр. Лего, Дерево, Пластик)..."
 searchBox.PlaceholderColor3 = Color3.fromRGB(130, 115, 155)
 searchBox.Text = ""
 searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -126,6 +170,7 @@ searchBox.Parent = cartWindow
 createCorner(searchBox, 5)
 createStroke(searchBox, Color3.fromRGB(60, 45, 80), 1)
 
+-- Строка ввода пачек + кнопка добавления
 local addRow = Instance.new("Frame")
 addRow.Size = UDim2.new(1, -20, 0, 22)
 addRow.Position = UDim2.new(0, 10, 0, 60)
@@ -160,7 +205,7 @@ addBtn.ZIndex = 73
 addBtn.Parent = addRow
 createCorner(addBtn, 5)
 
--- Плашка точного умножения: [штук в пачке] × [пачек] = [итого блоков]
+-- Плашка живого расчета: [50 шт.] × [400 пачек] = [20,000 блоков]
 local calcPreviewFrame = Instance.new("Frame")
 calcPreviewFrame.Size = UDim2.new(1, -20, 0, 26)
 calcPreviewFrame.Position = UDim2.new(0, 10, 0, 86)
@@ -194,11 +239,13 @@ local function updateCalculationPreview()
 
     local realName, price, packYield = API.searchItemInGame(query)
     if realName and price > 0 then
+        -- Принудительное определение размера пачки
+        packYield = getPackYield(realName)
+
         local packs = tonumber(qtyBox.Text) or 1
         if packs <= 0 then packs = 1 end
         packs = math.floor(packs)
 
-        packYield = packYield or 1
         local totalBlocks = packs * packYield
         local totalCost = packs * price
 
@@ -225,6 +272,7 @@ end
 searchBox:GetPropertyChangedSignal("Text"):Connect(updateCalculationPreview)
 qtyBox:GetPropertyChangedSignal("Text"):Connect(updateCalculationPreview)
 
+-- Список добавленных позиций (ScrollingFrame)
 local listFrame = Instance.new("ScrollingFrame")
 listFrame.Size = UDim2.new(1, -20, 0, 120)
 listFrame.Position = UDim2.new(0, 10, 0, 116)
@@ -237,6 +285,7 @@ listFrame.Parent = cartWindow
 createCorner(listFrame, 6)
 createStroke(listFrame, Color3.fromRGB(45, 35, 60), 1)
 
+-- Прогресс-бар
 local progressBg = Instance.new("Frame")
 progressBg.Size = UDim2.new(1, -20, 0, 16)
 progressBg.Position = UDim2.new(0, 10, 0, 240)
@@ -268,6 +317,7 @@ progressLabel.TextSize = 9
 progressLabel.ZIndex = 74
 progressLabel.Parent = progressBg
 
+-- Итоговая сводка
 local summaryFrame = Instance.new("Frame")
 summaryFrame.Size = UDim2.new(1, -20, 0, 72)
 summaryFrame.Position = UDim2.new(0, 10, 0, 260)
@@ -281,7 +331,7 @@ local sPosLabel = Instance.new("TextLabel")
 sPosLabel.Size = UDim2.new(0.62, -8, 0, 14)
 sPosLabel.Position = UDim2.new(0, 8, 0, 3)
 sPosLabel.BackgroundTransparency = 1
-sPosLabel.Text = "Позиций: 0 (Всего: 0 блоков)"
+sPosLabel.Text = "Позиций: 0 (Итого: 0 блоков)"
 sPosLabel.TextColor3 = Color3.fromRGB(180, 170, 200)
 sPosLabel.Font = Enum.Font.GothamBold
 sPosLabel.TextSize = 8.5
@@ -349,6 +399,7 @@ sStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 sStatusLabel.ZIndex = 73
 sStatusLabel.Parent = summaryFrame
 
+-- Кнопки действий
 local btnRow1 = Instance.new("Frame")
 btnRow1.Size = UDim2.new(1, -20, 0, 20)
 btnRow1.Position = UDim2.new(0, 10, 0, 338)
@@ -420,6 +471,7 @@ closeCartBottom.ZIndex = 73
 closeCartBottom.Parent = cartWindow
 createCorner(closeCartBottom, 5)
 
+-- Пересчет сводки: гарантированное умножение 50 * 400 = 20,000
 cart.updateSummary = function()
     local currentGold = API.getCurrentGold()
     local totalItems = #cart.items
@@ -428,17 +480,19 @@ cart.updateSummary = function()
     local totalBlocksCount = 0
 
     for _, itm in ipairs(cart.items) do
+        -- Жесткое принудительное исправление пака
+        local packYield = getPackYield(itm.name)
+        itm.yield = packYield
+
         local lineCost = itm.price * itm.qty
-        local lineBlocks = (itm.yield or 1) * itm.qty
+        local lineBlocks = packYield * itm.qty
         totalCost = totalCost + lineCost
         totalBlocksCount = totalBlocksCount + lineBlocks
+
         if not itm.bought then
             unboughtCost = unboughtCost + lineCost
         end
     end
-
-    local remainingNeeded = unboughtCost - currentGold
-    if remainingNeeded < 0 then remainingNeeded = 0 end
 
     sPosLabel.Text = string.format("Позиций: %d (Итого: %s блоков)", totalItems, formatNum(totalBlocksCount))
     sCostLabel.Text = "Осталось: " .. formatNum(unboughtCost) .. " G"
@@ -488,6 +542,7 @@ cart.updateSummary = function()
     end
 end
 
+-- Отрисовка списка строк в корзине
 cart.refreshList = function()
     for _, child in ipairs(listFrame:GetChildren()) do
         if child:IsA("Frame") then child:Destroy() end
@@ -506,7 +561,9 @@ cart.refreshList = function()
         createCorner(row, 4)
 
         local statusMark = itm.bought and "✓ " or "• "
-        local packYield = itm.yield or 1
+        local packYield = getPackYield(itm.name)
+        itm.yield = packYield
+
         local totalPieces = itm.qty * packYield
 
         local displayText = ""
@@ -574,12 +631,14 @@ addBtn.MouseButton1Click:Connect(function()
     if not q or q <= 0 then q = 1 end
     q = math.floor(q)
 
+    local realPackYield = getPackYield(cart.searchedItem.name)
+
     table.insert(cart.items, {
         name = cart.searchedItem.name,
         display = cart.searchedItem.display,
         qty = q,
         price = cart.searchedItem.price,
-        yield = cart.searchedItem.yield or 1,
+        yield = realPackYield,
         bought = false
     })
 
@@ -610,6 +669,9 @@ cart.load = function()
         local raw = readfile("babft_cart.json")
         local data = API.HttpService:JSONDecode(raw)
         if data and type(data.items) == "table" then
+            for _, item in ipairs(data.items) do
+                item.yield = getPackYield(item.name)
+            end
             cart.items = data.items
             cart.refreshList()
             cart.updateSummary()
@@ -663,10 +725,11 @@ cart.startAutoBuy = function()
                             cart.save()
                             cart.refreshList()
                             cart.updateSummary()
-                            local totalP = item.qty * (item.yield or 1)
+                            local packYield = getPackYield(item.name)
+                            local totalP = item.qty * packYield
                             API.showAchievementToast("КУПЛЕНО", item.display .. " (" .. formatNum(totalP) .. " шт.)")
                             if API.sendTelegramMessage then
-                                API.sendTelegramMessage(string.format("🛒 <b>Куплено:</b> %s (<b>%d × %s = %s блоков</b>)", item.display, (item.yield or 1), formatNum(item.qty), formatNum(totalP)))
+                                API.sendTelegramMessage(string.format("🛒 <b>Куплено:</b> %s (<b>%d × %s = %s блоков</b>)", item.display, packYield, formatNum(item.qty), formatNum(totalP)))
                             end
                         end
                     end
@@ -740,4 +803,4 @@ closeCartBottom.MouseButton1Click:Connect(function()
 end)
 
 cart.load()
-print("[BABFT-Cart] Корзина с формулой умножения готова!")
+print("[BABFT-Cart] Корзина с жестким расчетом 50x400 готова!")
