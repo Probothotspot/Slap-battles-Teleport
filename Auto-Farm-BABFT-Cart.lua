@@ -1,5 +1,5 @@
 -- =====================================================================
--- МОДУЛЬ: КОРЗИНА ПОКУПОК С УЧЕТОМ БЛОКОВ В ПАЧКЕ (Auto-Farm-BABFT-Cart.lua)
+-- МОДУЛЬ: КОРЗИНА ПОКУПОК С ТЕКСТОВЫМ ПОИСКОМ (Auto-Farm-BABFT-Cart.lua)
 -- =====================================================================
 local API = _G.BABFT
 if not API or not API.screenGui then
@@ -30,49 +30,13 @@ local cart = {
     items = {},
     autoBuyActive = false,
     etaThread = nil,
-    selectedItem = nil,
-    dropdownOpen = false
+    searchedItem = nil -- Найденный через поисковик предмет
 }
-
--- Определение количества блоков в 1 пачке магазина BABFT
-local function getItemPackYield(name)
-    if name:find("Block") then
-        if name:find("Titanium") or name:find("Obsidian") or name:find("Marble") or name:find("Coal") or name:find("Bouncy") then
-            return 10
-        end
-        return 25
-    elseif name:find("CarWheels") then
-        return 4
-    end
-    return 1
-end
-
--- Выборка предметов с учётом количества штук за пачку
-cart.getAvailableItems = function()
-    local unique = {}
-    local seen = {}
-    if API.KNOWN_ITEMS then
-        for key, data in pairs(API.KNOWN_ITEMS) do
-            if not seen[data.name] then
-                seen[data.name] = true
-                local packYield = data.yield or getItemPackYield(data.name)
-                table.insert(unique, {
-                    name = data.name,
-                    display = key:sub(1,1):upper() .. key:sub(2),
-                    price = data.price,
-                    yield = packYield
-                })
-            end
-        end
-    end
-    table.sort(unique, function(a, b) return a.display < b.display end)
-    return unique
-end
 
 -- Модальное окно (ZIndex = 70)
 local cartWindow = Instance.new("Frame")
-cartWindow.Size = UDim2.new(0, 280, 0, 410)
-cartWindow.Position = UDim2.new(0.5, -140, 0.5, -205)
+cartWindow.Size = UDim2.new(0, 285, 0, 420)
+cartWindow.Position = UDim2.new(0.5, -142, 0.5, -210)
 cartWindow.BackgroundColor3 = Color3.fromRGB(10, 8, 16)
 cartWindow.BorderSizePixel = 0
 cartWindow.Active = true
@@ -97,10 +61,10 @@ local cartTitle = Instance.new("TextLabel")
 cartTitle.Size = UDim2.new(1, -40, 1, 0)
 cartTitle.Position = UDim2.new(0, 12, 0, 0)
 cartTitle.BackgroundTransparency = 1
-cartTitle.Text = "🛒 ПЛАНЕР ЗАКУПОК"
+cartTitle.Text = "🛒 КОРЗИНА (ПЛАНЕР ЗАКУПКИ)"
 cartTitle.TextColor3 = Color3.fromRGB(230, 210, 255)
 cartTitle.Font = Enum.Font.GothamBold
-cartTitle.TextSize = 12
+cartTitle.TextSize = 11
 cartTitle.TextXAlignment = Enum.TextXAlignment.Left
 cartTitle.ZIndex = 72
 cartTitle.Parent = cartTopBar
@@ -143,105 +107,103 @@ cartTopBar.InputChanged:Connect(function(input)
     end
 end)
 
--- Строка добавления
-local addSection = Instance.new("Frame")
-addSection.Size = UDim2.new(1, -20, 0, 28)
-addSection.Position = UDim2.new(0, 10, 0, 36)
-addSection.BackgroundTransparency = 1
-addSection.ZIndex = 72
-addSection.Parent = cartWindow
+-- Секция текстового поиска (как в базовой автозакупке)
+local searchBox = Instance.new("TextBox")
+searchBox.Size = UDim2.new(1, -20, 0, 22)
+searchBox.Position = UDim2.new(0, 10, 0, 34)
+searchBox.BackgroundColor3 = Color3.fromRGB(28, 22, 38)
+searchBox.PlaceholderText = "Введите блок (напр. Лего, Дерево)..."
+searchBox.PlaceholderColor3 = Color3.fromRGB(130, 115, 155)
+searchBox.Text = ""
+searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+searchBox.Font = Enum.Font.Gotham
+searchBox.TextSize = 9.5
+searchBox.ClearTextOnFocus = false
+searchBox.BorderSizePixel = 0
+searchBox.ZIndex = 72
+searchBox.Parent = cartWindow
+createCorner(searchBox, 5)
+createStroke(searchBox, Color3.fromRGB(60, 45, 80), 1)
 
-local available = cart.getAvailableItems()
-cart.selectedItem = available[1] or {name = "ToyBlock", display = "ToyBlock", price = 250, yield = 25}
+local searchStatusLabel = Instance.new("TextLabel")
+searchStatusLabel.Size = UDim2.new(1, -20, 0, 14)
+searchStatusLabel.Position = UDim2.new(0, 10, 0, 58)
+searchStatusLabel.BackgroundTransparency = 1
+searchStatusLabel.Text = "Введите блок для добавления в корзину"
+searchStatusLabel.TextColor3 = Color3.fromRGB(150, 140, 170)
+searchStatusLabel.Font = Enum.Font.Gotham
+searchStatusLabel.TextSize = 8.5
+searchStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+searchStatusLabel.ZIndex = 72
+searchStatusLabel.Parent = cartWindow
 
-local dropBtn = Instance.new("TextButton")
-dropBtn.Size = UDim2.new(0.55, -4, 1, 0)
-dropBtn.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
-dropBtn.Text = (cart.selectedItem and (cart.selectedItem.display .. " (" .. cart.selectedItem.yield .. " шт.)") or "Выбрать") .. " ▾"
-dropBtn.TextColor3 = Color3.fromRGB(240, 230, 255)
-dropBtn.Font = Enum.Font.Gotham
-dropBtn.TextSize = 9
-dropBtn.BorderSizePixel = 0
-dropBtn.ZIndex = 73
-dropBtn.Parent = addSection
-createCorner(dropBtn, 5)
+-- Строка: ввод паков + кнопка добавления
+local addRow = Instance.new("Frame")
+addRow.Size = UDim2.new(1, -20, 0, 22)
+addRow.Position = UDim2.new(0, 10, 0, 74)
+addRow.BackgroundTransparency = 1
+addRow.ZIndex = 72
+addRow.Parent = cartWindow
 
 local qtyBox = Instance.new("TextBox")
-qtyBox.Size = UDim2.new(0.2, -4, 1, 0)
-qtyBox.Position = UDim2.new(0.55, 0, 0, 0)
-qtyBox.BackgroundColor3 = Color3.fromRGB(30, 24, 40)
+qtyBox.Size = UDim2.new(0.4, -4, 1, 0)
+qtyBox.BackgroundColor3 = Color3.fromRGB(28, 22, 38)
+qtyBox.PlaceholderText = "Паков (шт): 1"
 qtyBox.Text = "1"
 qtyBox.TextColor3 = Color3.fromRGB(255, 255, 255)
 qtyBox.Font = Enum.Font.GothamBold
-qtyBox.TextSize = 10
+qtyBox.TextSize = 9.5
 qtyBox.ClearTextOnFocus = false
 qtyBox.BorderSizePixel = 0
 qtyBox.ZIndex = 73
-qtyBox.Parent = addSection
+qtyBox.Parent = addRow
 createCorner(qtyBox, 5)
 
 local addBtn = Instance.new("TextButton")
-addBtn.Size = UDim2.new(0.25, 0, 1, 0)
-addBtn.Position = UDim2.new(0.75, 4, 0, 0)
+addBtn.Size = UDim2.new(0.6, 0, 1, 0)
+addBtn.Position = UDim2.new(0.4, 0, 0, 0)
 addBtn.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-addBtn.Text = "➕ Добавить"
+addBtn.Text = "➕ Добавить в корзину"
 addBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 addBtn.Font = Enum.Font.GothamBold
-addBtn.TextSize = 9
+addBtn.TextSize = 9.5
 addBtn.BorderSizePixel = 0
 addBtn.ZIndex = 73
-addBtn.Parent = addSection
+addBtn.Parent = addRow
 createCorner(addBtn, 5)
 
--- Выпадающий список
-local dropList = Instance.new("ScrollingFrame")
-dropList.Size = UDim2.new(0.65, 0, 0, 130)
-dropList.Position = UDim2.new(0, 10, 0, 66)
-dropList.BackgroundColor3 = Color3.fromRGB(20, 16, 28)
-dropList.BorderSizePixel = 0
-dropList.ScrollBarThickness = 3
-dropList.ScrollBarImageColor3 = Color3.fromRGB(138, 43, 226)
-dropList.Visible = false
-dropList.ZIndex = 95
-dropList.CanvasSize = UDim2.new(0, 0, 0, #available * 20)
-dropList.Parent = cartWindow
-createCorner(dropList, 6)
-createStroke(dropList, Color3.fromRGB(138, 43, 226), 1)
+-- Обработка живого поиска
+searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    local query = searchBox.Text
+    if query == "" then
+        cart.searchedItem = nil
+        searchStatusLabel.Text = "Введите блок для добавления в корзину"
+        searchStatusLabel.TextColor3 = Color3.fromRGB(150, 140, 170)
+        return
+    end
 
-for idx, itemData in ipairs(available) do
-    local itemBtn = Instance.new("TextButton")
-    itemBtn.Size = UDim2.new(1, -6, 0, 18)
-    itemBtn.Position = UDim2.new(0, 3, 0, (idx - 1) * 20 + 2)
-    itemBtn.BackgroundColor3 = Color3.fromRGB(28, 22, 38)
-    local yieldLabel = itemData.yield > 1 and (" [" .. itemData.yield .. " шт]") or ""
-    itemBtn.Text = itemData.display .. yieldLabel .. " (" .. itemData.price .. " G)"
-    itemBtn.TextColor3 = Color3.fromRGB(230, 220, 250)
-    itemBtn.Font = Enum.Font.Gotham
-    itemBtn.TextSize = 9
-    itemBtn.BorderSizePixel = 0
-    itemBtn.ZIndex = 96
-    itemBtn.Parent = dropList
-    createCorner(itemBtn, 4)
-
-    itemBtn.MouseButton1Click:Connect(function()
-        API.playSfx(API.clickSfx)
-        cart.selectedItem = itemData
-        dropBtn.Text = itemData.display .. (itemData.yield > 1 and (" (" .. itemData.yield .. " шт.)") or "") .. " ▾"
-        dropList.Visible = false
-        cart.dropdownOpen = false
-    end)
-end
-
-dropBtn.MouseButton1Click:Connect(function()
-    API.playSfx(API.clickSfx)
-    cart.dropdownOpen = not cart.dropdownOpen
-    dropList.Visible = cart.dropdownOpen
+    local realName, price, packYield = API.searchItemInGame(query)
+    if realName and price > 0 then
+        cart.searchedItem = {
+            name = realName,
+            display = realName,
+            price = price,
+            yield = packYield or 1
+        }
+        local piecesText = (packYield and packYield > 1) and (" [" .. packYield .. " шт./пак]") or ""
+        searchStatusLabel.Text = string.format("✔ Найдено: %s (%d G)%s", realName, price, piecesText)
+        searchStatusLabel.TextColor3 = Color3.fromRGB(80, 240, 130)
+    else
+        cart.searchedItem = nil
+        searchStatusLabel.Text = "✖ Блок не найден в базе магазина"
+        searchStatusLabel.TextColor3 = Color3.fromRGB(255, 80, 90)
+    end
 end)
 
--- Список позиций
+-- Список добавленных позиций (ScrollingFrame)
 local listFrame = Instance.new("ScrollingFrame")
-listFrame.Size = UDim2.new(1, -20, 0, 140)
-listFrame.Position = UDim2.new(0, 10, 0, 70)
+listFrame.Size = UDim2.new(1, -20, 0, 130)
+listFrame.Position = UDim2.new(0, 10, 0, 102)
 listFrame.BackgroundColor3 = Color3.fromRGB(16, 12, 22)
 listFrame.BorderSizePixel = 0
 listFrame.ScrollBarThickness = 3
@@ -250,12 +212,11 @@ listFrame.ZIndex = 72
 listFrame.Parent = cartWindow
 createCorner(listFrame, 6)
 createStroke(listFrame, Color3.fromRGB(45, 35, 60), 1)
-cart.listFrame = listFrame
 
 -- Прогресс-бар
 local progressBg = Instance.new("Frame")
 progressBg.Size = UDim2.new(1, -20, 0, 16)
-progressBg.Position = UDim2.new(0, 10, 0, 216)
+progressBg.Position = UDim2.new(0, 10, 0, 238)
 progressBg.BackgroundColor3 = Color3.fromRGB(25, 20, 35)
 progressBg.BorderSizePixel = 0
 progressBg.ZIndex = 72
@@ -284,10 +245,10 @@ progressLabel.TextSize = 9
 progressLabel.ZIndex = 74
 progressLabel.Parent = progressBg
 
--- Сводка
+-- Итоговая панель
 local summaryFrame = Instance.new("Frame")
-summaryFrame.Size = UDim2.new(1, -20, 0, 75)
-summaryFrame.Position = UDim2.new(0, 10, 0, 238)
+summaryFrame.Size = UDim2.new(1, -20, 0, 72)
+summaryFrame.Position = UDim2.new(0, 10, 0, 258)
 summaryFrame.BackgroundColor3 = Color3.fromRGB(16, 12, 22)
 summaryFrame.BorderSizePixel = 0
 summaryFrame.ZIndex = 72
@@ -295,73 +256,73 @@ summaryFrame.Parent = cartWindow
 createCorner(summaryFrame, 6)
 
 local sPosLabel = Instance.new("TextLabel")
-sPosLabel.Size = UDim2.new(0.58, -8, 0, 14)
-sPosLabel.Position = UDim2.new(0, 8, 0, 4)
+sPosLabel.Size = UDim2.new(0.6, -8, 0, 14)
+sPosLabel.Position = UDim2.new(0, 8, 0, 3)
 sPosLabel.BackgroundTransparency = 1
 sPosLabel.Text = "Позиций: 0 (0 блоков)"
 sPosLabel.TextColor3 = Color3.fromRGB(180, 170, 200)
 sPosLabel.Font = Enum.Font.Gotham
-sPosLabel.TextSize = 9
+sPosLabel.TextSize = 8.5
 sPosLabel.TextXAlignment = Enum.TextXAlignment.Left
 sPosLabel.ZIndex = 73
 sPosLabel.Parent = summaryFrame
 
 local sCostLabel = Instance.new("TextLabel")
-sCostLabel.Size = UDim2.new(0.42, -8, 0, 14)
-sCostLabel.Position = UDim2.new(0.58, 0, 0, 4)
+sCostLabel.Size = UDim2.new(0.4, -8, 0, 14)
+sCostLabel.Position = UDim2.new(0.6, 0, 0, 3)
 sCostLabel.BackgroundTransparency = 1
-sCostLabel.Text = "Стоимость: 0 G"
+sCostLabel.Text = "Осталось: 0 G"
 sCostLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
 sCostLabel.Font = Enum.Font.GothamBold
-sCostLabel.TextSize = 9
+sCostLabel.TextSize = 8.5
 sCostLabel.TextXAlignment = Enum.TextXAlignment.Right
 sCostLabel.ZIndex = 73
 sCostLabel.Parent = summaryFrame
 
 local sBalLabel = Instance.new("TextLabel")
 sBalLabel.Size = UDim2.new(0.5, -8, 0, 14)
-sBalLabel.Position = UDim2.new(0, 8, 0, 20)
+sBalLabel.Position = UDim2.new(0, 8, 0, 19)
 sBalLabel.BackgroundTransparency = 1
 sBalLabel.Text = "Баланс: 0 G"
 sBalLabel.TextColor3 = Color3.fromRGB(190, 185, 210)
 sBalLabel.Font = Enum.Font.Gotham
-sBalLabel.TextSize = 9
+sBalLabel.TextSize = 8.5
 sBalLabel.TextXAlignment = Enum.TextXAlignment.Left
 sBalLabel.ZIndex = 73
 sBalLabel.Parent = summaryFrame
 
 local sNeedLabel = Instance.new("TextLabel")
 sNeedLabel.Size = UDim2.new(0.5, -8, 0, 14)
-sNeedLabel.Position = UDim2.new(0.5, 0, 0, 20)
+sNeedLabel.Position = UDim2.new(0.5, 0, 0, 19)
 sNeedLabel.BackgroundTransparency = 1
-sNeedLabel.Text = "Осталось: 0 G"
+sNeedLabel.Text = "Золота хватает!"
 sNeedLabel.TextColor3 = Color3.fromRGB(80, 240, 130)
 sNeedLabel.Font = Enum.Font.GothamBold
-sNeedLabel.TextSize = 9
+sNeedLabel.TextSize = 8.5
 sNeedLabel.TextXAlignment = Enum.TextXAlignment.Right
 sNeedLabel.ZIndex = 73
 sNeedLabel.Parent = summaryFrame
 
 local sEtaLabel = Instance.new("TextLabel")
 sEtaLabel.Size = UDim2.new(1, -16, 0, 14)
-sEtaLabel.Position = UDim2.new(0, 8, 0, 38)
+sEtaLabel.Position = UDim2.new(0, 8, 0, 36)
 sEtaLabel.BackgroundTransparency = 1
 sEtaLabel.Text = "ETA: Цель достигнута"
 sEtaLabel.TextColor3 = Color3.fromRGB(120, 210, 255)
 sEtaLabel.Font = Enum.Font.GothamBold
-sEtaLabel.TextSize = 9
+sEtaLabel.TextSize = 8.5
 sEtaLabel.TextXAlignment = Enum.TextXAlignment.Left
 sEtaLabel.ZIndex = 73
 sEtaLabel.Parent = summaryFrame
 
 local sStatusLabel = Instance.new("TextLabel")
 sStatusLabel.Size = UDim2.new(1, -16, 0, 14)
-sStatusLabel.Position = UDim2.new(0, 8, 0, 54)
+sStatusLabel.Position = UDim2.new(0, 8, 0, 52)
 sStatusLabel.BackgroundTransparency = 1
-sStatusLabel.Text = "Статус: Ожидание запуска"
+sStatusLabel.Text = "Статус: Пауза"
 sStatusLabel.TextColor3 = Color3.fromRGB(160, 145, 185)
 sStatusLabel.Font = Enum.Font.Gotham
-sStatusLabel.TextSize = 9
+sStatusLabel.TextSize = 8.5
 sStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 sStatusLabel.ZIndex = 73
 sStatusLabel.Parent = summaryFrame
@@ -369,7 +330,7 @@ sStatusLabel.Parent = summaryFrame
 -- Кнопки действий
 local btnRow1 = Instance.new("Frame")
 btnRow1.Size = UDim2.new(1, -20, 0, 20)
-btnRow1.Position = UDim2.new(0, 10, 0, 320)
+btnRow1.Position = UDim2.new(0, 10, 0, 336)
 btnRow1.BackgroundTransparency = 1
 btnRow1.ZIndex = 72
 btnRow1.Parent = cartWindow
@@ -414,7 +375,7 @@ createCorner(clearCartBtn, 4)
 
 local autoBuyCartToggle = Instance.new("TextButton")
 autoBuyCartToggle.Size = UDim2.new(1, -20, 0, 26)
-autoBuyCartToggle.Position = UDim2.new(0, 10, 0, 346)
+autoBuyCartToggle.Position = UDim2.new(0, 10, 0, 360)
 autoBuyCartToggle.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
 autoBuyCartToggle.Text = "▶ НАЧАТЬ АВТО-ЗАКУПКУ"
 autoBuyCartToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -427,7 +388,7 @@ createCorner(autoBuyCartToggle, 6)
 
 local closeCartBottom = Instance.new("TextButton")
 closeCartBottom.Size = UDim2.new(1, -20, 0, 22)
-closeCartBottom.Position = UDim2.new(0, 10, 0, 378)
+closeCartBottom.Position = UDim2.new(0, 10, 0, 390)
 closeCartBottom.BackgroundColor3 = Color3.fromRGB(28, 22, 38)
 closeCartBottom.Text = "❌ Закрыть окно"
 closeCartBottom.TextColor3 = Color3.fromRGB(200, 190, 220)
@@ -438,7 +399,7 @@ closeCartBottom.ZIndex = 73
 closeCartBottom.Parent = cartWindow
 createCorner(closeCartBottom, 5)
 
--- Обновление сводки
+-- Пересчет сводки
 cart.updateSummary = function()
     local currentGold = API.getCurrentGold()
     local totalItems = #cart.items
@@ -448,7 +409,7 @@ cart.updateSummary = function()
 
     for _, itm in ipairs(cart.items) do
         local lineTotal = itm.price * itm.qty
-        local lineYield = (itm.yield or getItemPackYield(itm.name)) * itm.qty
+        local lineYield = (itm.yield or 1) * itm.qty
         totalCost = totalCost + lineTotal
         totalBlocks = totalBlocks + lineYield
         if not itm.bought then
@@ -507,7 +468,7 @@ cart.updateSummary = function()
     end
 end
 
--- Перерисовка списка с отображением общего количества блоков
+-- Отрисовка списка строк
 cart.refreshList = function()
     for _, child in ipairs(listFrame:GetChildren()) do
         if child:IsA("Frame") then child:Destroy() end
@@ -526,21 +487,21 @@ cart.refreshList = function()
         createCorner(row, 4)
 
         local statusMark = itm.bought and "✓ " or "• "
-        local packYield = itm.yield or getItemPackYield(itm.name)
+        local packYield = itm.yield or 1
         local totalPieces = itm.qty * packYield
 
-        local displayQuantityText = ""
+        local displayText = ""
         if packYield > 1 then
-            displayQuantityText = string.format("%s × %d (%d бл.)", itm.display, itm.qty, totalPieces)
+            displayText = string.format("%s × %d (%d бл.)", itm.display, itm.qty, totalPieces)
         else
-            displayQuantityText = string.format("%s × %d", itm.display, itm.qty)
+            displayText = string.format("%s × %d", itm.display, itm.qty)
         end
 
         local nameLbl = Instance.new("TextLabel")
         nameLbl.Size = UDim2.new(0.64, 0, 1, 0)
         nameLbl.Position = UDim2.new(0, 6, 0, 0)
         nameLbl.BackgroundTransparency = 1
-        nameLbl.Text = statusMark .. displayQuantityText
+        nameLbl.Text = statusMark .. displayText
         nameLbl.TextColor3 = itm.bought and Color3.fromRGB(140, 255, 170) or Color3.fromRGB(235, 225, 250)
         nameLbl.Font = Enum.Font.GothamBold
         nameLbl.TextSize = 8.5
@@ -582,24 +543,33 @@ cart.refreshList = function()
     end
 end
 
--- Добавление позиции
+-- Добавление найденного блока
 addBtn.MouseButton1Click:Connect(function()
     API.playSfx(API.clickSfx)
-    if not cart.selectedItem then return end
+    if not cart.searchedItem then
+        searchStatusLabel.Text = "Сначала найдите блок в поиске выше!"
+        searchStatusLabel.TextColor3 = Color3.fromRGB(255, 180, 80)
+        return
+    end
+
     local q = tonumber(qtyBox.Text)
     if not q or q <= 0 then q = 1 end
     q = math.floor(q)
 
-    local itemYield = cart.selectedItem.yield or getItemPackYield(cart.selectedItem.name)
-
     table.insert(cart.items, {
-        name = cart.selectedItem.name,
-        display = cart.selectedItem.display,
+        name = cart.searchedItem.name,
+        display = cart.searchedItem.display,
         qty = q,
-        price = cart.selectedItem.price,
-        yield = itemYield,
+        price = cart.searchedItem.price,
+        yield = cart.searchedItem.yield or 1,
         bought = false
     })
+
+    searchBox.Text = ""
+    qtyBox.Text = "1"
+    cart.searchedItem = nil
+    searchStatusLabel.Text = "✔ Добавлено! Введите следующий блок..."
+    searchStatusLabel.TextColor3 = Color3.fromRGB(120, 220, 255)
 
     cart.refreshList()
     cart.updateSummary()
@@ -655,7 +625,7 @@ clearCartBtn.MouseButton1Click:Connect(function()
     cart.updateSummary()
 end)
 
--- Авто-закупка
+-- Цикл авто-закупки очереди
 cart.startAutoBuy = function()
     if cart.autoBuyActive then return end
     cart.autoBuyActive = true
@@ -677,7 +647,7 @@ cart.startAutoBuy = function()
                             cart.save()
                             cart.refreshList()
                             cart.updateSummary()
-                            local totalP = item.qty * (item.yield or getItemPackYield(item.name))
+                            local totalP = item.qty * (item.yield or 1)
                             API.showAchievementToast("КУПЛЕНО", item.display .. " (" .. totalP .. " шт.)")
                             if API.sendTelegramMessage then
                                 API.sendTelegramMessage("🛒 <b>Куплено:</b> " .. item.display .. " × " .. item.qty .. " пач. (" .. totalP .. " шт.)")
@@ -740,8 +710,6 @@ end
 
 function API.closeCart()
     cartWindow.Visible = false
-    dropList.Visible = false
-    cart.dropdownOpen = false
 end
 
 cartCloseBtn.MouseButton1Click:Connect(function()
@@ -755,4 +723,4 @@ closeCartBottom.MouseButton1Click:Connect(function()
 end)
 
 cart.load()
-print("[BABFT-Cart] Планер покупок с подсчётом блоков обновлён!")
+print("[BABFT-Cart] Модуль корзины с текстовым поиском готов!")
