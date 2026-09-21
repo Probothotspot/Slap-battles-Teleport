@@ -64,6 +64,7 @@ API.autoBuyActive = false
 API.buyAmount = 1
 API.targetItemRealName = ""
 API.targetItemPrice = 0
+API.targetItemYield = 1
 API.autoRejoinActive = true
 API.autoStartOnJoin = false
 API.antiDarknessActive = true
@@ -119,6 +120,86 @@ API.SPAWN_Z_MAX = 1200
 API.httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
 API.queue_on_teleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
 
+-- База цен и размеров паков строго из видео
+API.KNOWN_ITEMS = {
+    ["common"] = {name = "Common Chest", price = 5, yield = 1},
+    ["common chest"] = {name = "Common Chest", price = 5, yield = 1},
+    ["uncommon"] = {name = "Uncommon Chest", price = 15, yield = 1},
+    ["uncommon chest"] = {name = "Uncommon Chest", price = 15, yield = 1},
+    ["rare"] = {name = "Rare Chest", price = 45, yield = 1},
+    ["rare chest"] = {name = "Rare Chest", price = 45, yield = 1},
+    ["epic"] = {name = "Epic Chest", price = 135, yield = 1},
+    ["epic chest"] = {name = "Epic Chest", price = 135, yield = 1},
+    ["legendary"] = {name = "Legendary Chest", price = 405, yield = 1},
+    ["legendary chest"] = {name = "Legendary Chest", price = 405, yield = 1},
+
+    -- Блоки (паки по 50 шт. и стекло 25 шт.)
+    ["дерево"] = {name = "WoodBlock", price = 250, yield = 50},
+    ["wood"] = {name = "WoodBlock", price = 250, yield = 50},
+    ["лего"] = {name = "ToyBlock", price = 250, yield = 50},
+    ["lego"] = {name = "ToyBlock", price = 250, yield = 50},
+    ["toy"] = {name = "ToyBlock", price = 250, yield = 50},
+    ["toyblock"] = {name = "ToyBlock", price = 250, yield = 50},
+    ["стекло"] = {name = "GlassBlock", price = 250, yield = 25},
+    ["glass"] = {name = "GlassBlock", price = 250, yield = 25},
+    ["камень"] = {name = "StoneBlock", price = 275, yield = 50},
+    ["stone"] = {name = "StoneBlock", price = 275, yield = 50},
+    ["ткань"] = {name = "FabricBlock", price = 300, yield = 50},
+    ["fabric"] = {name = "FabricBlock", price = 300, yield = 50},
+    ["пластик"] = {name = "PlasticBlock", price = 300, yield = 50},
+    ["plastic"] = {name = "PlasticBlock", price = 300, yield = 50},
+    ["песок"] = {name = "SandBlock", price = 300, yield = 50},
+    ["sand"] = {name = "SandBlock", price = 300, yield = 50},
+    ["bouncy"] = {name = "BouncyBlock", price = 300, yield = 50},
+    ["прыгучий"] = {name = "BouncyBlock", price = 300, yield = 50},
+    ["металл"] = {name = "MetalBlock", price = 325, yield = 50},
+    ["metal"] = {name = "MetalBlock", price = 325, yield = 50},
+    ["лед"] = {name = "IceBlock", price = 350, yield = 50},
+    ["ice"] = {name = "IceBlock", price = 350, yield = 50},
+    ["уголь"] = {name = "CoalBlock", price = 375, yield = 50},
+    ["кирпич"] = {name = "BrickBlock", price = 375, yield = 50},
+    ["brick"] = {name = "BrickBlock", price = 375, yield = 50},
+    ["мрамор"] = {name = "MarbleBlock", price = 375, yield = 50},
+    ["marble"] = {name = "MarbleBlock", price = 375, yield = 50},
+    ["обсидиан"] = {name = "ObsidianBlock", price = 425, yield = 50},
+    ["obsidian"] = {name = "ObsidianBlock", price = 425, yield = 50},
+    ["титан"] = {name = "TitaniumBlock", price = 425, yield = 50},
+    ["titanium"] = {name = "TitaniumBlock", price = 425, yield = 50},
+    ["ржавый металл"] = {name = "RustedMetalBlock", price = 300, yield = 50},
+
+    -- Механизмы и предметы
+    ["колеса"] = {name = "CarWheels", price = 750, yield = 4},
+    ["старые колеса"] = {name = "LegacyCarWheels", price = 750, yield = 4},
+    ["шарики"] = {name = "Balloon", price = 45, yield = 3},
+    ["balloon"] = {name = "Balloon", price = 45, yield = 3},
+    ["гарпун"] = {name = "Harpoon", price = 200, yield = 1},
+    ["джетпак"] = {name = "Jetpack", price = 350, yield = 1},
+    ["турбина"] = {name = "JetTurbine", price = 4000, yield = 3},
+    ["турбины"] = {name = "JetTurbine", price = 4000, yield = 3},
+    ["кнопка"] = {name = "Button", price = 50, yield = 1},
+    ["переключатель"] = {name = "Switch", price = 50, yield = 1},
+    ["лампа"] = {name = "LightBulb", price = 60, yield = 3},
+    ["камера"] = {name = "Camera", price = 85, yield = 1},
+    ["задержка"] = {name = "DelayBlock", price = 50, yield = 2},
+    ["нота"] = {name = "NoteBlock", price = 40, yield = 2},
+    ["поршень"] = {name = "Piston", price = 65, yield = 1},
+    ["магнит"] = {name = "Magnet", price = 125, yield = 1},
+    ["сенсор"] = {name = "Sensor", price = 25, yield = 1},
+    ["пульт"] = {name = "RemoteController", price = 150, yield = 1},
+    ["стержень"] = {name = "Bar", price = 60, yield = 3},
+    ["прут"] = {name = "Bar", price = 60, yield = 3},
+    ["подвеска"] = {name = "Suspension", price = 60, yield = 3},
+    ["динамит"] = {name = "Dynamite", price = 20, yield = 1},
+    ["миниган"] = {name = "Minigun", price = 150, yield = 1},
+    ["пушка"] = {name = "Cannon", price = 250, yield = 1},
+    ["мечи"] = {name = "MountedSwords", price = 50, yield = 1},
+    ["рулетка"] = {name = "ScalingTool", price = 5000, yield = 1},
+    ["мастерок"] = {name = "TrowelTool", price = 1500, yield = 1},
+    ["кисть"] = {name = "PaintTool", price = 1500, yield = 1},
+    ["ключ"] = {name = "BindingTool", price = 2000, yield = 1},
+    ["отвертка"] = {name = "PropertyTool", price = 2500, yield = 1}
+}
+
 API.stepSoundId = "rbxassetid://9069609204"
 
 pcall(function()
@@ -135,9 +216,7 @@ pcall(function()
 end)
 
 function API.playSfx(sfx)
-    if API.soundEffectsActive and sfx then
-        pcall(function() sfx:Play() end)
-    end
+    if API.soundEffectsActive and sfx then pcall(function() sfx:Play() end) end
 end
 
 function API.playStepSound()
@@ -148,16 +227,13 @@ function API.playStepSound()
         if hrp then
             task.spawn(function()
                 local s = Instance.new("Sound")
-                s.Name = "CustomStepSFX"
                 s.SoundId = API.stepSoundId
                 s.Volume = 1.4
                 s.RollOffMaxDistance = 50
                 s.Parent = hrp
                 s:Play()
                 s.Ended:Connect(function() s:Destroy() end)
-                task.delay(0.8, function()
-                    if s and s.Parent then s:Destroy() end
-                end)
+                task.delay(0.8, function() if s and s.Parent then s:Destroy() end end)
             end)
         end
     end
@@ -197,9 +273,7 @@ API.stepConn = RunService.Heartbeat:Connect(function()
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if hum and hrp and hum.Health > 0 then
             local defRunning = hrp:FindFirstChild("Running")
-            if defRunning and defRunning.SoundId ~= API.stepSoundId then
-                defRunning.Volume = 0
-            end
+            if defRunning and defRunning.SoundId ~= API.stepSoundId then defRunning.Volume = 0 end
             if hum.MoveDirection.Magnitude > 0.1 and hum.FloorMaterial ~= Enum.Material.Air then
                 local interval = (hum.WalkSpeed > 18 and 0.26 or 0.35)
                 if os.clock() - lastStepTime > interval then
@@ -241,9 +315,7 @@ function API.getCurrentHRP()
     if char and char.Parent then
         local hrp = char:FindFirstChild("HumanoidRootPart")
         local hum = char:FindFirstChildOfClass("Humanoid")
-        if hrp and hum and hum.Health > 0 then
-            return hrp, char, hum
-        end
+        if hrp and hum and hum.Health > 0 then return hrp, char, hum end
     end
     return nil, nil, nil
 end
@@ -258,9 +330,7 @@ end
 
 function API.setNoclip(character)
     for _, part in ipairs(character:GetDescendants()) do
-        if part:IsA("BasePart") and part ~= API.platform then
-            part.CanCollide = false
-        end
+        if part:IsA("BasePart") and part ~= API.platform then part.CanCollide = false end
     end
 end
 
@@ -305,98 +375,7 @@ API.idledConn = player.Idled:Connect(function()
     VirtualUser:ClickButton2(Vector2.new(0, 0))
 end)
 
-local function checkStaffMember(p)
-    if not API.staffDetectorActive or p == player then return end
-    pcall(function()
-        local rank = p:GetRankInGroup(API.CHILLZ_GROUP_ID)
-        if rank and rank > 1 then
-            local role = p:GetRoleInGroup(API.CHILLZ_GROUP_ID)
-            if API.sendTelegramMessage then
-                API.sendTelegramMessage(string.format("🚨 <b>ВНИМАНИЕ! НА СЕРВЕР ЗАШЕЛ АДМИН!</b>\n\n• Игрок: <b>%s</b> (@%s)\n• Должность: <b>%s</b> (Ранг %d)\n⚠️ Фарм остановлен, произвожу экстренный перезаход!", p.DisplayName, p.Name, role, rank))
-            end
-            API.stopFarming()
-            task.wait(0.5)
-            API.executeRejoin()
-        end
-    end)
-end
-API.playerAddedConn = Players.PlayerAdded:Connect(checkStaffMember)
-task.spawn(function()
-    for _, p in ipairs(Players:GetPlayers()) do checkStaffMember(p) end
-end)
-
-local lastAntiLagRun = 0
-function API.applyAntiLag(force)
-    if not API.antiLagActive then return end
-    if not force and (os.clock() - lastAntiLagRun < 20) then return end
-    lastAntiLagRun = os.clock()
-
-    task.spawn(function()
-        pcall(function()
-            for _, v in ipairs(Workspace:GetDescendants()) do
-                if v:IsA("BasePart") and not v:IsDescendantOf(player.Character) and v ~= API.platform then
-                    v.Material = Enum.Material.SmoothPlastic
-                    v.CastShadow = false
-                elseif v:IsA("Decal") or v:IsA("Texture") or v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Fire") then
-                    if not v:IsDescendantOf(player.Character) then v:Destroy() end
-                end
-            end
-        end)
-    end)
-end
-
-local cachedHazards = {}
-local function refreshHazardCache()
-    table.clear(cachedHazards)
-    local stages = Workspace:FindFirstChild("BoatStages")
-    if stages then
-        for _, v in ipairs(stages:GetDescendants()) do
-            if v:IsA("BasePart") then
-                local name = v.Name:lower()
-                if name:find("water") or name:find("lava") or name:find("kill") or name:find("damage") then
-                    table.insert(cachedHazards, v)
-                end
-            end
-        end
-    end
-end
-
-function API.applyAntiHazard(state)
-    for i = #cachedHazards, 1, -1 do
-        local part = cachedHazards[i]
-        if part and part.Parent then
-            part.CanTouch = not state
-        else
-            table.remove(cachedHazards, i)
-        end
-    end
-end
-
-function API.toggleAntiHazard(enabled)
-    API.antiHazardActive = enabled
-    if API.antiHazardActive then
-        refreshHazardCache()
-        API.applyAntiHazard(true)
-        if not API.hazardConnection then
-            API.hazardConnection = Workspace.DescendantAdded:Connect(function(v)
-                if API.antiHazardActive and v:IsA("BasePart") then
-                    local name = v.Name:lower()
-                    if name:find("water") or name:find("lava") or name:find("kill") or name:find("damage") then
-                        table.insert(cachedHazards, v)
-                        v.CanTouch = false
-                    end
-                end
-            end)
-        end
-    else
-        if API.hazardConnection then
-            API.hazardConnection:Disconnect()
-            API.hazardConnection = nil
-        end
-        API.applyAntiHazard(false)
-    end
-end
-
+-- Анти-темнота (Постоянное поддержание без сброса при таймере 0.1с)
 local defaultLighting = {
     Ambient = Lighting.Ambient,
     OutdoorAmbient = Lighting.OutdoorAmbient,
@@ -405,8 +384,6 @@ local defaultLighting = {
     FogEnd = Lighting.FogEnd,
     GlobalShadows = Lighting.GlobalShadows
 }
-local disabledEffects = {}
-local hiddenFadeFrames = {}
 
 function API.enableClearVision()
     if not API.antiDarknessActive then return end
@@ -418,20 +395,12 @@ function API.enableClearVision()
         Lighting.FogEnd = 1e6
         Lighting.GlobalShadows = false
 
-        for _, fx in ipairs(Lighting:GetChildren()) do
-            if fx:IsA("PostEffect") and fx.Enabled then
-                table.insert(disabledEffects, fx)
-                fx.Enabled = false
-            end
-        end
-
         local pGui = player:FindFirstChild("PlayerGui")
         if pGui then
             for _, v in ipairs(pGui:GetDescendants()) do
-                if v:IsA("Frame") and v.Visible and v.BackgroundTransparency < 0.5 then
+                if v:IsA("Frame") and v.Visible and v.BackgroundTransparency < 0.4 then
                     local col = v.BackgroundColor3
-                    if (col.R + col.G + col.B) < 0.25 then
-                        table.insert(hiddenFadeFrames, {frame = v, prevVis = v.Visible, prevTrans = v.BackgroundTransparency})
+                    if (col.R + col.G + col.B) < 0.2 then
                         v.Visible = false
                     end
                 end
@@ -448,158 +417,78 @@ function API.disableClearVision()
         Lighting.ClockTime = defaultLighting.ClockTime
         Lighting.FogEnd = defaultLighting.FogEnd
         Lighting.GlobalShadows = defaultLighting.GlobalShadows
-
-        for _, fx in ipairs(disabledEffects) do
-            if fx and fx.Parent then fx.Enabled = true end
-        end
-        table.clear(disabledEffects)
-
-        for _, item in ipairs(hiddenFadeFrames) do
-            if item.frame and item.frame.Parent then
-                item.frame.Visible = item.prevVis
-                item.frame.BackgroundTransparency = item.prevTrans
-            end
-        end
-        table.clear(hiddenFadeFrames)
     end)
 end
 
-function API.updateSpeedAndEtaMetrics()
-    local UI = API.UI
-    if not API.farming then
-        if API.lastFinalizedMinute == 0 then
-            if UI.goldSpeedLabel then UI.goldSpeedLabel.Text = "Скорость: ~0 G/ч (0.0 G/мин)" end
-            if UI.minuteStatsLabel then UI.minuteStatsLabel.Text = "Мин. статистика: фарм остановлен" end
+-- Регулярная поддержка ясного зрения
+task.spawn(function()
+    while true do
+        if API.antiDarknessActive then
+            API.enableClearVision()
         end
-        if UI.etaLabel then UI.etaLabel.Text = "До покупки: Выкл" end
-        return
+        task.wait(1.5)
     end
+end)
 
-    local elapsed = time() - API.statsStartTime
-    local completedMinutes = math.floor(elapsed / 60)
+-- Поиск предмета с отдачей yield (размера пака)
+function API.searchItemInGame(query)
+    query = string.lower(string.gsub(query, "%s+", ""))
+    if query == "" then return nil, 0, 1 end
 
-    if completedMinutes > API.lastFinalizedMinute then
-        while API.lastFinalizedMinute < completedMinutes do
-            API.lastFinalizedMinute = API.lastFinalizedMinute + 1
-            if API.lastFinalizedMinute == completedMinutes then
-                API.minuteSamples[API.lastFinalizedMinute] = API.currentMinuteGold
-                API.minuteSampleSum = API.minuteSampleSum + API.currentMinuteGold
-                API.currentMinuteGold = 0
-            else
-                API.minuteSamples[API.lastFinalizedMinute] = 0
-            end
-        end
-
-        if API.lastFinalizedMinute > 0 then
-            API.averageGoldPerMinute = API.minuteSampleSum / API.lastFinalizedMinute
-            API.estimatedGoldPerHour = math.floor(API.averageGoldPerMinute * 60 + 0.5)
+    for key, data in pairs(API.KNOWN_ITEMS) do
+        local cleanKey = string.lower(string.gsub(key, "%s+", ""))
+        if cleanKey == query or string.find(cleanKey, query) or string.find(query, cleanKey) then
+            return data.name, data.price, (data.yield or 1)
         end
     end
 
-    if API.lastFinalizedMinute == 0 then
-        if UI.goldSpeedLabel then UI.goldSpeedLabel.Text = "Скорость: сбор данных до 1-й минуты..." end
-        if UI.minuteStatsLabel then
-            UI.minuteStatsLabel.Text = string.format("Замер минуты 1: +%d G (%dс/60с)", API.currentMinuteGold, math.floor(elapsed % 60))
-        end
-    else
-        if UI.goldSpeedLabel then
-            UI.goldSpeedLabel.Text = string.format("Скорость: ~%d G/ч (%.1f G/мин)", API.estimatedGoldPerHour, API.averageGoldPerMinute)
-        end
-        if UI.minuteStatsLabel then
-            if API.lastFinalizedMinute == 1 then
-                UI.minuteStatsLabel.Text = string.format("М1: +%d | Ср: %.1f/мин", API.minuteSamples[1] or 0, API.averageGoldPerMinute)
-            else
-                local mPrev = API.lastFinalizedMinute - 1
-                local mCurr = API.lastFinalizedMinute
-                UI.minuteStatsLabel.Text = string.format("М%d:+%d | М%d:+%d | Ср:%.1f/мин", mPrev, API.minuteSamples[mPrev] or 0, mCurr, API.minuteSamples[mCurr] or 0, API.averageGoldPerMinute)
-            end
-        end
-    end
-
-    if API.autoBuyActive and API.targetItemPrice > 0 and API.buyAmount > 0 then
-        local currentG = API.getCurrentGold()
-        local totalCost = API.targetItemPrice * API.buyAmount
-        local remainingGold = totalCost - currentG
-
-        if remainingGold <= 0 then
-            API.currentETA = "Покупка: сейчас"
-            if UI.etaLabel then
-                UI.etaLabel.TextColor3 = Color3.fromRGB(120, 255, 150)
-                UI.etaLabel.Text = "Покупка: сейчас"
-            end
-        elseif API.lastFinalizedMinute == 0 or API.averageGoldPerMinute <= 0 then
-            API.currentETA = "после 1 мин."
-            if UI.etaLabel then
-                UI.etaLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-                UI.etaLabel.Text = string.format("Нужно %d G | ETA после 1 мин.", remainingGold)
-            end
-        else
-            local etaSeconds = math.floor((remainingGold / API.averageGoldPerMinute) * 60)
-            API.currentETA = API.formatTime(etaSeconds)
-            if UI.etaLabel then
-                UI.etaLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-                UI.etaLabel.Text = string.format("Нужно %d G | ETA: %s", remainingGold, API.currentETA)
-            end
-        end
-    else
-        API.currentETA = "Выкл"
-        if UI.etaLabel then
-            UI.etaLabel.TextColor3 = Color3.fromRGB(160, 150, 180)
-            UI.etaLabel.Text = "До покупки: Выкл"
-        end
-    end
-
-    if API.isBlackScreen and UI.bsStats then
-        if API.lastFinalizedMinute == 0 then
-            UI.bsStats.Text = string.format("Заработано: +%d Gold\nСкорость: сбор данных...\nВремя: %s", API.totalEarned, UI.timeTrackerLabel and UI.timeTrackerLabel.Text:gsub("Время фарма: ", "") or "00:00:00")
-        else
-            UI.bsStats.Text = string.format("Заработано: +%d Gold\nСкорость: ~%d G/ч (%.1f/мин)\nВремя: %s", API.totalEarned, API.estimatedGoldPerHour, API.averageGoldPerMinute, UI.timeTrackerLabel and UI.timeTrackerLabel.Text:gsub("Время фарма: ", "") or "00:00:00")
-        end
-    end
-end
-
-function API.updateGoldStats()
-    local UI = API.UI
-    local current = API.getCurrentGold()
-    if API.farming then
-        local delta = current - API.previousGold
-        if delta > 0 then
-            API.totalEarned = API.totalEarned + delta
-            API.currentMinuteGold = API.currentMinuteGold + delta
-            API.playSfx(API.coinSfx)
-
-            for _, m in ipairs(API.MILESTONES) do
-                if API.totalEarned >= m and not API.reachedMilestones[m] then
-                    API.reachedMilestones[m] = true
-                    API.showAchievementToast("НОВОЕ ДОСТИЖЕНИЕ!", "Заработано +" .. tostring(m) .. " Gold!")
-                    if API.sendTelegramMessage then
-                        API.sendTelegramMessage(string.format("🏆 <b>ДОСТИЖЕНИЕ РАЗБЛОКИРОВАНО!</b>\nСессия принесла уже более <b>+%d Gold</b>!", m))
+    local pGui = player:FindFirstChild("PlayerGui")
+    if pGui and pGui:FindFirstChild("Shop") then
+        for _, frame in ipairs(pGui.Shop:GetDescendants()) do
+            if frame:IsA("TextLabel") or frame:IsA("TextButton") then
+                if string.find(string.lower(string.gsub(frame.Text, "%s+", "")), query) then
+                    local parent = frame.Parent
+                    if parent then
+                        for _, child in ipairs(parent:GetDescendants()) do
+                            if child:IsA("TextLabel") and string.find(string.lower(child.Text), "gold") then
+                                local parsed = tonumber(string.match(child.Text, "(%d+)"))
+                                if parsed and parsed > 0 then return frame.Text, parsed, 1 end
+                            end
+                        end
                     end
                 end
             end
         end
-        API.previousGold = current
-        if UI.startAndCurrentGoldLabel then UI.startAndCurrentGoldLabel.Text = "Старт: " .. tostring(API.startGold) .. "  |  Сейчас: " .. tostring(current) end
-        if UI.goldTrackerLabel then UI.goldTrackerLabel.Text = "Заработано: +" .. tostring(API.totalEarned) .. " Gold" end
-    else
-        API.previousGold = current
-        if UI.startAndCurrentGoldLabel then UI.startAndCurrentGoldLabel.Text = "Старт: 0  |  Сейчас: " .. tostring(current) end
     end
-    if API.checkAndAutoBuy then API.checkAndAutoBuy() end
-    API.updateSpeedAndEtaMetrics()
+    return nil, 0, 1
 end
 
-task.spawn(function()
-    local obj = API.getGoldObject()
-    while not obj do
-        task.wait(1)
-        obj = API.getGoldObject()
+function API.executeBuy(itemName, amount)
+    local rName, price, packYield = API.searchItemInGame(itemName)
+    if not rName or price <= 0 then return false, "Предмет не найден" end
+    amount = tonumber(amount) or 1
+    local totalCost = price * amount
+    if API.getCurrentGold() < totalCost then return false, "Недостаточно золота" end
+    local buyRemote = Workspace:FindFirstChild("ItemBoughtFromShop")
+    if buyRemote then
+        local ok = pcall(function() buyRemote:InvokeServer(rName, amount) end)
+        if ok then return true, "Куплено: " .. rName .. " (" .. (amount * packYield) .. " шт.)" end
     end
-    API.previousGold = API.getCurrentGold()
-    API.updateGoldStats()
-    obj.Changed:Connect(API.updateGoldStats)
-end)
+    return false, "Ошибка покупки"
+end
 
+function API.checkAndAutoBuy()
+    if not API.autoBuyActive or API.targetItemRealName == "" or API.targetItemPrice <= 0 then return end
+    local totalCost = API.targetItemPrice * API.buyAmount
+    if API.getCurrentGold() >= totalCost then
+        local buyRemote = Workspace:FindFirstChild("ItemBoughtFromShop")
+        if buyRemote then
+            pcall(function() buyRemote:InvokeServer(API.targetItemRealName, API.buyAmount) end)
+        end
+    end
+end
+
+-- Цикл фарма с защитой от зависания на 10 этапе (10 секунд таймаут)
 function API.startFarmingLoop()
     local UI = API.UI
     API.farmThread = task.spawn(function()
@@ -640,7 +529,6 @@ function API.startFarmingLoop()
 
                 if resetToFirstStage or not API.farming then
                     API.platform.Parent = nil
-                    API.disableClearVision()
                     task.wait(0.5)
                     continue
                 end
@@ -648,13 +536,12 @@ function API.startFarmingLoop()
                 hrp, char, hum = API.getCurrentHRP()
                 if hrp then
                     if UI.statusLabel then UI.statusLabel.Text = "Сундук (" .. tostring(API.chestDelay) .. " сек)..." end
-                    API.enableClearVision()
                     API.setNoclip(char)
                     API.placeOnPlatform(API.CHEST_POSITION, hrp)
 
                     local chestStart = tick()
                     while tick() - chestStart < API.chestDelay do
-                        task.wait(0.1)
+                        task.wait(0.05)
                         if not API.farming then break end
                         local curHrp = API.getCurrentHRP()
                         if not curHrp or curHrp.Position.Z < API.SPAWN_Z_MAX then
@@ -666,7 +553,6 @@ function API.startFarmingLoop()
 
                 if resetToFirstStage or not API.farming then
                     API.platform.Parent = nil
-                    API.disableClearVision()
                     task.wait(0.5)
                     continue
                 end
@@ -674,7 +560,6 @@ function API.startFarmingLoop()
                 hrp, char, hum = API.getCurrentHRP()
                 if hrp then
                     if UI.statusLabel then UI.statusLabel.Text = "Возврат на зону " .. targetStage .. "..." end
-                    API.disableClearVision()
                     API.setNoclip(char)
                     API.placeOnPlatform(API.STAGE_COORDINATES[targetStage], hrp)
                     task.wait(API.stageDelay)
@@ -706,25 +591,39 @@ function API.startFarmingLoop()
 
                 if resetToFirstStage or not API.farming then
                     API.platform.Parent = nil
-                    API.disableClearVision()
                     task.wait(0.5)
                     continue
                 end
 
+                -- Ожидание сброса зоны с жестким лимитом 10 секунд
                 if UI.statusLabel then UI.statusLabel.Text = "10 этап: ожидание спавна..." end
+                local stage10Timer = tick()
+
                 while API.farming do
                     task.wait(0.1)
-                    local curHrp = API.getCurrentHRP()
-                    if curHrp and curHrp.Position.Z < API.SPAWN_Z_MAX then break end
+                    local curHrp, curChar, curHum = API.getCurrentHRP()
+                    if curHrp and curHrp.Position.Z < API.SPAWN_Z_MAX then
+                        break
+                    end
+
+                    -- Таймаут 10 секунд -> принудительный ресет
+                    if tick() - stage10Timer > 10 then
+                        if UI.statusLabel then UI.statusLabel.Text = "10с зависание! Экстренный ресет..." end
+                        if curHum then curHum.Health = 0 end
+                        while API.farming do
+                            task.wait(0.1)
+                            local rHrp = API.getCurrentHRP()
+                            if rHrp and rHrp.Position.Z < API.SPAWN_Z_MAX then break end
+                        end
+                        break
+                    end
                 end
 
-                API.disableClearVision()
-                if API.checkAndAutoBuy then API.checkAndAutoBuy() end
+                API.checkAndAutoBuy()
                 API.platform.Parent = nil
                 task.wait(0.8)
 
             elseif API.farmMode == "Gold" then
-                API.disableClearVision()
                 for index, coord in ipairs(API.STAGE_COORDINATES) do
                     if not API.farming then break end
                     hrp, char, hum = API.getCurrentHRP()
@@ -759,13 +658,14 @@ function API.startFarmingLoop()
                     API.platform.Parent = nil
                     hum.Health = 0
 
-                    if UI.statusLabel then UI.statusLabel.Text = "Возрождение на спавне..." end
+                    local gTimer = tick()
                     while API.farming do
                         task.wait(0.1)
-                        local curHrp = getCurrentHRP()
+                        local curHrp = API.getCurrentHRP()
                         if curHrp and curHrp.Position.Z < API.SPAWN_Z_MAX then break end
+                        if tick() - gTimer > 10 then break end
                     end
-                    if API.checkAndAutoBuy then API.checkAndAutoBuy() end
+                    API.checkAndAutoBuy()
                     task.wait(0.8)
                 end
             end
@@ -782,7 +682,7 @@ function API.startFarming()
 
     API.startGold = API.getCurrentGold()
     API.previousGold = API.startGold
-    totalEarned = 0
+    API.totalEarned = 0
     table.clear(API.reachedMilestones)
 
     API.statsStartTime = time()
@@ -796,7 +696,8 @@ function API.startFarming()
     API.currentETA = "Выкл"
 
     API.updateGoldStats()
-    if API.antiHazardActive then API.applyAntiHazard(true) end
+    if API.antiHazardActive and API.applyAntiHazard then API.applyAntiHazard(true) end
+    if API.antiDarknessActive then API.enableClearVision() end
 
     API.startTime = os.time()
     if UI.timeTrackerLabel then UI.timeTrackerLabel.Text = "Время фарма: 00:00:00" end
@@ -805,7 +706,7 @@ function API.startFarming()
         while API.farming do
             local elapsed = math.floor(time() - API.statsStartTime)
             if UI.timeTrackerLabel then UI.timeTrackerLabel.Text = "Время фарма: " .. API.formatTime(elapsed) end
-            API.updateSpeedAndEtaMetrics()
+            if API.updateSpeedAndEtaMetrics then API.updateSpeedAndEtaMetrics() end
             task.wait(1)
         end
     end)
@@ -814,9 +715,7 @@ function API.startFarming()
         UI.toggleButton.Text = "STOP AUTO FARM"
         UI.toggleButton.BackgroundColor3 = Color3.fromRGB(220, 50, 70)
     end
-    if UI.statusLabel then
-        UI.statusLabel.Text = "Запуск: " .. (API.farmMode == "Chest" and "Сундук" or "Золото")
-    end
+    if UI.statusLabel then UI.statusLabel.Text = "Запуск: " .. (API.farmMode == "Chest" and "Сундук" or "Золото") end
     print("[BABFT] Автофарм успешно запущен!")
     API.startFarmingLoop()
 end
@@ -827,7 +726,6 @@ function API.stopFarming()
     API.farming = false
     API.autoStartOnJoin = false
     if API.saveConfig then API.saveConfig(false) end
-    API.disableClearVision()
 
     if UI.toggleButton then
         UI.toggleButton.Text = "START AUTO FARM"
@@ -841,29 +739,54 @@ function API.stopFarming()
     API.platform.Parent = nil
     if API.farmThread then task.cancel(API.farmThread) API.farmThread = nil end
 
-    API.updateSpeedAndEtaMetrics()
+    if API.updateSpeedAndEtaMetrics then API.updateSpeedAndEtaMetrics() end
     print("[BABFT] Автофарм остановлен.")
 end
+
+function API.updateGoldStats()
+    local UI = API.UI
+    local current = API.getCurrentGold()
+    if API.farming then
+        local delta = current - API.previousGold
+        if delta > 0 then
+            API.totalEarned = API.totalEarned + delta
+            API.currentMinuteGold = API.currentMinuteGold + delta
+            API.playSfx(API.coinSfx)
+        end
+        API.previousGold = current
+        if UI.startAndCurrentGoldLabel then UI.startAndCurrentGoldLabel.Text = "Старт: " .. tostring(API.startGold) .. "  |  Сейчас: " .. tostring(current) end
+        if UI.goldTrackerLabel then UI.goldTrackerLabel.Text = "Заработано: +" .. tostring(API.totalEarned) .. " Gold" end
+    else
+        API.previousGold = current
+        if UI.startAndCurrentGoldLabel then UI.startAndCurrentGoldLabel.Text = "Старт: 0  |  Сейчас: " .. tostring(current) end
+    end
+    API.checkAndAutoBuy()
+    if API.updateSpeedAndEtaMetrics then API.updateSpeedAndEtaMetrics() end
+end
+
+task.spawn(function()
+    local obj = API.getGoldObject()
+    while not obj do
+        task.wait(1)
+        obj = API.getGoldObject()
+    end
+    API.previousGold = API.getCurrentGold()
+    API.updateGoldStats()
+    obj.Changed:Connect(API.updateGoldStats)
+end)
 
 function API.fullCleanup()
     API.farming = false
     API.autoBuyActive = false
     API.autoStartOnJoin = false
     API.disableClearVision()
-    API.toggleAntiHazard(false)
+    if API.toggleAntiHazard then API.toggleAntiHazard(false) end
     if API.toggleBlackScreen then API.toggleBlackScreen(false) end
 
     if API.idledConn then API.idledConn:Disconnect() end
-    if API.playerAddedConn then API.playerAddedConn:Disconnect() end
     if API.stepConn then API.stepConn:Disconnect() end
-    if API.masterRenderConn then API.masterRenderConn:Disconnect() end
-    if API.rotConn then API.rotConn:Disconnect() end
-    if API.hazardConnection then API.hazardConnection:Disconnect() end
     if API.farmThread then task.cancel(API.farmThread) end
     if API.timerThread then task.cancel(API.timerThread) end
-    if API.tgPollingThread then task.cancel(API.tgPollingThread) end
-    if API.cometThread then task.cancel(API.cometThread) end
-    if API.cartAutoBuyThread then task.cancel(API.cartAutoBuyThread) end
 
     local hrp = API.getCurrentHRP()
     if hrp then API.setSpin(hrp, false) end
@@ -873,5 +796,4 @@ function API.fullCleanup()
 end
 
 _G.BabftActiveScript = { Destroy = API.fullCleanup }
-
-print("[BABFT-Main] Логическое ядро готово!")
+print("[BABFT-Main] Логическое ядро с защитой от 10с таймаута готово!")
