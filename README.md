@@ -72,3 +72,22 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Probothotspot/Slap-ba
 Снижение HP не приписывается автоматически одному перехваченному вызову.
 Полные инструкции и ограничения — [NPC-Hit-Inspector.md](NPC-Hit-Inspector.md).
 Отдельный файл не заменяет NPC GeneralHit. Проверки: `lua NPC-Hit-Inspector-tests.lua`.
+
+## Lantern AutoHit 1.0.0
+
+Отдельная автоатака через **Network текущего Lantern** с фактически наблюдавшимся
+пакетом `FireServer("Hit", part)`. Ищет живых NPC с физической частью CandyCorn либо
+slappable=true, исключает игроков и анимационные Pose. Расстояние учитывает текущий
+размер и поворот части. GUI: ON/OFF, 1–20 Hit/с, дистанция, взмах ON/OFF,
+копирование диагностики, перетаскивание и сворачивание.
+
+```lua
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Probothotspot/Slap-battles-Teleport/main/Lantern-AutoHit.lua?v=1.0.0"))()
+```
+
+Экипировать Lantern, подойти к врагу, нажать ON. Начальные настройки: 4 Hit/с,
+8 студов до границ части, Взмах ON. Tool:Activate запускает взмах; при доступном
+AttackActive отправка ждёт true. Ник и имя модели врага не закреплены.
+Отправленные запросы и наблюдаемое снижение HP показаны отдельно; принятие удара
+сервером не гарантировано. В присланном исходном логе HP врага не снизилось.
+[Инструкция и ограничения](Lantern-AutoHit.md). Проверки: `lua Lantern-AutoHit-tests.lua`.
