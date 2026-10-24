@@ -59,6 +59,11 @@ local methods,mt={},{}
 Instance={new=function(class)return setmetatable({class=class,p={Name=class,Enabled=true,Visible=true},children={},signals={}},mt)end}
 mt.__index=function(o,k)
  if methods[k]then return methods[k]end
+ if k=='GeneralHit' then
+  local child=methods.FindFirstChild(o,k)
+  if child then return child end
+  error('GeneralHit is not a valid member of '..o.class)
+ end
  if k=='AbsoluteSize'then return{X=1000,Y=800}end
  if k=='Activated'or k=='InputBegan'or k=='InputChanged'or k=='InputEnded'or k=='WindowFocusReleased'or k=='Destroying'
  or k=='DescendantAdded'or k=='DescendantRemoving'or k=='MouseEnter'or k=='MouseLeave'or k=='Played'or k=='FocusLost'then
@@ -168,8 +173,14 @@ core:setEnabled(true);time=time+.1;before=#calls;core:step();eq(#calls>before,tr
 for i=before+1,#calls do eq(calls[i].Part,replacement)end
 -- Removal/replacement of the remote is re-resolved instead of terminating the script.
 event.Parent=nil;before=#calls;time=time+.1;core:step();eq(#calls,before);eq(core.Enabled,true)
+eq(core.StatusCode,'remote_missing');eq(core.LastError:find('GeneralHit is not a valid member',1,true)~=nil,true)
+eq(core.Message:find('ReplicatedStorage.GeneralHit:',1,true)~=nil,true)
 local replacementRemote=remote(storage,function(r,part)calls[#calls+1]={Remote=r,Part=part,At=time}end)
 time=time+.3;core:step();eq(calls[#calls].Remote,replacementRemote)
+eq(core.StatusCode,'sent');eq(core.LastError,nil)
+-- A callable FireServer is used directly, without rejecting a different event class.
+replacementRemote.class='UnreliableRemoteEvent';before=#calls;time=time+.1;core:step();eq(#calls>before,true)
+replacementRemote.class='RemoteEvent'
 -- A newly replicated NPC enters the queue without a whole-world refresh.
 local fresh,fh,fpart=npc(world,'Fresh','HumanoidRootPart');core:added(fh)
 time=time+.1;core:step();eq(core.Index[fh]~=nil,true)
@@ -190,6 +201,17 @@ time=time+.2;racing:step();eq(racing.Enabled,false);eq(racing.Message,'OFF — �
 replacementRemote.FireServer=function()error('fixture refusal')end
 local failing=Core.new({World=world,Players=players,Storage=storage});failing:setEnabled(true);failing:step()
 eq(failing.Failures,1);time=time+.1;failing:step();eq(failing.Failures,1);eq(failing.Sending,false)
+eq(failing.StatusCode,'invoke_error');eq(failing.Message:find('GeneralHit:FireServer:',1,true)~=nil,true)
+eq(failing.LastError:find('fixture refusal',1,true)~=nil,true)
+-- Exact receiver, exactly one BasePart argument and no successful-damage claim.
+local argumentCount,received,receiver
+replacementRemote.FireServer=function(self,...)receiver=self;argumentCount=select('#',...);received=(...)end
+local direct=Core.new({World=world,Players=players,Storage=storage});direct:setEnabled(true);direct:step()
+eq(argumentCount,1);eq(receiver,replacementRemote);eq(received==armB or received==replacement,true)
+direct:Destroy()
+-- Missing NPCs are reported separately from a failed or absent remote.
+local empty=Core.new({World=Instance.new('Workspace'),Players=players,Storage=Instance.new('ReplicatedStorage')})
+empty:setEnabled(true);empty:step();eq(empty.StatusCode,'no_npc');eq(empty.Failures,0);eq(empty.Sent,0);empty:Destroy()
 -- Scanning remains incremental and periodic rescans really happen while idle.
 local large=Instance.new('Workspace')
 for i=1,3000 do local junk=Instance.new('Folder');junk.Parent=large end
@@ -210,7 +232,7 @@ local fullRemote=remote(services.ReplicatedStorage,function(_,part)fullCalls[#fu
 local app=dofile('NPC-GeneralHit.lua')
 local function find(name)return assert(app.Gui:FindFirstChild(name,true),name)end
 local function tick(dt)time=time+dt;hb:Fire(dt)end
-eq(app.Gui.Parent,pg);eq(find('Title').Text,'NPC GeneralHit');eq(find('Window').GroupTransparency,0)
+eq(app.Gui.Parent,pg);eq(find('Title').Text,'NPC GeneralHit 1.0.1');eq(find('Window').GroupTransparency,0)
 eq(find('Window'):FindFirstChildOfClass('UIGradient')~=nil,true);eq(find('Toggle').Text,'OFF')
 tick(.1);eq(#fullCalls,0)
 find('Rate').Text='4';find('Rate').FocusLost:Fire(true);eq(app.Engine.Rate,4)
@@ -220,6 +242,12 @@ find('Toggle').Activated:Fire();eq(app.Engine.Enabled,true)
 for i=1,20 do tick(.1)end
 eq(#fullCalls>=7 and #fullCalls<=9,true)
 for _,part in ipairs(fullCalls)do eq(part,sarm)end
+local normalFullFire=fullRemote.FireServer
+fullRemote.FireServer=function()error(string.rep('ошибка ',40))end
+tick(.3);eq(app.Engine.StatusCode,'invoke_error')
+eq(find('LogText').Text:find('GeneralHit:FireServer:',1,true)~=nil,true)
+eq(find('LogText').Size.Y.Offset>100,true)
+fullRemote.FireServer=normalFullFire
 find('Toggle').Activated:Fire();before=#fullCalls;tick(1);eq(#fullCalls,before)
 find('Collapse').Activated:Fire();eq(find('Body').Visible,false);eq(find('Window').Size.Y.Offset,44)
 find('Collapse').Activated:Fire();eq(find('Body').Visible,true);eq(find('Window').Size.Y.Offset,366)
