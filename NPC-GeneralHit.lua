@@ -1,12 +1,13 @@
--- NPC GeneralHit v1.0.1 | Probothotspot
+-- NPC GeneralHit v1.0.2 | Probothotspot
 -- One global 1..100 calls/s budget, round-robin living Humanoid NPCs.
 -- FireServer returning does not acknowledge damage or bypass server validation.
 local Core={}
+local REMOTE_PATH='ReplicatedStorage.Remotes.GeneralHit'
 function Core.new(c)
     local clock=c.Clock or os.clock
     local self={Enabled=false,Destroyed=false,Rate=10,Sent=0,Failures=0,Cursor=0,NextCall=0,
         List={},Index={},Pending=setmetatable({},{__mode='k'}),Stack={{Node=c.World}},Ready=false,
-        Scanned=0,NextSweep=0,Sending=false,Times={},StatusCode='off',Message='OFF — готов к запуску'}
+        RemotePath=REMOTE_PATH,Scanned=0,NextSweep=0,Sending=false,Times={},StatusCode='off',Message='OFF — готов к запуску'}
     local function note(message)
         if self.Message==message then return end
         self.Message=message;if c.Log then c.Log(message) end
@@ -115,11 +116,11 @@ function Core.new(c)
             local ok,result=pcall(function()
                 -- Fresh validation immediately before dispatch; no saved Skeleton/arm reference.
                 assert(self:part(humanoid)==part,'Цель изменилась')
-                -- Same receiver and one-argument packet as ReplicatedStorage.GeneralHit:FireServer(...).
+                -- Same receiver and one-argument packet as ReplicatedStorage.Remotes.GeneralHit:FireServer(...).
                 -- No class-name gate or wait loop: try the actual call and surface its error.
                 stage='remote'
-                local remote=c.Storage.GeneralHit
-                assert(remote,'ReplicatedStorage.GeneralHit отсутствует')
+                local remote=c.Storage.Remotes.GeneralHit
+                assert(remote,REMOTE_PATH..' отсутствует')
                 stage='fireserver'
                 local args={[1]=part}
                 if c.Fire then return c.Fire(remote,part) end
@@ -137,7 +138,7 @@ function Core.new(c)
                 self.Failures=self.Failures+1;self.LastError=tostring(result)
                 self.StatusCode=stage=='remote' and 'remote_missing' or stage=='target' and 'target_changed' or 'invoke_error'
                 self.NextCall=now+(stage=='remote' and .25 or .5)
-                note((stage=='remote' and 'ReplicatedStorage.GeneralHit: ' or stage=='target' and 'NPC: ' or 'GeneralHit:FireServer: ')..self.LastError);break
+                note((stage=='remote' and REMOTE_PATH..': ' or stage=='target' and 'NPC: ' or 'GeneralHit:FireServer: ')..self.LastError);break
             end
             count=count+1
         end
@@ -159,7 +160,7 @@ if type(previous)=='table' and type(previous.Destroy)=='function' then previous:
 local playerGui=player:WaitForChild('PlayerGui',10);assert(playerGui,'NPC GeneralHit: PlayerGui не готов')
 local Tween=game:GetService('TweenService');local Input=game:GetService('UserInputService')
 local connections,tweens,channels={},{},{}
-local handle={Version='1.0.1',JobId=game.JobId,Destroyed=false}
+local handle={Version='1.0.2',JobId=game.JobId,Destroyed=false}
 env[KEY]=handle
 local gui,engine
 local function connect(signal,fn)local connection=signal:Connect(fn);connections[#connections+1]=connection;return connection end
@@ -215,7 +216,7 @@ local ok,why=pcall(function()
         return b
     end
     local header=make('Frame',{Name='Header',Size=UDim2.new(1,0,0,44),BackgroundTransparency=1,Active=true},window)
-    local title=label('Title','NPC GeneralHit 1.0.1',15,0,230,44,16,header);title.Font=Enum.Font.GothamBold
+    local title=label('Title','NPC GeneralHit 1.0.2',15,0,230,44,16,header);title.Font=Enum.Font.GothamBold
     local collapse=button('Collapse','−',260,8,28,28,header)
     local close=button('Close','×',295,8,28,28,header)
     local body=make('Frame',{Name='Body',Position=UDim2.fromOffset(0,44),Size=UDim2.new(1,0,1,-44),BackgroundTransparency=1},window)
@@ -301,6 +302,7 @@ local ok,why=pcall(function()
         toggle.Text=engine.Enabled and 'ON' or 'OFF';state.Text=engine.Message
         stats.Text='NPC: '..#engine.List..' | За 1 с: '..engine:actualRate()..' | Всего: '..engine.Sent
     end)
+    log('Путь вызова: '..engine.RemotePath)
     log('GeneralHit: цели выбираются заново, NPC распределяются по кругу')
     log('Частота 1–100/с общая; при низком FPS фактическая частота ниже')
     animate(window,'fade',{GroupTransparency=0},.22)
