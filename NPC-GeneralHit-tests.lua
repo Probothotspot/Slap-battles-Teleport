@@ -59,10 +59,10 @@ local methods,mt={},{}
 Instance={new=function(class)return setmetatable({class=class,p={Name=class,Enabled=true,Visible=true},children={},signals={}},mt)end}
 mt.__index=function(o,k)
  if methods[k]then return methods[k]end
- if k=='GeneralHit' then
+ if k=='GeneralHit' or k=='Remotes' then
   local child=methods.FindFirstChild(o,k)
   if child then return child end
-  error('GeneralHit is not a valid member of '..o.class)
+  error(k..' is not a valid member of '..o.class)
  end
  if k=='AbsoluteSize'then return{X=1000,Y=800}end
  if k=='Activated'or k=='InputBegan'or k=='InputChanged'or k=='InputEnded'or k=='WindowFocusReleased'or k=='Destroying'
@@ -151,12 +151,14 @@ local function remote(storage,fn)
  return event
 end
 local world=Instance.new('Workspace');local storage=Instance.new('ReplicatedStorage')
+local remotes=Instance.new('Folder');remotes.Name='Remotes';remotes.Parent=storage
 local a,ah,armA=npc(world,'A');local b,bh,armB=npc(world,'B','RightHand')
 local character,ch=npc(world,'PlayerCharacter');local nested,nh=npc(character,'NestedPlayerRig')
 local players={list={{Character=character}}}
 function players:GetPlayers()return self.list end
 function players:GetPlayerFromCharacter(model)for _,p in ipairs(self.list)do if p.Character==model then return p end end end
-local calls={};local event=remote(storage,function(r,part)calls[#calls+1]={Remote=r,Part=part,At=time}end)
+local rootCalls=0;local trap=remote(storage,function()rootCalls=rootCalls+1;error('wrong root-level GeneralHit')end)
+local calls={};local event=remote(remotes,function(r,part)calls[#calls+1]={Remote=r,Part=part,At=time}end)
 local core=Core.new({World=world,Players=players,Storage=storage})
 eq(core.Enabled,false);core:step();eq(#core.List,2);eq(core.Ready,true);eq(#calls,0)
 core:setEnabled(true)
@@ -174,10 +176,10 @@ for i=before+1,#calls do eq(calls[i].Part,replacement)end
 -- Removal/replacement of the remote is re-resolved instead of terminating the script.
 event.Parent=nil;before=#calls;time=time+.1;core:step();eq(#calls,before);eq(core.Enabled,true)
 eq(core.StatusCode,'remote_missing');eq(core.LastError:find('GeneralHit is not a valid member',1,true)~=nil,true)
-eq(core.Message:find('ReplicatedStorage.GeneralHit:',1,true)~=nil,true)
-local replacementRemote=remote(storage,function(r,part)calls[#calls+1]={Remote=r,Part=part,At=time}end)
+eq(core.Message:find('ReplicatedStorage.Remotes.GeneralHit:',1,true)~=nil,true)
+local replacementRemote=remote(remotes,function(r,part)calls[#calls+1]={Remote=r,Part=part,At=time}end)
 time=time+.3;core:step();eq(calls[#calls].Remote,replacementRemote)
-eq(core.StatusCode,'sent');eq(core.LastError,nil)
+eq(core.StatusCode,'sent');eq(core.LastError,nil);eq(rootCalls,0);eq(core.RemotePath,'ReplicatedStorage.Remotes.GeneralHit')
 -- A callable FireServer is used directly, without rejecting a different event class.
 replacementRemote.class='UnreliableRemoteEvent';before=#calls;time=time+.1;core:step();eq(#calls>before,true)
 replacementRemote.class='RemoteEvent'
@@ -221,18 +223,24 @@ for i=1,60 do indexing:step()end
 eq(indexing.Ready,true);local scanned=indexing.Scanned;local due=indexing.NextSweep
 time=due-.1;indexing:step();eq(indexing.NextSweep,due)
 time=due+.1;indexing:step();eq(indexing.Scanned>scanned,true)
+-- The entire Remotes folder can be replaced; the current path must be used again.
+remotes.Parent=nil;before=#calls;time=time+.6;core:step();eq(#calls,before);eq(core.StatusCode,'remote_missing');eq(rootCalls,0)
+remotes=Instance.new('Folder');remotes.Name='Remotes';remotes.Parent=storage
+local folderReplacement=remote(remotes,function(r,part)calls[#calls+1]={Remote=r,Part=part,At=time}end)
+time=time+.3;core:step();eq(calls[#calls].Remote,folderReplacement);eq(core.StatusCode,'sent');eq(rootCalls,0)
 core:Destroy();racing:Destroy();failing:Destroy();indexing:Destroy()
 -- Full production file: actual GUI, controls, events, repeated run and complete cleanup.
 services.ReplicatedStorage=Instance.new('ReplicatedStorage')
+local fullRemotes=Instance.new('Folder');fullRemotes.Name='Remotes';fullRemotes.Parent=services.ReplicatedStorage
 function services.Players:GetPlayers()return {player}end
 function services.Players:GetPlayerFromCharacter(model)if model==player.Character then return player end end
 local skeleton,sh,sarm=npc(workspace,'Skeleton')
 local fullCalls={}
-local fullRemote=remote(services.ReplicatedStorage,function(_,part)fullCalls[#fullCalls+1]=part end)
+local fullRemote=remote(fullRemotes,function(_,part)fullCalls[#fullCalls+1]=part end)
 local app=dofile('NPC-GeneralHit.lua')
 local function find(name)return assert(app.Gui:FindFirstChild(name,true),name)end
 local function tick(dt)time=time+dt;hb:Fire(dt)end
-eq(app.Gui.Parent,pg);eq(find('Title').Text,'NPC GeneralHit 1.0.1');eq(find('Window').GroupTransparency,0)
+eq(app.Gui.Parent,pg);eq(find('Title').Text,'NPC GeneralHit 1.0.2');eq(find('Window').GroupTransparency,0)
 eq(find('Window'):FindFirstChildOfClass('UIGradient')~=nil,true);eq(find('Toggle').Text,'OFF')
 tick(.1);eq(#fullCalls,0)
 find('Rate').Text='4';find('Rate').FocusLost:Fire(true);eq(app.Engine.Rate,4)
