@@ -1,4 +1,4 @@
--- NPC GeneralHit v1.0.0 | Probothotspot
+-- NPC GeneralHit v1.0.1 | Probothotspot
 -- One global 1..100 calls/s budget, round-robin living Humanoid NPCs.
 -- FireServer returning does not acknowledge damage or bypass server validation.
 local Core={}
@@ -6,7 +6,7 @@ function Core.new(c)
     local clock=c.Clock or os.clock
     local self={Enabled=false,Destroyed=false,Rate=10,Sent=0,Failures=0,Cursor=0,NextCall=0,
         List={},Index={},Pending=setmetatable({},{__mode='k'}),Stack={{Node=c.World}},Ready=false,
-        Scanned=0,NextSweep=0,Sending=false,Times={},Message='OFF — готов к запуску'}
+        Scanned=0,NextSweep=0,Sending=false,Times={},StatusCode='off',Message='OFF — готов к запуску'}
     local function note(message)
         if self.Message==message then return end
         self.Message=message;if c.Log then c.Log(message) end
@@ -76,7 +76,7 @@ function Core.new(c)
                 self:remove(h)
             else
                 local part=self:part(h)
-                if part then return part,h.Parent.Name end
+                if part then return part,h.Parent.Name,h end
             end
         end
     end
@@ -88,6 +88,7 @@ function Core.new(c)
     function self:setEnabled(value)
         if self.Destroyed then return end
         self.Enabled=value==true;self.NextCall=clock()
+        self.StatusCode=self.Enabled and 'finding_npc' or 'off'
         note(self.Enabled and 'ON — поиск живых NPC' or 'OFF — остановлено')
     end
     function self:actualRate()
@@ -102,33 +103,41 @@ function Core.new(c)
         local now=clock();local count=0
         -- At most two calls/frame; dropped frames never produce an unbounded catch-up burst.
         while self.Enabled and not self.Destroyed and now>=self.NextCall and count<2 do
-            local remote=c.Storage:FindFirstChild('GeneralHit')
-            if not remote or not remote:IsA('RemoteEvent') then
-                self.NextCall=now+.25;note('GeneralHit не найден — ожидание появления');break
-            end
-            local part,name=self:nextTarget()
+            local part,name,humanoid=self:nextTarget()
             if not part then
-                self.NextCall=now+.1;note(self.Ready and 'Нет живых доступных NPC — ожидание' or 'Поиск NPC в фоне…');break
+                self.StatusCode=self.Ready and 'no_npc' or 'indexing'
+                self.NextCall=now+.1;note(self.Ready and 'Нет живых NPC с доступной частью тела' or 'Поиск NPC в фоне…');break
             end
             self.NextCall=self.NextCall+1/self.Rate
             if now-self.NextCall>.1 then self.NextCall=now+1/self.Rate end
             self.Sending=true
+            local stage='target'
             local ok,result=pcall(function()
                 -- Fresh validation immediately before dispatch; no saved Skeleton/arm reference.
-                assert(self:part(self.List[self.Cursor])==part,'Цель изменилась')
+                assert(self:part(humanoid)==part,'Цель изменилась')
+                -- Same receiver and one-argument packet as ReplicatedStorage.GeneralHit:FireServer(...).
+                -- No class-name gate or wait loop: try the actual call and surface its error.
+                stage='remote'
+                local remote=c.Storage.GeneralHit
+                assert(remote,'ReplicatedStorage.GeneralHit отсутствует')
+                stage='fireserver'
+                local args={[1]=part}
                 if c.Fire then return c.Fire(remote,part) end
-                return remote:FireServer(part)
+                return remote:FireServer(table.unpack(args))
             end)
             self.Sending=false
             if self.Destroyed then return end
             if ok and result~=false then
-                self.Sent=self.Sent+1;self.LastTarget=name
+                self.Sent=self.Sent+1;self.LastTarget=name;self.LastError=nil
+                if self.Enabled then self.StatusCode='sent' end
                 self.Times[#self.Times+1]=now
                 if #self.Times>200 then table.remove(self.Times,1) end
                 if self.Enabled then self.Message='ON — '..tostring(name)..' | вызов отправлен' end
             else
-                self.Failures=self.Failures+1;self.NextCall=now+.5
-                note('Ошибка вызова: '..tostring(result));break
+                self.Failures=self.Failures+1;self.LastError=tostring(result)
+                self.StatusCode=stage=='remote' and 'remote_missing' or stage=='target' and 'target_changed' or 'invoke_error'
+                self.NextCall=now+(stage=='remote' and .25 or .5)
+                note((stage=='remote' and 'ReplicatedStorage.GeneralHit: ' or stage=='target' and 'NPC: ' or 'GeneralHit:FireServer: ')..self.LastError);break
             end
             count=count+1
         end
@@ -150,7 +159,7 @@ if type(previous)=='table' and type(previous.Destroy)=='function' then previous:
 local playerGui=player:WaitForChild('PlayerGui',10);assert(playerGui,'NPC GeneralHit: PlayerGui не готов')
 local Tween=game:GetService('TweenService');local Input=game:GetService('UserInputService')
 local connections,tweens,channels={},{},{}
-local handle={Version='1.0.0',JobId=game.JobId,Destroyed=false}
+local handle={Version='1.0.1',JobId=game.JobId,Destroyed=false}
 env[KEY]=handle
 local gui,engine
 local function connect(signal,fn)local connection=signal:Connect(fn);connections[#connections+1]=connection;return connection end
@@ -206,7 +215,7 @@ local ok,why=pcall(function()
         return b
     end
     local header=make('Frame',{Name='Header',Size=UDim2.new(1,0,0,44),BackgroundTransparency=1,Active=true},window)
-    local title=label('Title','NPC GeneralHit',15,0,230,44,16,header);title.Font=Enum.Font.GothamBold
+    local title=label('Title','NPC GeneralHit 1.0.1',15,0,230,44,16,header);title.Font=Enum.Font.GothamBold
     local collapse=button('Collapse','−',260,8,28,28,header)
     local close=button('Close','×',295,8,28,28,header)
     local body=make('Frame',{Name='Body',Position=UDim2.fromOffset(0,44),Size=UDim2.new(1,0,1,-44),BackgroundTransparency=1},window)
@@ -228,7 +237,15 @@ local ok,why=pcall(function()
     local lines={}
     local function log(message)
         lines[#lines+1]=tostring(message);if #lines>8 then table.remove(lines,1) end
-        logText.Text=table.concat(lines,'\n');local h=math.max(55,#lines*28)
+        logText.Text=table.concat(lines,'\n')
+        local wrapped=0
+        for _,line in ipairs(lines) do
+            for segment in (line..'\n'):gmatch('(.-)\n') do
+                local length=utf8 and utf8.len(segment) or #segment
+                wrapped=wrapped+math.max(1,math.ceil((length or #segment)/42))
+            end
+        end
+        local h=math.max(55,wrapped*14)
         logText.Size=UDim2.fromOffset(292,h);logs.CanvasSize=UDim2.fromOffset(0,h+10)
         logs.CanvasPosition=Vector2.new(0,math.max(0,h-55))
     end
